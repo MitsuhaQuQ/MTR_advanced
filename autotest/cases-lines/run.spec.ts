@@ -250,10 +250,12 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 	];
 	const matches = matchEvents(events, plans);
 	// The rehearsals' warnings: lateness a route's plan causes
+	const notRunWarned = new Set<string>();
 	const rehearsals: Record<string, string[]> = (await serverData()).rehearsals || {};
 	for (const encoded of Object.values(rehearsals).flat()) {
 		const [kind, routeId, , maxMillis] = encoded.split("|");
 		if ((kind === "LATE" || kind === "HELD") && routeId !== "0") warned.set(routeId, Math.max(warned.get(routeId) || 0, Number(maxMillis)));
+		if (kind === "NOT_RUN") notRunWarned.add(routeId);
 	}
 	report.push(`rehearsals warned of ${warned.size} routes: ${[...warned].map(([id, millis]) => `${plans.find(p => p.routeId === id)?.name.split("|")[0] || id} ${Math.round(millis / 1000)} s`).join(", ")}`);
 	const serverText = serverLog();
@@ -310,6 +312,22 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 			if (late > ALARM_SECONDS && !new RegExp(`train ${m.event.train} reported, LATE`).test(serverText)) failures.push(`${where}: ${Math.round(late)} s late and no alarm told for train ${m.event.train}`);
 		}
 	}
+	// Every service due to leave while the trains were sampled ran (a train stood at its first stop, or at any stop of it):
+	// a plan with time to spare that the trains don't follow is what this test is for (user, 2026-11-15). Services the
+	// rehearsal said no train runs are the plan's, and line 7's stops can't be told apart from its next services'.
+	const sampledFrom = samples.length ? samples[0].millis : 0, sampledTo = samples.length ? samples[samples.length - 1].millis : 0;
+	const notRun: string[] = [];
+	for (const plan of plans) {
+		if (notRunWarned.has(plan.routeId) || TOO_CLOSE_TIMETABLES.includes(plan.line)) continue;
+		for (const service of plan.services) {
+			// Its departure inside the sampled time, with a minute to come out at the start and five to be seen at the end
+			const offset = diff(ofDay(service), ofDay(sampledFrom));
+			if (offset < 60_000 || offset > sampledTo - sampledFrom - 300_000) continue;
+			if (!matches.some(m => m.plan === plan && m.service === service)) notRun.push(`${plan.name.split("|")[0]} ${hhmmss(service)}`);
+		}
+	}
+	report.push(`services due while sampled and not run: ${notRun.length ? notRun.join(", ") : "none"}`);
+	if (notRun.length) failures.push(`services due to leave while sampled that no train ran: ${notRun.join(", ")}`);
 	report.push(`lateness the plan causes (the rehearsal warned of it; the player's): ${planLate.length} stops${planLate.length ? ": " + planLate.slice(0, 40).join("; ") : ""}`);
 	// Line 7: the long section between 二站 and 三站 (x 260..2200), each track on its own
 	const long = lines.find(l => l.layout === 7);
