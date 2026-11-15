@@ -1,6 +1,7 @@
 /**
  * The dispatcher's console (the old renderConsole and its buttons): the rail system to show, then a card per train on the
- * line, the latest first, with where it is going, what is going on with it, and its commands. Holding and releasing,
+ * line, the latest first, with where it is going, what is going on with it, and its commands. The cards can be narrowed to
+ * one line (0.83.3) of those the trains shown run on. Holding and releasing,
  * clearing at the next station, sending back to the depot (or both), cancelling go at once; a longer stop and turning back
  * early open in the card instead of a dialog. Sent as the old consoleCommand does (api/apply, a dispatch operation). The old
  * console still reads the trains every two seconds into its own hidden element.
@@ -18,6 +19,8 @@ export function DispatchConsole({ className, onChoose }: { className: string; on
   const { fn, v } = legacy
   // The console reads on its own timer: look again every second
   const [, setTick] = useState(0)
+  // One line's trains only ("" all): the line's key, as the routes have it
+  const [line, setLine] = useState("")
   useEffect(() => {
     const timer = setInterval(() => setTick(t => t + 1), 1000)
     return () => clearInterval(timer)
@@ -25,16 +28,27 @@ export function DispatchConsole({ className, onChoose }: { className: string; on
   const data = v.data, consoleState = v.consoleState
   const systems = (data && data.contingencySystems || []).filter((system: any) => system.routes.length)
   const d = consoleState.data
-  const trains: any[] = d && d.available ? fn.consoleTrains().slice().sort((a: any, b: any) => (b.late - a.late) || a.id.localeCompare(b.id)) : []
+  const inSystem: any[] = d && d.available ? fn.consoleTrains().slice().sort((a: any, b: any) => (b.late - a.late) || a.id.localeCompare(b.id)) : []
+  const lineOf = (train: any) => data && data.routeById.get(train.route)
+  // The lines of the trains in the rail system chosen, by name
+  const lines = new Map<string, string>()
+  inSystem.forEach(train => { const r = lineOf(train); if (r && r.lineKey && !lines.has(r.lineKey)) lines.set(r.lineKey, shortName(r.line || r.name)) })
+  const lineChoices = [...lines].sort((a, b) => a[1].localeCompare(b[1]))
+  const trains = line ? inSystem.filter(train => lineOf(train)?.lineKey === line) : inSystem
   const canEdit = Boolean(data && data.canEdit)
   return (
     <aside className={className} aria-label={tr("调度台")}>
       <div className="flex flex-col gap-2 p-3">
         <div className="flex flex-wrap items-center gap-2">
           <select className="h-7 rounded-md border border-ctl bg-panel px-1 text-[13px]" value={consoleState.system} aria-label={tr("路网")}
-            onChange={e => { consoleState.system = e.target.value; fn.renderConsole(); fn.drawNetwork(); fn.renderAll() }}>
+            onChange={e => { consoleState.system = e.target.value; setLine(""); fn.renderConsole(); fn.drawNetwork(); fn.renderAll() }}>
             <option value="">{tr("全部路网")}</option>
             {systems.map((system: any) => <option key={system.anchor} value={system.anchor}>{systemTitle(system)}</option>)}
+          </select>
+          <select className="h-7 rounded-md border border-ctl bg-panel px-1 text-[13px]" value={line} aria-label={tr("线路")} onChange={e => setLine(e.target.value)}>
+            <option value="">{tr("全部线路")}</option>
+            {line && !lines.has(line) && <option value={line}>{tr("（没有车在线上的线路）")}</option>}
+            {lineChoices.map(([key, name]) => <option key={key} value={key}>{name}</option>)}
           </select>
           {d && d.available && <span className="text-[12px] text-dim">{tr("{0} 列车在线上{1}，{2} 秒前", trains.length, trains.some(t => t.noDuty) ? tr("（{0} 列不在运用中）", trains.filter(t => t.noDuty).length) : "", d.age || 0)}</span>}
         </div>

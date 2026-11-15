@@ -524,6 +524,8 @@ const I18N = (() => {
 			"已交给备车": "handed over to a spare",
 			"不载客": "out of service",
 			"全部路网": "All rail systems",
+			"全部线路": "All lines",
+			"（没有车在线上的线路）": "(a line with no trains out)",
 			"正在向游戏要各列车的位置…": "Asking the game where the trains are…",
 			"放行": "Let go",
 			"延长停站…": "Stand longer…",

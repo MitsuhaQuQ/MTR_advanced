@@ -20,3 +20,4 @@
 - 按钮（有权限且在运用中时）：扣停/放行（按 `dispatch & 1` 切换）、延长停站…（1–1800 秒，`{command:"extend", seconds}`）、提前折返…（`{command:"turn", station}`）、下一站清客（`clearOut`）、指定回库（`return`）、下一站清客后回库（两条一起）、有命令时"撤销"（`cancel`）。
 - 显示：车名、路线短名、晚点 ≥5 分钟标签、扣停标签、下一站与区段（后 4 位）、`fn.consoleTrainState` 文字。
 - 调用者：本文件 `DispatchConsole`。
+- 0.83.3 线路筛选：路网选择旁的“线路”下拉（`line` 状态，`""` 为全部）：选项取当前路网在线列车的线路（`routeById.get(train.route).lineKey`，名字 `shortName(line)`），选中后只列这条线的卡片，列车数按筛选后算；换路网时清空；所选线路已没车在线上时仍保留一项“（没有车在线上的线路）”。
