@@ -98,7 +98,9 @@ async function anyService(page: Page, canvas: Locator, fractions = [0.5, 0.3, 0.
 }
 
 test("U429 运行图和汇总表：新画法的选中、拖动、右键、缩放、居中、显示回送 @lines @U429", async ({page}, testInfo) => {
-	test.setTimeout(6 * 60_000);
+	// On top of the time waited for the sampling and the other tests' turns (lib/test.ts set the timeout to include it): a
+	// plain 6 minutes here replaced that and the test ran out of time before it began (2026-11-15, waited 22 minutes)
+	test.setTimeout(test.info().timeout + 4 * 60_000);
 	const line = lines.find(l => l.layout === LAYOUT);
 	expect(line, "the six lines' fixture (MTM_FIXTURE_NAME=lines)").toBeTruthy();
 	const {errors} = await openNextEditor(page, "timetable");
@@ -147,7 +149,13 @@ test("U429 运行图和汇总表：新画法的选中、拖动、右键、缩放
 		// the diagram's middle, where the mouse finds it by its time
 		for (let i = 0; i < 6; i++) await page.getByRole("button", {name: "放大时间轴"}).click();
 		const heads = table.locator("th.svc-head");
-		const target = heads.nth((await heads.count()) - 1);
+		// The last service, or the one before if the canvas click above chose the last: a head of the service already chosen
+		// changes nothing, so nothing is centred (fn.centerOn runs only when the choice changes; 2026-11-15 the click on the
+		// whole day's drawing had found the last service)
+		const headCount = await heads.count();
+		const lastChosen = /\bhl\b/.test((await heads.nth(headCount - 1).getAttribute("class")) || "");
+		const target = heads.nth(headCount - (lastChosen && headCount > 1 ? 2 : 1));
+		await expect(target, "a head of a service not chosen yet").not.toHaveClass(/\bhl\b/);
 		const time = ((await target.locator("span.time").innerText()) || "").trim().replace(/\s*\*$/, "");
 		expect(time, "the last service's time").toMatch(/^\d{2}:\d{2}/);
 		await target.click();
@@ -157,11 +165,20 @@ test("U429 运行图和汇总表：新画法的选中、拖动、右键、缩放
 		const middle = await servicesAlong(page, canvas, 0.5, true);
 		expect(middle.map(m => m.text).some(text => text.includes(time)), `the diagram centred on ${time}: ${middle.map(m => m.text).join(" | ")}`).toBe(true);
 
-		// Right-click: the later services; the whole day shown first, and early services tried first, so there are some
-		for (let i = 0; i < 14; i++) await page.getByRole("button", {name: "缩小时间轴"}).click();
+		// Right-click: the later services. The first service's head clicked brings it onto the drawing, still zoomed in, so
+		// the services near it are early ones with later ones after them. (Zoomed out 14 times instead, the drawing showed
+		// three days and the services' hour and a half was a thin band at 80 % of its width, missed by the fractions tried,
+		// 2026-11-15.)
+		const first = heads.nth(0);
+		await first.click();
+		await page.keyboard.press("Escape");
+		await expect(first).toHaveClass(/\bhl\b/);
+		// A service of the table's route: the diagram draws the line's other routes too, whose services chosen mark no head
+		// in this table (2026-11-15: a 下行 service right-clicked, no head marked)
+		const routeTitle = ((await table.locator(".tt-tools b").first().innerText()) || "").trim();
 		let chosenLater = false;
-		for (const fraction of [0.08, 0.15, 0.25, 0.35, 0.5]) {
-			const [early] = await servicesAlong(page, canvas, fraction);
+		for (const fraction of [0.5, 0.4, 0.6, 0.3, 0.7, 0.2, 0.8, 0.1, 0.9]) {
+			const early = (await servicesAlong(page, canvas, fraction, true)).find(hit => hit.text.startsWith(routeTitle));
 			if (!early) continue;
 			await page.mouse.click(early.x, early.y, {button: "right"});
 			const item = page.getByRole("menu").getByRole("menuitem", {name: /^选中这一班和之后的 \d+ 班$/});
@@ -189,11 +206,19 @@ test("U429 运行图和汇总表：新画法的选中、拖动、右键、缩放
 		expect(chosenLater, "a service with later ones offered 选中这一班和之后的 n 班").toBe(true);
 		await testInfo.attach("diagram, services moved in the draft", {body: await canvas.screenshot(), contentType: "image/png"});
 
-		// 显示回送: the runs out of and back to the depot in the heads
+		// 显示回送: the runs out of and back to the depot in the heads. The draft emptied first: the notes come from the
+		// depots' duties, planned on the game's timetables, so services moved in the draft (here all of them, the first and
+		// those after it) have none until applied (2026-11-15: ticked with the move in the draft, no note in any head)
+		await discardDrafts(page);
 		const deadheads = table.getByLabel("显示回送");
-		await deadheads.check();
+		// Clicked, then waited for: the box is drawn from the page's own state, after the click's handler has drawn the table
+		// again, so it shows ticked a moment after the click (Playwright's check() looks at once, 2026-11-15)
+		await expect(deadheads).not.toBeChecked();
+		await deadheads.click();
+		await expect(deadheads, "显示回送 ticked").toBeChecked();
 		await expect(table.locator('th.svc-head span.note[title="出库回送"], th.svc-head span.note[title="回库回送"]').first(), "deadhead notes in the heads").toBeVisible();
-		await deadheads.uncheck();
+		await deadheads.click();
+		await expect(deadheads, "显示回送 unticked").not.toBeChecked();
 		await expect(table.locator('th.svc-head span.note[title="出库回送"], th.svc-head span.note[title="回库回送"]')).toHaveCount(0);
 	} finally {
 		await discardDrafts(page);

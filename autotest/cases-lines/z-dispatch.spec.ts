@@ -19,7 +19,7 @@ const PREFERRED = [3, 5, 6, 10, 9, 8, 2];
 
 test("调度台：卡片、筛选、延长停站、扣停放行、清客回库、撤销 @lines @U270 @U491 @U271 @U272 @U402", async ({page}, testInfo) => {
 	// On top of the time waited for the sampling (lib/test.ts set the timeout to include it)
-	test.setTimeout(test.info().timeout + 13 * 60_000);
+	test.setTimeout(test.info().timeout + 20 * 60_000);
 	const {errors} = await openNextEditor(page, "dispatch");
 	const cards = page.locator("li[data-console-card]");
 	await expect(cards.first(), "a card for a train").toBeVisible({timeout: 30_000});
@@ -62,15 +62,27 @@ test("调度台：卡片、筛选、延长停站、扣停放行、清客回库�
 	// Four trains on four lines running on time, out on the line, with a card offering commands
 	const ids = await cards.filter({has: page.getByRole("button", {name: "扣停", exact: true})}).evaluateAll(items => items.map(item => item.getAttribute("data-console-card")));
 	const chosen: {id: string, line: Line}[] = [];
-	// Taken as they come by: a few tries a couple of seconds apart
-	for (let attempt = 0; attempt < 60 && chosen.length < 4; attempt++, await sleep(2000)) for (const layout of PREFERRED) {
-		if (chosen.some(each => each.line.layout === layout)) continue;
+	// Taken as they come by, tried every couple of seconds for up to 8 minutes: every line's services leave at the same
+	// minutes, 6 apart, and run for about a minute and a half, so for minutes on end no train is between stations (2026-11-15:
+	// two minutes of tries found three)
+	// Running between two stations of its line, so its next stop is a platform ahead (a train on a turn-back track
+	// stood there 147 s and the longer stop went unseen, 2026-11-15)
+	const between = (t: TrainSample) => { const sx = lineOf(t)!.stationX || [0, 200, 400, 640, 840]; return t.speed > 0.02 && t.x > sx[0] + 62 && t.x < sx[sx.length - 1] - 2 && !atPlatform(lineOf(t)!, t); };
+	const until = Date.now() + 8 * 60_000;
+	for (; Date.now() < until && chosen.length < 4; await sleep(2000)) {
 		const now = (await trainsNow()).trains;
-		// Running between two stations of its line, so its next stop is a platform ahead (a train on a turn-back track
-		// stood there 147 s and the longer stop went unseen, 2026-11-15)
-		const between = (t: TrainSample) => { const sx = lineOf(t)!.stationX || [0, 200, 400, 640, 840]; return t.speed > 0.02 && t.x > sx[0] + 62 && t.x < sx[sx.length - 1] - 2 && !atPlatform(lineOf(t)!, t); };
-		const train = now.find(t => ids.includes(String(t.id)) && !inDepot(t) && lineOf(t)?.layout === layout && between(t));
-		if (train && chosen.length < 4) chosen.push({id: String(train.id), line: lineOf(train)!});
+		// Those taken on an earlier try and no longer between two stations are let go again, so all four still are when
+		// they are given their commands (2026-11-15: one taken minutes before was on the turn-back track by then, and stood
+		// its longer stop there)
+		for (let i = chosen.length - 1; i >= 0; i--) {
+			const train = now.find(t => String(t.id) === chosen[i].id);
+			if (!train || inDepot(train) || !between(train)) chosen.splice(i, 1);
+		}
+		for (const layout of PREFERRED) {
+			if (chosen.length >= 4 || chosen.some(each => each.line.layout === layout)) continue;
+			const train = now.find(t => ids.includes(String(t.id)) && !inDepot(t) && lineOf(t)?.layout === layout && between(t));
+			if (train) chosen.push({id: String(train.id), line: lineOf(train)!});
+		}
 	}
 	if (chosen.length < 4) {
 		const seen = (await trainsNow()).trains.filter(t => ids.includes(String(t.id))).map(t => `${lineOf(t)?.layout}号线 ${String(t.id).slice(-4)} x ${Math.round(t.x)} z ${Math.round(t.z - (lineOf(t)?.z || 0))} speed ${t.speed.toFixed(3)}`);
@@ -97,12 +109,37 @@ test("调度台：卡片、筛选、延长停站、扣停放行、清客回库�
 	const log: string[] = [];
 	const stand = new Map<string, {from: number, to: number, platform: boolean}[]>();
 	let heldSince = 0, released = 0, leftAfterRelease = 0, clearedHome = 0;
+	// Where the cleared train went, a line each time it reaches a station, the line between or the depot, so a train not
+	// home says what it did instead
+	const trail: string[] = [];
+	let lastPlace = "", lastSeen: TrainSample | undefined;
+	const placeOf = (line: Line, t: TrainSample) => {
+		if (inDepot(t)) return "depot";
+		const sx = line.stationX || [0, 200, 400, 640, 840];
+		const at = sx.findIndex(x => t.x >= x - 2 && t.x <= x + 62);
+		return `${at >= 0 ? `station ${at + 1}` : `line x ${Math.round(t.x / 50) * 50}`} ${Math.round(t.z - line.z) < 4 ? "eastbound" : "westbound"}`;
+	};
 	const start = Date.now();
 	while (Date.now() - start < 9 * 60_000) {
 		const sample = await trainsNow();
 		for (const {id, line} of [extended, held, cleared]) {
 			const train = sample.trains.find(t => String(t.id) === id);
+			if (id === cleared.id && !train && lastSeen && !clearedHome) {
+				// Gone: a train leaves the world only into its siding (no train vanishes on the line), so gone next to its
+				// depot is home; it can be gone within a few seconds of entering the depot's box, between two samples
+				const box = line.depotBox;
+				const near = box ? lastSeen.x >= box[0] - 80 && lastSeen.x <= box[2] + 20 : !lastSeen.onRoute;
+				trail.push(`${Math.round((sample.millis - start) / 1000)} s: gone, last seen at x ${Math.round(lastSeen.x)}${near ? ", next to its depot" : ""}`);
+				if (near) clearedHome = sample.millis;
+				lastSeen = undefined;
+			}
 			if (!train) continue;
+			if (id === cleared.id) {
+				const place = placeOf(line, train);
+				if (place !== lastPlace) trail.push(`${Math.round((sample.millis - start) / 1000)} s: ${place}, route ${train.route}, ${train.speed < 0.005 ? "standing" : "running"}${train.doors > 0.2 ? ", doors open" : ""}`);
+				lastPlace = place;
+				lastSeen = train;
+			}
 			const standing = train.speed < 0.005;
 			const list = stand.get(id) || [];
 			const last = list[list.length - 1];
@@ -132,6 +169,7 @@ test("调度台：卡片、筛选、延长停站、扣停放行、清客回库�
 	log.push(`extended ${extended.line.layout}号线 ${extended.id}: ${describe(extended.id)}`);
 	log.push(`held ${held.line.layout}号线 ${held.id}: ${describe(held.id)}; left ${leftAfterRelease ? Math.round((leftAfterRelease - released) / 1000) + " s after release" : "no"}`);
 	log.push(`cleared ${cleared.line.layout}号线 ${cleared.id}: ${clearedHome ? "home after " + Math.round((clearedHome - start) / 1000) + " s" : "not home"}`);
+	log.push(...trail.map(each => `  ${each}`));
 	await testInfo.attach("trains commanded", {body: log.join("\n")});
 
 	expect((stand.get(extended.id) || []).some(s => s.platform && s.to - s.from >= 60_000), "U271: stood at least 60 s longer at a stop").toBe(true);

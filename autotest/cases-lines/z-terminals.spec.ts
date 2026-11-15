@@ -102,8 +102,11 @@ test("U215 U216 终点站的到和发、折返的种类 @lines @U215 @U216", asy
 			expect(departures.length, `${where}: a 发 at the last stop`).toBeGreaterThan(0);
 			expect(arrivals.length, `${where}: at most one 到 per service`).toBeLessThanOrEqual(table.services);
 			expect(departures.length, `${where}: at most one 发 per service`).toBeLessThanOrEqual(table.services);
+			// Soft, and once per table, so the other checks still run when the style is missing on every cell (0.83.6: the
+			// new page's legacy-theme.css sets td.derived to font-style normal)
+			const upright = derived.filter(c => !c.italic);
+			expect.soft(upright.map(c => `${c.svc} stop ${c.stop}`), `${where}: the worked out 到/发 cells in italics (${upright.length} of ${derived.length} not)`).toEqual([]);
 			for (const cell of derived) {
-				expect(cell.italic, `${where} ${cell.svc}: in italics`).toBe(true);
 				expect(cell.text, `${where} ${cell.svc}: a time`).toMatch(/^\d{2}:\d{2}(:\d{2})?$/);
 				const turn = turnOf(cell.title.split("\n")[0]);
 				expect(turn, `${where} ${cell.svc}: the tooltip says how it came about: ${cell.title}`).not.toBe("other");
