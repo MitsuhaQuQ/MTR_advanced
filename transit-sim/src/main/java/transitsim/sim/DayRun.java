@@ -544,6 +544,11 @@ public final class DayRun {
 				Stop firstLate = null;
 				long mostLate = 0;
 				for (final Stop stop : trip.stops) {
+					// Only at the route's own stops: where it reverses through a platform on its way or turns back, it has
+					// no time of the service's own to keep (0.83.2: the rehearsal warned of every line from those)
+					if (stop.stopIndex < 0) {
+						continue;
+					}
 					final long late = Math.max(stop.plannedArrivalMillis < 0 ? 0 : stop.arrivalMillis - stop.plannedArrivalMillis, stop.plannedDepartureMillis < 0 || stop.departureMillis < 0 ? 0 : stop.departureMillis - stop.plannedDepartureMillis);
 					if (late > REPORT_MILLIS) {
 						if (firstLate == null) {

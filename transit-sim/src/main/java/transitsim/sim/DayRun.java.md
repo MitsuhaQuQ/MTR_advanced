@@ -101,3 +101,5 @@
 - `Problem.cause`：最主要的原因或 null；`toBytes`/`fromBytes` 在 detail 后读写。
 - `Recorder.sample`（`TickRunner.addTickListener` 每 tick 调）：对 `isHeldBack()` 的车，按 `RunReservations.getBlockers` 的每个挡它的车累计时长（没有则记为 0 号）；`arrive` 时取累计最久且至少 5 秒的记到该站并清零（`takeCause`）；`RETURNED` 清零。`inService`：出库后在站台停过的车，没停过的挡车不算班次。
 - `addLateness`：原因取到第一次晚点那站及其下一站之间累计最久的（晚在离站时，挡在该站，记在下一站）；`endHold` 取当时累计最久的。
+
+- 0.83.2 `addLateness`：只看线路自己的站（`stopIndex ≥ 0`），途中经过站台掉头或进折返线的停站不算晚点。
