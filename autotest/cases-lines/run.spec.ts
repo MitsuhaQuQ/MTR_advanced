@@ -7,6 +7,10 @@
 // as another route's runs that one too, leaving the boundary stop on the other route's time, joining part of the way
 // along (line 9's B at 三站) on that route's time there. Line 10 (站后双折返, services every 150 s): both turn-back tracks
 // behind 五站 are used, consecutive trains take them in turn, and never two trains are on one at once.
+// Batch A (2026-11-15), from the same samples: U280 a train back in its depot goes out again for a later duty; U281 a
+// train behind another stops at every stop of its service, none passed; U283 a train held by the one ahead waits at its
+// platform, not just past it out on the line; U297 trains reach the physical top of an 80 km/h rail (85) and no more;
+// U301 no more than 25 km/h in a depot's sidings and 70 on line 10's turn-back tracks.
 // Lines 1 and 4 get no trains (their depots have no way out that keeps off the line's platforms run against, see
 // MTR-测试项目清单.md); they are recorded, not failed.
 import {test, expect} from "../lib/test";
@@ -15,7 +19,8 @@ import {server, serverData, sleep} from "../lib/game";
 import {Line, lines, serviceLabels, ThroughLink, trainsNow, TrainsAt, TrainSample} from "../lib/lines";
 import {matchEvents, platformSpots, readPlan, readRoutePlan, RoutePlan, stopEvents, stopEventsAt, turnBacks} from "../lib/timing";
 
-const MINUTES = Number(process.env.MTM_RUN_MINUTES || 10);
+/** Minutes sampled from the first services' departure (lines.spec.ts writes when; before 2026-11-15 from the test's start) */
+const MINUTES = Number(process.env.MTM_RUN_MINUTES || 15);
 /** How far (seconds) a departure, an arrival (late; early is fine) or a turn-back may be off its plan */
 const TOLERANCE = Number(process.env.MTM_TIME_TOLERANCE || 15);
 /** Blocks a train may move in a second, at most (trains here run at up to 80 km/h, about 22 blocks a second) */
@@ -50,7 +55,10 @@ function serviceIndex(routeName: string, label: string): number {
 }
 
 test("各条线实际运行 @lines @run", async ({}, testInfo) => {
-	test.setTimeout((MINUTES + 5) * 60_000);
+	const linksFile = `${process.env.MTM_RESULTS || "."}/through-links.json`;
+	const firstServices: number = existsSync(linksFile) ? JSON.parse(readFileSync(linksFile, "utf8")).startMillis || Date.now() : Date.now();
+	const end = firstServices + MINUTES * 60_000;
+	test.setTimeout(end - Date.now() + 8 * 60_000);
 	// The planned times, read off the timetable screens before the trains start
 	const data = await serverData();
 	const plans: RoutePlan[] = [];
@@ -67,7 +75,6 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 	}
 	await testInfo.attach("plans", {body: JSON.stringify(plans, null, 1), contentType: "application/json"});
 	const samples: TrainsAt[] = [];
-	const end = Date.now() + MINUTES * 60_000;
 	while (Date.now() < end) {
 		samples.push(await trainsNow());
 		await sleep(1000);
@@ -134,6 +141,92 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 	}
 	report.push(...longest.values());
 
+	// U297, U301: speeds (blocks a tick; 72 makes km/h), out on the line, in the depots' sidings, on line 10's tails
+	const KMH = 72;
+	const inDepotBox = (train: TrainSample) => lines.some(l => l.depotBox && train.x >= l.depotBox[0] && train.x <= l.depotBox[2] && train.z >= l.z + l.depotBox[1] && train.z <= l.z + l.depotBox[3]);
+	const tenTails = lines.find(l => l.layout === 10)?.tails || [];
+	const onTail = (train: TrainSample) => tenTails.some(([x1, x2, z]) => train.x >= x1 + 2 && train.x <= x2 - 2 && Math.abs(train.z - z - 0.5) < 1.5);
+	let topLine = 0, topDepot = 0, topTail = 0;
+	const topWhere: string[] = [];
+	for (const sample of samples) {
+		for (const train of sample.trains.filter(t => t.x !== undefined)) {
+			const kmh = train.speed * KMH;
+			// Line 10's depot box reaches over its tails
+			if (onTail(train)) topTail = Math.max(topTail, kmh);
+			else if (inDepotBox(train)) topDepot = Math.max(topDepot, kmh);
+			else if (train.onRoute) topLine = Math.max(topLine, kmh);
+			if (kmh > 85.5) topWhere.push(`train ${train.id} ${kmh.toFixed(1)} km/h at ${Math.round(train.x)},${Math.round(train.z)}`);
+		}
+	}
+	report.push(`U297/U301 speeds: line ${topLine.toFixed(1)} km/h, depot sidings ${topDepot.toFixed(1)}, line 10's tails ${topTail.toFixed(1)}`);
+	if (topLine < 84) failures.push(`U297: no train reached the physical top of an 80 km/h rail (85 km/h), fastest ${topLine.toFixed(1)}`);
+	if (topWhere.length) failures.push(`U297: faster than 85 km/h: ${topWhere.slice(0, 5).join("; ")}`);
+	if (topDepot > 25.5) failures.push(`U301: ${topDepot.toFixed(1)} km/h in a depot's sidings, more than 25`);
+	if (topTail > 70.5) failures.push(`U301: ${topTail.toFixed(1)} km/h on line 10's turn-back tracks, more than 70`);
+
+	// U280: a train in its depot (or not on a route), out, back in, and out again
+	const inside = new Map<string, boolean>();
+	const moves = new Map<string, string[]>();
+	for (const sample of samples) {
+		for (const train of sample.trains) {
+			const line = lineOf(train);
+			if (!line || EXPECTED_WITHOUT_TRAINS.includes(line.layout)) continue;
+			const now = !train.onRoute || inDepotBox(train);
+			const before = inside.get(train.id);
+			if (before !== undefined && before !== now) moves.set(train.id, [...(moves.get(train.id) || []), (now ? "back " : "out ") + hhmmss(sample.millis)]);
+			inside.set(train.id, now);
+		}
+	}
+	const again = [...moves].filter(([, list]) => list.filter(m => m.startsWith("out")).length >= 2 && list.some(m => m.startsWith("back")));
+	report.push(`U280: ${again.length} trains went out again after coming back: ${again.map(([id, list]) => `${lineOf(samples.flatMap(s => s.trains).find(t => t.id === id)!)?.layout}号线 ${id.slice(-4)} ${list.join(", ")}`).join("; ") || "-"}`);
+	if (!again.length) failures.push("U280: no train went out of its depot again after coming back in");
+
+	// U283: a train standing still on a main track between stations, nearer the platform it last stood at than the next
+	// one ahead: it left its platform into a section it could not run through
+	const lastStand = new Map<string, number>();
+	const heading = new Map<string, number>();
+	const lastX = new Map<string, number>();
+	const stoodOut = new Map<string, {line: number, x: number, from: number, to: number}>();
+	const outsideStands: {train: string, line: number, x: number, from: number, to: number}[] = [];
+	for (const sample of samples) {
+		for (const train of sample.trains.filter(t => t.onRoute && t.x !== undefined)) {
+			const line = lineOf(train);
+			if (!line || EXPECTED_WITHOUT_TRAINS.includes(line.layout) || inDepotBox(train)) continue;
+			const dz = train.z - line.z - 0.5;
+			if (Math.abs(dz) > 1.5 && Math.abs(dz - 8) > 1.5) continue;
+			const x0 = lastX.get(train.id);
+			if (x0 !== undefined && Math.abs(train.x - x0) > 0.5) heading.set(train.id, Math.sign(train.x - x0));
+			lastX.set(train.id, train.x);
+			const stationX = line.stationX || [0, 200, 400, 640, 840];
+			const platform = stationX.findIndex(sx => train.x >= sx - 2 && train.x <= sx + 62);
+			const standing = train.speed < 0.005;
+			if (standing && platform >= 0) lastStand.set(train.id, platform);
+			const open = stoodOut.get(train.id);
+			const between = train.x > stationX[0] + 62 && train.x < stationX[stationX.length - 1] - 2 && platform < 0;
+			const from = lastStand.get(train.id), dir = heading.get(train.id);
+			if (standing && between && from !== undefined && dir) {
+				const leftEnd = dir > 0 ? stationX[from] + 60 : stationX[from];
+				const ahead = dir > 0 ? stationX.find(sx => sx > train.x) : [...stationX].reverse().map(sx => sx + 60).find(end => end < train.x);
+				const justLeft = ahead !== undefined && Math.abs(train.x - leftEnd) < Math.abs(ahead - train.x) && (dir > 0 ? train.x > leftEnd : train.x < leftEnd);
+				if (justLeft) {
+					if (open && Math.abs(open.x - train.x) < 1) open.to = sample.millis;
+					else stoodOut.set(train.id, {line: line.layout, x: train.x, from: sample.millis, to: sample.millis});
+					continue;
+				}
+			}
+			if (open) {
+				if (open.to - open.from >= 10_000) outsideStands.push({train: train.id, ...open});
+				stoodOut.delete(train.id);
+			}
+		}
+	}
+	stoodOut.forEach((open, train) => { if (open.to - open.from >= 10_000) outsideStands.push({train, ...open}); });
+	const stoodText = (each: typeof outsideStands[number]) => `${each.line}号线 train ${each.train.slice(-4)} at x ${Math.round(each.x)} from ${hhmmss(each.from)} for ${Math.round((each.to - each.from) / 1000)} s`;
+	report.push(`U283: ${outsideStands.length} times a train stood 10 s or more just past the platform it left: ${outsideStands.map(stoodText).join("; ") || "-"}`);
+	// Line 7's timetable is closer than its trains follow, line 11's dead end shorter than its trains: reported only
+	const stoodFailing = outsideStands.filter(each => !TOO_CLOSE_TIMETABLES.includes(each.line) && each.line !== 11);
+	if (stoodFailing.length) failures.push(`U283: trains left their platform and stood out on the line: ${stoodFailing.map(stoodText).join("; ")}`);
+
 	// Timing: every stop against its planned time, every turn-back against its planned time
 	const spots = platformSpots(data);
 	const platformLines = lines.filter(byPlatform);
@@ -147,6 +240,28 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 	];
 	const matches = matchEvents(events, plans);
 	const turns = turnBacks(matches);
+	// U281: every service a train was seen running, its stops in a row with none passed (the ends of the sampled time aside)
+	const runs = new Map<string, number[]>();
+	const planOf = new Map<string, RoutePlan>();
+	for (const m of matches) {
+		if (TOO_CLOSE_TIMETABLES.includes(m.plan.line) || m.plan.line === 11) continue;
+		const key = `${m.event.train}|${m.plan.name}|${m.service}`;
+		runs.set(key, [...(runs.get(key) || []), m.stop]);
+		planOf.set(key, m.plan);
+	}
+	const passed: string[] = [];
+	for (const [key, stops] of runs) {
+		const sorted = [...new Set(stops)].sort((a, b) => a - b);
+		for (let k = 1; k < sorted.length; k++) {
+			// Stops between with no time standing there are passed by plan (line 2's express through 三站)
+			const plan = planOf.get(key)!;
+			const stopsBetween = Array.from({length: sorted[k] - sorted[k - 1] - 1}, (_, n) => sorted[k - 1] + 1 + n);
+			const stopsThere = stopsBetween.filter(n => plan.arrive[n] !== null && plan.depart[n] !== null && plan.depart[n]! > plan.arrive[n]!);
+			if (stopsThere.length) passed.push(`${key.split("|").slice(0, 2).join(" ").replace(/\|.*/, "")}: stops ${sorted[k - 1] + 1} → ${sorted[k] + 1}`);
+		}
+	}
+	report.push(`U281: ${runs.size} service runs, ${passed.length} with a stop passed`);
+	if (passed.length) failures.push(`U281: trains passed stops of their service: ${passed.slice(0, 10).join("; ")}`);
 	for (const line of lines.filter(l => !EXPECTED_WITHOUT_TRAINS.includes(l.layout))) {
 		const here = matches.filter(m => m.plan.line === line.layout);
 		const departs = here.filter(m => m.departLate !== null).map(m => m.departLate! / 1000);
@@ -251,7 +366,6 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 	}
 
 	// Lines 8 and 9: the through links lines.spec.ts set
-	const linksFile = `${process.env.MTM_RESULTS || "."}/through-links.json`;
 	const links: ThroughLink[] = existsSync(linksFile) ? JSON.parse(readFileSync(linksFile, "utf8")).links : [];
 	const first = samples.length ? ofDay(samples[0].millis) : 0, lastSample = samples.length ? ofDay(samples[samples.length - 1].millis) : 0;
 	const seconds = (text: string) => text.split(":").map(Number).reduce((a, v) => a * 60 + v, 0);

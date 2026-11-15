@@ -250,3 +250,11 @@
 - **U443**（`U443.spec.ts`）：墙上召唤一幅原版画，拿刷子对它右键（新路由 `/use-entity`），在 `ImportedPaintingScreen` 里点选择按钮（控件 `ImportedPaintingScreen.choose`），读屏幕文字找行：顶层的原版画和上传者、进两层文件夹、选图、重开停在该文件夹、退格回上一级、搜索（新的 `/type` `chars`：直接打进界面，列表搜索没有输入框控件）只在当前文件夹以下、第一行回上一级，最后取消、清理。
 - **U444**（`U444.spec.ts`）：测试玩家是 OP 时给另一个上传者建文件夹；`deop` 后改它被拒（列表消息"只能整理自己的文件"），自己的照常；`finally` 里恢复 OP 并清理。
 - **画面比对**：新路由 `/compare`（`RenderCompare`）开关一个设置前后各截一张、逐像素比，`fps-test.sh` 每种情形测完帧率后比一次，写 `compare.csv`。脚本另把云关掉、时间和天气固定，免得两张图本来就不同。结果见 `RenderCompare.java.md`：烘焙几乎不差（sp1900 31 像素，bbmodel、OBJ 0）；轨道开关优化只差枕木条纹相位；OBJ 20 列关优化客户端内存不够（老问题，记为待办），比较时跳过。
+
+## 六线图分阶段并行（2026-11-15）
+
+`autotest/playwright.config.ts` 在 `MTM_FIXTURE_NAME=lines` 时把测试分成依赖相连的项目：
+- `setup`：`lines.spec.ts` 经游戏界面排班、刷新车厂、冲突检查，单独跑。第一班定在开始后 6 分钟（原 9 分钟），发车时刻写进 `through-links.json` 的 `startMillis`。
+- `observe`：`run.spec.ts`（先读时刻表界面再采样，从第一班发车起采 `MTM_RUN_MINUTES` 分钟，默认 15）和只读网页、日志、数据的测试（`z-conflicts`、`z-depot`、`z-flows`、`z-headway`、`z-logs`、`z-paths`、`z-rehearsal`）同时跑，并发 `MTM_WORKERS`（默认 4）。这一组的测试不关游戏界面（`lib/test.ts`），日志里的新错误会让同时在跑的测试都失败。
+- 之后逐个、按顺序：`z-swaps`（列车跑完后读日志）、`z-dispatch`、`z-adhoc`、`z-console`、`z-replan`（会改列车行为或时刻表）。
+- `ui-test.sh run <模式>` 只跑匹配的，用 `--no-deps`、单线程，按项目顺序；要先排班就在模式里带上“排班”。

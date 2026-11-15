@@ -15,14 +15,17 @@ test("排班：六条线所有线路两端始发 @lines", async () => {
 	test.setTimeout(600_000);
 	const now = await clock();
 	console.log(`server clock ${now.time} (${now.zone}, day starts ${now.dayStartHour}:00)`);
-	// The first services nine minutes from now: putting in eleven lines' timetables takes a few, and the depots plan their
-	// duties after; at five the trains from a depot at the far end came out too late for their first service (MTR-待验证.md C)
-	const start = later(now.time, 9);
+	// The first services six minutes from now (2026-11-15, nine until then): putting in eleven lines' timetables takes a
+	// minute and a half, the depots plan their duties within another; at five, when that took longer, the trains from a
+	// depot at the far end came out too late for their first service (MTR-待验证.md C)
+	const start = later(now.time, 6);
+	const toSeconds = (time: string) => time.split(":").map(Number).reduce((a, v) => a * 60 + v, 0);
+	const startMillis = now.millis + ((toSeconds(start) - toSeconds(now.time) + 86400) % 86400) * 1000;
 	await scheduleAll(start);
 	// Lines 8 and 9: services running on as other routes' services, set as a player sets them
 	const links = throughLinks(start);
 	await setThroughLinks(links);
-	writeFileSync(`${process.env.MTM_RESULTS || "."}/through-links.json`, JSON.stringify({start, links}, null, 1));
+	writeFileSync(`${process.env.MTM_RESULTS || "."}/through-links.json`, JSON.stringify({start, startMillis, links}, null, 1));
 	await test.info().attach("through links", {body: JSON.stringify(links, null, 1), contentType: "application/json"});
 	const data = await serverData();
 	for (const line of lines) {

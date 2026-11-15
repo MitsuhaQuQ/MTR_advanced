@@ -7,7 +7,8 @@ import {test, expect} from "../lib/test";
 import {lines, serverLog} from "../lib/lines";
 
 test("U479 顺序颠倒时互换运用：服务端日志 @lines @U479", async ({}, testInfo) => {
-	const swaps = serverLog().split("\n").filter(line => line.includes("Trains out of order for a stop swap the rest of their duties"));
+	// The game's own trains: rehearsals before 0.83.4 printed their simulated trains' swaps too, from their own thread
+	const swaps = serverLog().split("\n").filter(line => line.includes("Trains out of order for a stop swap the rest of their duties") && !line.includes("MTR-Rehearsal"));
 	const lineOf = (line: string) => {
 		const siding = (line.match(/siding:(-?\d+)/) || [])[1];
 		return lines.find(l => l.sidings.map(String).includes(siding))?.layout;
