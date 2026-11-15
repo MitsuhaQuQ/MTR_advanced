@@ -85,6 +85,8 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+组件测试 `transit-sim/.../sim/TwoDaysTest`（2026-11-15，T04/T05，benchmark 才跑）：`WholeDayTest.dataset(shiftMillis)` 把班次平移后生成运用；连跑两个运营日，比第二天和第一天的事件、检查规则、夜间回库和 `RunReservations.getHolders()` 为空。
+
 0.83.6 网页编辑器三处修正（批次 B 网页测试 `ui-results/20261115-172620` 找到，用户 2026-11-15“修”）：
 - U344 ①：`editor-web/src/views/StopsEditor.tsx` `StopOrder` 记下打开时的各站通过，`unchanged` 也比通过，只改通过时“发给游戏”能点。
 - U344 ②：`common/.../client/ClientEditing.java` `send` 在网页的批次里（`batch != null`）不再用游戏界面的快照（`getSnapshot`）当基准，只用页面给的基准（`setBatchBases`）或客户端现在知道的版本。原来关掉的时刻表界面快照留 30 分钟，只随自己的改动前移，网页带 force 的停站也被拒成和自己冲突。

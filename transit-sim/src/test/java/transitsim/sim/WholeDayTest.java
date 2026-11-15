@@ -6,6 +6,8 @@ import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 import transitsim.plan.Contingency;
 import transitsim.plan.DepotDuties;
 import transitsim.plan.OperatingDay;
+import transitsim.plan.PlanRoute;
+import transitsim.plan.RouteTimetable;
 import transitsim.planning.DutyGenerator;
 import transitsim.planning.PlanCheck;
 
@@ -52,7 +54,26 @@ class WholeDayTest {
 	 * platform to the middle down one.
 	 */
 	static byte[] dataset() {
+		return dataset(0);
+	}
+
+	/**
+	 * As {@link #dataset()}, with {@code shiftMillis} added to every service time as saved in UTC, so the services can be
+	 * made to run across UTC midnight ({@link TwoDaysTest}). Set the time zone first: duties are planned by operating day.
+	 */
+	static byte[] dataset(long shiftMillis) {
 		final SimDataset dataset = SimDatasetTest.lines(1, 1200, 4, 10, 6);
+		if (shiftMillis != 0) {
+			final Map<Long, PlanRoute> routes = dataset.getPlanRoutes();
+			for (int i = 0; i < dataset.routes.size(); i++) {
+				final PlanRoute route = routes.get(dataset.routes.get(i).id);
+				for (final RouteTimetable table : route.getTimetable().getTables()) {
+					table.services.replaceAll(service -> (int) Math.floorMod(service + shiftMillis, (long) OperatingDay.MILLIS_PER_DAY));
+				}
+				route.getTimetable().sanitize();
+				dataset.routes.set(i, new SimDataset.RouteData(route));
+			}
+		}
 		final DutyGenerator.Result result = PlanCheck.generate(dataset, 1, 0);
 		PlanCheckTest.addDutyPaths(dataset, result, false);
 		final DepotDuties duties = new DepotDuties();
