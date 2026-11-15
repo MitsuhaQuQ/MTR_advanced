@@ -191,6 +191,23 @@ test("各条线实际运行 @lines @run", async ({}, testInfo) => {
 	report.push(`U280: ${again.length} trains went out again after coming back: ${again.map(([id, list]) => `${lineOf(samples.flatMap(s => s.trains).find(t => t.id === id)!)?.layout}号线 ${id.slice(-4)} ${list.join(", ")}`).join("; ") || "-"}`);
 	if (!again.length) failures.push("U280: no train went out of its depot again after coming back in");
 
+	// No train vanishes from the line or appears on it (user, 2026-11-15: trains come and go only through their depot, or
+	// by a player's own command): out on the line in one sample, gone in the next; or there, never seen before, not in
+	// its depot
+	const vanished: string[] = [];
+	for (let k = 1; k < samples.length; k++) {
+		const before = new Map(samples[k - 1].trains.map(t => [t.id, t]));
+		const after = new Map(samples[k].trains.map(t => [t.id, t]));
+		for (const [id, t] of before) {
+			if (t.onRoute && t.x !== undefined && !inDepotBox(t) && !after.has(id)) vanished.push(`train ${id} (${lineOf(t)?.layout}号线) gone from ${Math.round(t.x)},${Math.round(t.z)} at ${hhmmss(samples[k].millis)}`);
+		}
+		for (const [id, t] of after) {
+			if (t.onRoute && t.x !== undefined && !inDepotBox(t) && !before.has(id)) vanished.push(`train ${id} (${lineOf(t)?.layout}号线) appeared at ${Math.round(t.x)},${Math.round(t.z)} at ${hhmmss(samples[k].millis)}`);
+		}
+	}
+	report.push(`trains vanishing or appearing on the line: ${vanished.length ? vanished.join("; ") : "none"}`);
+	failures.push(...vanished);
+
 	// U283: a train standing still on a main track between stations, nearer the platform it last stood at than the next
 	// one ahead: it left its platform into a section it could not run through
 	const lastStand = new Map<string, number>();
