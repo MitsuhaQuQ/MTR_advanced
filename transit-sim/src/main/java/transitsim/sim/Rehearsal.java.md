@@ -14,3 +14,5 @@
 字段 `kind`、`routeId`（死锁为 0）、`count`、`maxMillis`、`timeOfDay`（运营日开始后的毫秒）、`serviceOfDay`（同上，或 -1）、`stopIndex`、`platformId`、`causeKnown`、`causeRouteId`（0 为不在载客的车，如出库空车）、`causeServiceOfDay`、`causeByTrain`（是不是别的车挡的）、`causeKind`（`transitsim.network.Resource.Kind` 名，没车挡时为空）、`causePlatformId`、`detail`。
 - `String encode()`：一行，`|` 分隔，detail 里的 `|` 换成空格。
 - `static Warning decode(String line)`：读回，不是这种行时返回 null。
+
+- 0.83.4 `run` 在 `SimLog.quietly` 里跑 `DayRun.run`：模拟列车的互换运用等不打进游戏日志。

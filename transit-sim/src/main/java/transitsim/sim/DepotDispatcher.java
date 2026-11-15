@@ -391,7 +391,7 @@ public class DepotDispatcher {
 					final Object[] from = findFrom(currentMillis, dayStart, duty, key, 1, Collections.singletonList(sidingId), tripPaths, variants, Collections.emptySet());
 					if (from == null) {
 						markDutyRun(dutySidingId, i, day);
-						System.out.println("A duty sent out too late for any of its segments isn't run today: " + key);
+						SimLog.say("A duty sent out too late for any of its segments isn't run today: " + key);
 						continue;
 					}
 					final long fromDeparture = (long) from[2];
@@ -517,7 +517,7 @@ public class DepotDispatcher {
 			if (from == null) {
 				// Only once no siding of the pool can get a spare to any segment left in time, as a spare may come in later
 				if (key == null || findFrom(currentMillis, dayStart, duty, key, fromSegment, getPoolOrder(dutySidingId, new TreeSet<>(getAllSidings(duties)), pools), tripPaths, variants, Collections.emptySet()) == null && isPastAll(currentMillis, dayStart, duty, fromSegment)) {
-					System.out.println("A duty to be taken over by a spare train has none to take it over: " + takeover);
+					SimLog.say("A duty to be taken over by a spare train has none to take it over: " + takeover);
 					takeovers.remove(index--);
 					takeoverAffected.remove(takeover);
 				}

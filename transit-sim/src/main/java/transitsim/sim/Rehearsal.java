@@ -133,7 +133,8 @@ public final class Rehearsal {
 	 */
 	public static List<Warning> run(SimDataset dataset, long dayStart, Set<Long> routes, java.util.function.BooleanSupplier cancelled) {
 		final SimScope scope = SimScope.of(dataset, routes);
-		final DayRun dayRun = DayRun.run(scope.dataset, dayStart, routes, Collections.emptyList(), cancelled);
+		// Its trains aren't the game's: what they do isn't printed into the game's log (0.83.4)
+		final DayRun dayRun = SimLog.quietly(() -> DayRun.run(scope.dataset, dayStart, routes, Collections.emptyList(), cancelled));
 		return dayRun.cancelled ? null : summarize(dayRun);
 	}
 

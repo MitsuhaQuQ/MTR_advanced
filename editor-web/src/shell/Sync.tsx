@@ -28,7 +28,8 @@ export function SyncPanel({ open, onClose, onOpenRoute }: { open: boolean; onClo
       hint={store.connection === "ok" ? tr("已同步 {0}，每 1.5 秒检查一次游戏里的变化。", new Date(store.loadedAt || Date.now()).toLocaleTimeString()) : tr("没有连上游戏。")}>
       {problems.length ? (
         <ul className="m-0 flex list-none flex-col gap-2 p-0">
-          {problems.map((p, i) => <Problem key={i} problem={p} onClose={onClose} onOpenRoute={onOpenRoute} />)}
+          {/* Keyed by the text: a problem told otherwise (a train's alarm handled) starts with its buttons fresh, not "已发送" */}
+          {problems.map((p, i) => <Problem key={p.level + p.text + "#" + i} problem={p} onClose={onClose} onOpenRoute={onOpenRoute} />)}
         </ul>
       ) : <p className="m-0 text-[13px]">{tr("页面和游戏一致，没有发现问题。")}</p>}
       {turns.length > 0 && (

@@ -1136,7 +1136,7 @@ public class TrainService<T extends PlanTrack> {
 				swapDuty = null;
 				swapAtRail = -1;
 				if (!takeDuty(handle)) {
-					System.out.println("A train couldn't take over the duty it swapped, as its path is gone, and runs its own: " + trainId);
+					SimLog.say("A train couldn't take over the duty it swapped, as its path is gone, and runs its own: " + trainId);
 				}
 				return;
 			}
@@ -1592,7 +1592,7 @@ public class TrainService<T extends PlanTrack> {
 						.append(rails != null && !vehicle.isTurnBackFree(rails) ? " TAKEN" : "").append(wayRails != null && !vehicle.isWayClear(wayRails) ? " WAY HELD" : "")
 						.append(isRailWay(newPath, turnBacks.getStop(newPath == null ? null : newPath.turnBackStops, point), turnBackPoint.getLength(way)) ? " rail" : " platform").append("]");
 			}
-			System.out.println("Turn back: train " + trainId + " at stop " + stopIndex + " point " + point + " planned wait " + plannedWait + " chose " + chosenWay + (chosenWay == turnBackPoint.defaultWay ? " (default)" : "") + ";" + ways + " trip " + tripKey);
+			SimLog.say("Turn back: train " + trainId + " at stop " + stopIndex + " point " + point + " planned wait " + plannedWait + " chose " + chosenWay + (chosenWay == turnBackPoint.defaultWay ? " (default)" : "") + ";" + ways + " trip " + tripKey);
 		}
 		if (chosenWay < 0) {
 			return true;
@@ -1997,7 +1997,7 @@ public class TrainService<T extends PlanTrack> {
 		final HoldReason reason = nextPath == null || nextPath.path.isEmpty() ? HoldReason.NO_DUTY : nextPath.path.get(0).getStopId() != path.get(path.size() - 1).getStopId() ? HoldReason.OTHER_PLATFORM : depot.hasDutyRun(slotSidingId, nextSlot, dayNumber) ? HoldReason.ALREADY_RUN : null;
 		if (reason != null) {
 			if (overnightHold != reason) {
-				System.out.println("A train staying on the line overnight has no duty starting where it is (" + reason + "), and waits there: " + key);
+				SimLog.say("A train staying on the line overnight has no duty starting where it is (" + reason + "), and waits there: " + key);
 			}
 			overnightHold = reason;
 			return;
@@ -2210,7 +2210,7 @@ public class TrainService<T extends PlanTrack> {
 		final DutyHandle standingDuty = standing.getDutyHandle(standingSegment);
 		final DutyHandle behindDuty = behind.getDutyHandle(behindSegment);
 		final int behindRail = behind.tripPath.dutyStarts[behindSegment];
-		System.out.println("Trains out of order for a stop swap the rest of their duties: " + standing.trainId + " (slot " + standingDuty.slot + ", rail " + standingDuty.rail + ", service " + standing.getSegmentServiceMillis(standingSegment) + ") takes on the duty of " + behind.trainId + " (slot " + behindDuty.slot + ", rail " + behindRail + " ahead of " + behind.vehicle.getNextStoppingIndex() + ", service " + behind.getSegmentServiceMillis(behindSegment) + ") from its segment " + behindSegment + " there now, and the other way round from segment " + standingSegment + " on getting there; now " + standing.clock.getAsLong());
+		SimLog.say("Trains out of order for a stop swap the rest of their duties: " + standing.trainId + " (slot " + standingDuty.slot + ", rail " + standingDuty.rail + ", service " + standing.getSegmentServiceMillis(standingSegment) + ") takes on the duty of " + behind.trainId + " (slot " + behindDuty.slot + ", rail " + behindRail + " ahead of " + behind.vehicle.getNextStoppingIndex() + ", service " + behind.getSegmentServiceMillis(behindSegment) + ") from its segment " + behindSegment + " there now, and the other way round from segment " + standingSegment + " on getting there; now " + standing.clock.getAsLong());
 		standing.depot.expectLate(standing.trainId, 0, 0, 0);
 		behind.depot.expectLate(behind.trainId, 0, 0, 0);
 		if (!standing.takeDuty(behindDuty)) {
