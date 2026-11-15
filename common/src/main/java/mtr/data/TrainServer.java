@@ -747,8 +747,15 @@ public class TrainServer extends Train {
 			routeId = 0;
 			// A trip ending with a loop only comes round again on the loop, so the rest of the trip must not be counted twice
 			final boolean startsOver = isRepeat() && !service.isOnTrip();
+			// Out on a duty, the train tells its current service only: the later ones are told by the plan, at the timetable's
+			// intervals (PidsSchedules, 0.83.16). Its path holds the whole day's services, and estimating them by running time
+			// alone left out the layovers, so a train's next laps showed minutes apart and moved every few seconds
+			final int tripEndRail = getTripEndRail();
 			for (int i = startingIndex; i < timeSegments.size() + (startsOver ? timeSegments.size() : 0); i++) {
 				final TimeSegment timeSegment = timeSegments.get(i % timeSegments.size());
+				if (i > startingIndex && i < timeSegments.size() && getSegmentIndex(timeSegment) >= tripEndRail) {
+					break;
+				}
 
 				if (timeSegment.savedRailBaseId != 0) {
 					if (timeSegment.routeId == 0) {
@@ -1600,6 +1607,16 @@ public class TrainServer extends Train {
 		syncRepeatIndices = syncRepeatIndices || repeatIndex1 != newRepeatIndex1 || repeatIndex2 != newRepeatIndex2;
 		repeatIndex1 = newRepeatIndex1;
 		repeatIndex2 = newRepeatIndex2;
+	}
+
+	/**
+	 * @return for a train out on a duty, the rail where its next segment starts, up to which it tells displays its arrivals;
+	 * else past the end of its path
+	 */
+	private int getTripEndRail() {
+		final transitsim.plan.TripPath<PathData> tripPath = isOnRoute && service.isOnDuty() ? service.getTripPath() : null;
+		final int next = service.getDutyIndex() + 1;
+		return tripPath == null || tripPath.path.size() != path.size() || next < 1 || next >= tripPath.dutyStarts.length ? Integer.MAX_VALUE : tripPath.dutyStarts[next];
 	}
 
 	/**

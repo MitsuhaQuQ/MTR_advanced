@@ -26,7 +26,7 @@
 - `occupancy`（`Occupancy`）与 `trainPositions = occupancy.getTicks()`（两个 tick 的占用）。
 - `liveSimulation`、`motionEvents`、`lastMotionEvents`、`deadlockedTrains`（D2）、`failedDepots`。
 - `tickCompensator`、`playerLastUpdatedPositions`、`playersToSyncSchedules`、`updateNearbyTrains`、`updateNearbyLifts`。
-- `schedulesForPlatform` / `lastSchedulesForPlatform`、`stationCalls`、`plannedPidsArrivals`、`pidsSlowToldMillis`、`trainDelays`。
+- `schedulesForPlatform` / `lastSchedulesForPlatform`、`stationCalls`、`pidsSchedules`（`PidsSchedules` 实例，0.83.16）、`pidsSlowToldMillis`、`trainDelays`。
 - 地图同步：`lastMapRailsRequestMillis`、`lastMapRouteRequestMillis`、`pendingMapEntries`（玩家 → 种类 → 键 → 载荷）、`mapGraph`。
 - `prevPlatformCount`、`prevSidingCount`、`useTimeAndWindSync`。
 
@@ -92,7 +92,7 @@
   7. 各车厂 `deployTrain`（失败只记一次日志、不影响其他）。
   8. 电梯、冷却/驾驶/轨道动作/寻路模块、`pathRegionSync`。
   9. 每 `TRACK_SECTIONS_CHECK_TICKS`：`graphRecords.update`（第 1 轮）、`routePaths.updateOwners`（第 2 轮）、`TrackOwnersPackets.sendAllIfChanged`（网页图层第 2 步）。
-  10. 同步附近列车/电梯；每 `SCHEDULE_UPDATE_TICKS` 把所有玩家加入时刻同步队列，每 tick 处理一人：附近站台的显示时刻（`PidsSchedules`，慢于 50ms 时每分钟最多报告一次）、全部信号闭塞状态、附近轨道占用、已被占的闭塞分区（`PACKET_UPDATE_SCHEDULE`）。
+  10. 同步附近列车/电梯；每 `SCHEDULE_UPDATE_TICKS` 把所有玩家加入时刻同步队列，每 tick 处理一人：附近站台的显示时刻（`PidsSchedules.forDisplay` 合并实时与计划；计划每 3 秒用时由 `refreshPidsSchedules` 合成一次，慢于 50ms 时每分钟最多报告一次）、全部信号闭塞状态、附近轨道占用、已被占的闭塞分区（`PACKET_UPDATE_SCHEDULE`）。
   11. 站台/停车线数量变化时 `dataCache.sync()`。
   12. 每 `AUTO_DUTIES_CHECK_TICKS`：`updateLockNetworks`；填入时刻表最低性能（第 3 轮，打印并发送线路）；报告站台短于列车的停站（第 3b 轮）；报告车辆慢于时刻表的线路；区段与所有者就绪后按 `LineDuties.unitsOf` 让车厂排队找路（第 5 轮第 3 步）。
   13. `railwayDataPathGenerationModule.startQueued`。
@@ -184,13 +184,16 @@
 - 让附近列车同步器下次给该玩家发完整快照。调用者：`MTR.java:481`。
 
 ### `public void getSchedulesForStation(Map<Long, List<ScheduleEntry>> out, long stationId)`
-- 把该车站各站台的时刻填入。调用者：`ArrivalsServletHandler.java:42`。
+- 把该车站各站台的时刻填入，与显示屏相同（0.83.16，`PidsSchedules.forDisplay`；网页线程调用，只读上次算好的计划）。调用者：`ArrivalsServletHandler.java:42`。
 
 ### `public List<ScheduleEntry> getSchedulesAtPlatform(long platformId)`
-- 返回（0.65.31）：其他模组得到的到站：只有在此停车且尚未到达的列车（`ScheduleEntry.forOtherMods`）。本模组自己用 `getAllSchedulesAtPlatform`。调用者：本仓库内无（对外 API）。
+- 返回（0.65.31）：其他模组得到的到站：只有在此停车且尚未到达的列车（`ScheduleEntry.forOtherMods`），取自 `getAllSchedulesAtPlatform`（0.83.16 起含按计划的后续班次）。本模组自己用 `getAllSchedulesAtPlatform`。调用者：本仓库内无（对外 API）。
 
 ### `public List<ScheduleEntry> getAllSchedulesAtPlatform(long platformId)`
-- 所有到站，含通过与计划的。调用者：`BlockTrainScheduleSensor.java:173`、`RailwayDataRouteFinderModule.java:192`。
+- 所有到站，含通过与计划的：列车自己报的当前班次加 `PidsSchedules` 的后续班次（0.83.16，过期时先 `refreshPidsSchedules`），无则 null。调用者：`BlockTrainScheduleSensor.java:173`、`RailwayDataRouteFinderModule.java:192`。
+
+### `private void refreshPidsSchedules(long now)`
+- 计划过期（每 `SCHEDULE_UPDATE_TICKS` 标记）时调 `PidsSchedules.refresh`，超过 `PIDS_SLOW_MILLIS` 每分钟最多写一条日志（0.83.16）。
 
 ### `void addStationCall(StationCall call)` / `public List<StationCall> getStationCalls(BlockPos pos)`
 - 记录本 tick 的站停；按位置找附近站台（半径 4）返回其站停。调用者：`TrainServer.java:778`、`BlockTrainScheduleSensor.java:162`。

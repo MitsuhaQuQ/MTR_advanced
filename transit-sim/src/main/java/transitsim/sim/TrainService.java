@@ -2398,6 +2398,20 @@ public class TrainService<T extends PlanTrack> {
 	}
 
 	/**
+	 * @return the segment of its duty the train is on, for passenger displays telling its later services by the plan (0.83.16)
+	 */
+	public int getDutyIndex() {
+		return dutyIndex;
+	}
+
+	/**
+	 * @return when the operating day of its duty started, as a full timestamp
+	 */
+	public long getDutyDayStart() {
+		return dutyDayStart;
+	}
+
+	/**
 	 * @return the siding whose slot the train's duty is
 	 */
 	public long getDutySidingId() {

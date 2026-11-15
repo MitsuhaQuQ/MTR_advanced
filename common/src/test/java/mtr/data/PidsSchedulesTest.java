@@ -6,12 +6,14 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.FriendlyByteBuf;
 import org.junit.jupiter.api.Test;
 import transitsim.plan.DepotDuties;
+import transitsim.plan.DisplayArrivals;
 import transitsim.plan.DutyPlan;
 import transitsim.plan.DutyShapes;
 import transitsim.plan.OperatingDay;
 import transitsim.plan.StopTimes;
 import transitsim.plan.TripPath;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
@@ -73,29 +75,46 @@ class PidsSchedulesTest {
 		final DutyPlan<PathData, SavedRailBase> plan = new DutyPlan<>(key, Collections.singletonList(route.id), Collections.emptyMap(), Collections.emptyMap(), Collections.emptyMap(), rails, starts, null, null, false, false);
 		paths.put(key, TripPath.ofDuty(plan, starts, rails, StopTimes.of(new long[]{0, 10, 0, 20}, new long[]{1, 11, 100, 100}, new long[]{2, 12, 200, 220})));
 
-		final Map<Long, PidsSchedules.PlannedArrival> arrivals = PidsSchedules.nextArrivals(Collections.singleton(depot), cache, now);
-		assertEquals(service, PidsSchedules.forDisplay(null, arrivals.get(10L), now).get(0).arrivalMillis);
-		assertFalse(arrivals.containsKey(11L));
-		assertEquals(service + 10000, PidsSchedules.forDisplay(null, arrivals.get(12L), now).get(0).arrivalMillis);
+		final Map<Long, List<DisplayArrivals.Arrival>> arrivals = planned(depot, cache, now, 1);
+		assertEquals(service, arrivals.get(10L).get(0).estimateMillis);
+		// The pass told as a pass, at the platform the path has for it
+		assertTrue(arrivals.get(11L).get(0).stop.pass);
+		assertEquals(service + 10000, arrivals.get(12L).get(0).estimateMillis);
+		// No train in the depot for it: not told
+		assertTrue(planned(depot, cache, now, 0).isEmpty());
+		// Suspended as an edit does it, as a new revision
 		route.timetable.suspended.add(timeOfDay);
-		assertTrue(PidsSchedules.nextArrivals(Collections.singleton(depot), cache, now).isEmpty());
+		route.timetable.revision++;
+		assertTrue(planned(depot, cache, now, 1).isEmpty());
+	}
+
+	private static Map<Long, List<DisplayArrivals.Arrival>> planned(Depot depot, DataCache cache, long now, int idleTrains) {
+		final List<PidsSchedules.Built> built = PidsSchedules.build(PidsSchedules.gather(Collections.singleton(depot), cache, now));
+		final List<DisplayArrivals.Duty> duties = new ArrayList<>();
+		final Map<Object, Integer> idle = new HashMap<>();
+		built.forEach(each -> {
+			duties.add(each.duty);
+			idle.put(each.duty.pool, idleTrains);
+		});
+		return DisplayArrivals.compute(duties, Collections.emptyList(), idle, duty -> false, now, now + OperatingDay.MILLIS_PER_DAY).arrivals;
 	}
 
 	@Test
-	void theNextDutyFillsTheGapAndIsReplacedByLiveArrival() {
-		final Depot depot = new Depot(1, TransportMode.TRAIN);
+	void plannedArrivalsFillTheGapsAndTheTrainsOwnReplaceThem() {
 		final ScheduleEntry plan = new ScheduleEntry(120000, 8, 2, 0, 0, false, 120000, true, false);
-		final PidsSchedules.PlannedArrival pending = new PidsSchedules.PlannedArrival(plan, depot, 3, 0, 1);
+		final List<ScheduleEntry> planned = Collections.singletonList(plan);
 		final ScheduleEntry standby = new ScheduleEntry(70000, 8, 2, 0, 9, false, 0, false, true);
 		final List<ScheduleEntry> standbyEntries = Collections.singletonList(standby);
-		assertEquals(Collections.singletonList(plan), PidsSchedules.forDisplay(standbyEntries, pending, 60000));
+		assertEquals(Collections.singletonList(plan), PidsSchedules.forDisplay(standbyEntries, planned, 60000));
 		assertEquals(Collections.singletonList(standby), standbyEntries);
-		assertTrue(PidsSchedules.forDisplay(null, pending, 120000).isEmpty());
+		assertTrue(PidsSchedules.forDisplay(null, planned, 120000).isEmpty());
 
+		// The train's own estimate of the same service, by route, stop and planned time, in place of the plan's
 		final ScheduleEntry live = new ScheduleEntry(130000, 8, 2, 0, 9, false, 120000);
-		assertEquals(Collections.singletonList(live), PidsSchedules.forDisplay(Collections.singletonList(live), pending, 60000));
-		depot.markDutyRun(3, 0, 1);
-		assertTrue(PidsSchedules.forDisplay(null, pending, 60000).isEmpty());
+		assertEquals(Collections.singletonList(live), PidsSchedules.forDisplay(Collections.singletonList(live), planned, 60000));
+		// Another service of the plan stays
+		final ScheduleEntry later = new ScheduleEntry(720000, 8, 2, 0, 9, false, 720000, false, false);
+		assertEquals(Arrays.asList(live, later), PidsSchedules.forDisplay(Collections.singletonList(live), Arrays.asList(plan, later), 60000));
 	}
 
 	@Test

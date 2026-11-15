@@ -114,12 +114,15 @@
 - 作用：服务端一 tick：
   1. 保存环境、设网络（`setNetwork`），记下旧状态；提前折返回空时清空乘客（D4）。
   2. 有模拟器列车时 `showSimulated` + 父类 `simulateTrain`；否则更新过夜状态、补算巡航上限、更新手动许可、父类 `simulateTrain`、`limitToAuthority`、`holdRun`、`service.update`。
-  3. 准备站停（`prepareStationCall`）；从时间段（`TimeSegment.indexAt`，折返间隙用 `gapSegmentIndex`，0.66.7）算出当前时间，遍历之后的段（循环且不在行程上时再一轮）：为每个有站台的段补上线路与站序，按估计与计划（取较晚；正停在此站时用 `ScheduleEntry.standingArrivalMillis`，0.66.4）给站台加入 `ScheduleEntry`；为下一停站加入接近时间的站停；为途经不停的站台加入通过站停；`-Dmtr.debugSchedules` 时每 10 秒打印。
+  3. 准备站停（`prepareStationCall`）；从时间段（`TimeSegment.indexAt`，折返间隙用 `gapSegmentIndex`，0.66.7）算出当前时间，遍历之后的段（循环且不在行程上时再一轮）：为每个有站台的段补上线路与站序，按估计与计划（取较晚；正停在此站时用 `ScheduleEntry.standingArrivalMillis`，0.66.4）给站台加入 `ScheduleEntry`；在线跑运用时只到当前段为止（0.83.16，`getTripEndRail`：运用路径 `dutyStarts[dutyIndex+1]`，所在的那一段总是报），后面的班次由 `PidsSchedules` 按计划给；为下一停站加入接近时间的站停；为途经不停的站台加入通过站停；`-Dmtr.debugSchedules` 时每 10 秒打印。
   4. 释放已过的通过站停；手动/自动切换（冷却达到 `manualToAutomaticTime × 10` 后转自动，并据车门设停站时间）。
   5. 记车门变化（`noteDoorFlip`）、离站时刻与计划、扣车原因序列（0.66.8）。
   6. 检测新运行段（G2）。
 - 返回：是否需要同步给客户端：新运行段、乘客减少、下一停站变化、手动状态变化、刚起步、车门变化、或重复下标变化。
 - 调用者：`Siding.java:1723`。
+
+### `private int getTripEndRail()`
+- 返回（0.83.16）：在线跑运用的列车下一段运用的起点轨道（路径与运用路径长度不符或已是最后一段时为 `Integer.MAX_VALUE`），到站信息只报到它之前。
 
 ### `private RailwayData prepareStationCall(int rail)`
 - 作用：在 ETA 变化与列车停下期间保持同一个站停身份，列车离开时退休。只有在去下一个乘客停站途中的列车可报接近。非在线、回空、越界、非站台轨道或无停站时间、或停留站台不同时清空。新挂上的模拟器在首 tick 前可能已在站内，此时返回 null。停着时补线路并 `addStationCall`。

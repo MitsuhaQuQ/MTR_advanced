@@ -301,7 +301,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	private final Map<Long, List<ScheduleEntry>> schedulesForPlatform = new HashMap<>();
 	private final Map<Long, List<ScheduleEntry>> lastSchedulesForPlatform = new HashMap<>();
 	private final Map<Long, List<StationCall>> stationCalls = new HashMap<>();
-	private Map<Long, PidsSchedules.PlannedArrival> plannedPidsArrivals;
+	private final PidsSchedules pidsSchedules = new PidsSchedules();
 	private long pidsSlowToldMillis;
 	private static final long PIDS_SLOW_MILLIS = 50;
 	private final Map<Long, Map<BlockPos, TrainDelay>> trainDelays = new HashMap<>();
@@ -667,7 +667,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		updateNearbyLifts.tick();
 
 		if (MTR.isGameTickInterval(SCHEDULE_UPDATE_TICKS)) {
-			plannedPidsArrivals = null;
+			pidsSchedules.markStale();
 			players.forEach(player -> {
 				if (!playersToSyncSchedules.contains(player)) {
 					playersToSyncSchedules.add(player);
@@ -701,22 +701,14 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 
 			if (!platformIds.isEmpty() || !signalBlockStatus.isEmpty() || !occupiedRails.isEmpty()) {
 				final long now = System.currentTimeMillis();
-				if (!platformIds.isEmpty() && plannedPidsArrivals == null) {
-					// Worked out on the server thread every few seconds while players are by platforms: said when slow, so it can
-					// be measured on large networks
-					final long startNanos = System.nanoTime();
-					plannedPidsArrivals = PidsSchedules.nextArrivals(depots, dataCache, now);
-					final long tookMillis = (System.nanoTime() - startNanos) / 1000000;
-					if (tookMillis >= PIDS_SLOW_MILLIS && now - pidsSlowToldMillis >= 60000) {
-						pidsSlowToldMillis = now;
-						System.out.println("Minecraft Transit Railway: worked out the planned arrivals for passenger displays in " + tookMillis + " ms");
-					}
+				if (!platformIds.isEmpty()) {
+					refreshPidsSchedules(now);
 				}
 				final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 				packet.writeInt(platformIds.size());
 				platformIds.forEach(platformId -> {
 					packet.writeLong(platformId);
-					final List<ScheduleEntry> scheduleEntries = PidsSchedules.forDisplay(schedulesForPlatform.get(platformId), plannedPidsArrivals.get(platformId), now);
+					final List<ScheduleEntry> scheduleEntries = PidsSchedules.forDisplay(schedulesForPlatform.get(platformId), pidsSchedules.getPlanned(platformId), now);
 					packet.writeInt(scheduleEntries.size());
 					scheduleEntries.forEach(scheduleEntry -> scheduleEntry.writePacket(packet));
 				});
@@ -1366,28 +1358,63 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 
 	public void requestTrainSnapshot(ServerPlayer player) { updateNearbyTrains.requestFullSnapshot(player); }
 
+	/**
+	 * The arrivals at the platforms of a station, as displays have them (0.83.16): asked from the web server's thread, so the
+	 * planned arrivals are taken as last worked out.
+	 */
 	public void getSchedulesForStation(Map<Long, List<ScheduleEntry>> schedulesForStation, long stationId) {
-		schedulesForPlatform.forEach((platformId, schedules) -> {
+		final long now = System.currentTimeMillis();
+		final Set<Long> platformIds = new HashSet<>(schedulesForPlatform.keySet());
+		platformIds.addAll(pidsSchedules.getPlannedPlatforms());
+		platformIds.forEach(platformId -> {
 			final Station station = dataCache.platformIdToStation.get(platformId);
 			if (station != null && station.id == stationId) {
-				schedulesForStation.put(platformId, schedules);
+				final List<ScheduleEntry> entries = PidsSchedules.forDisplay(schedulesForPlatform.get(platformId), pidsSchedules.getPlanned(platformId), now);
+				if (!entries.isEmpty()) {
+					schedulesForStation.put(platformId, entries);
+				}
 			}
 		});
 	}
 
 	/**
 	 * The arrivals at a platform as other mods are given them (0.65.31): only trains stopping there that haven't come
-	 * already ({@link ScheduleEntry#shownToOtherMods}). This mod's own code uses {@link #getAllSchedulesAtPlatform}.
+	 * already ({@link ScheduleEntry#shownToOtherMods}), the later services by the plan as displays have them (0.83.16). This
+	 * mod's own code uses {@link #getAllSchedulesAtPlatform}.
 	 */
 	public List<ScheduleEntry> getSchedulesAtPlatform(long platformId) {
-		return ScheduleEntry.forOtherMods(schedulesForPlatform.get(platformId), System.currentTimeMillis());
+		return ScheduleEntry.forOtherMods(getAllSchedulesAtPlatform(platformId), System.currentTimeMillis());
 	}
 
 	/**
-	 * Every arrival at a platform, passing trains and planned ones too.
+	 * Every arrival at a platform, passing trains and planned ones too: each train's current service as it tells it, and the
+	 * later services by the plan, only those a train will run (0.83.16).
 	 */
 	public List<ScheduleEntry> getAllSchedulesAtPlatform(long platformId) {
-		return schedulesForPlatform.get(platformId);
+		final long now = System.currentTimeMillis();
+		if (pidsSchedules.isStale()) {
+			refreshPidsSchedules(now);
+		}
+		final List<ScheduleEntry> live = schedulesForPlatform.get(platformId);
+		final List<ScheduleEntry> planned = pidsSchedules.getPlanned(platformId);
+		return live == null && planned == null ? null : PidsSchedules.forDisplay(live, planned, now);
+	}
+
+	/**
+	 * Puts the planned arrivals together with the trains as they are now, every few seconds while asked for (0.83.16): the
+	 * duties' stops themselves are worked out on the work threads. Said when slow, so it can be measured on large networks.
+	 */
+	private void refreshPidsSchedules(long now) {
+		if (!pidsSchedules.isStale()) {
+			return;
+		}
+		final long startNanos = System.nanoTime();
+		pidsSchedules.refresh(depots, sidings, dataCache, now);
+		final long tookMillis = (System.nanoTime() - startNanos) / 1000000;
+		if (tookMillis >= PIDS_SLOW_MILLIS && now - pidsSlowToldMillis >= 60000) {
+			pidsSlowToldMillis = now;
+			System.out.println("Minecraft Transit Railway: put the planned arrivals for passenger displays together in " + tookMillis + " ms");
+		}
 	}
 
 	void addStationCall(StationCall call) {

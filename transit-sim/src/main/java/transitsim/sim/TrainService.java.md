@@ -339,6 +339,9 @@
 #### `int getDutySlot()`
 槽位，或 −1。调用者：`Siding.java:753`、`TrainServer.java:795`、`SimulateDay`。
 
+#### `int getDutyIndex()` / `long getDutyDayStart()`
+所在运用段、运用的运营日起点（0.83.16，只读）。调用者：`PidsSchedules.refresh`。
+
 #### `long getDutySidingId()`
 运用槽位所属停车线（`dutySidingId` 为 0 时为自己的）。
 
