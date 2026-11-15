@@ -161,6 +161,10 @@ public final class RunMotion {
 				state.setNextPlatformIndex(state.getNextStoppingIndex());
 				emit(hooks, MotionEvent.Type.DEPARTED, stop);
 			}
+		} else if (state.getSpeed() <= 0 && (state.getDoorValue() > 0 || state.getDoorTarget())) {
+			// Standing away from its stop with its doors not shut: never off with them open, whatever put it there (2026-11-16:
+			// the stop moved from under a standing train, see TickRunner's restore); they shut first
+			state.setManualNotch(-2);
 		} else {
 			// Running, or waiting where its authority ends for it to reach further
 			final double target = Math.min(stopPosition, Math.max(authorityEnd, state.getRailProgress()));

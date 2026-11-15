@@ -341,6 +341,7 @@ public final class SimulateDay {
 			final long step = Long.parseLong(restartsAt) * 1000;
 			int tried = 0;
 			int stuck = 0;
+			int restartViolations = 0;
 			for (long time = runFrom + step; time < runFrom + hours * HOUR; time += step) {
 				simulator.advanceTo(time);
 				final transitsim.sim.RunRecord record = simulator.getRunner().record();
@@ -349,7 +350,23 @@ public final class SimulateDay {
 				}
 				tried++;
 				final EventSimulator<SimDataset.DataTrack> again = EventSimulator.resume(startMillis -> SimDataset.start(startData, startMillis).get(), record, time);
-				again.advanceTo(time + 180000);
+				// With --check, the rules looked at every tick of the restarted run too (0.84.8: trains standing at a stop when
+				// the game started its simulator again moved off with their doors open)
+				final RunInvariants<SimDataset.DataTrack> againInvariants = check ? new RunInvariants<>(again.getRunner()) : null;
+				if (againInvariants == null) {
+					again.advanceTo(time + 180000);
+				} else {
+					// Tick by tick, as the simulator's own after tick hook collects its events
+					for (long tick = time; tick <= time + 180000; tick += 50) {
+						again.advanceTo(tick);
+						againInvariants.check();
+					}
+				}
+				if (againInvariants != null && !againInvariants.getViolations().isEmpty()) {
+					restartViolations++;
+					final String at = clock(time);
+					againInvariants.getViolations().stream().limit(5).forEach(line -> System.out.println("RESTART at " + at + " broken: " + line));
+				}
 				final boolean deadlocked = again.events(0).stream().anyMatch(event -> event.kind == SimEvent.Kind.DEADLOCK);
 				if (deadlocked) {
 					stuck++;
@@ -358,7 +375,7 @@ public final class SimulateDay {
 					}
 				}
 			}
-			System.out.println("RESTART " + stuck + " of " + tried + " restarts deadlocked");
+			System.out.println("RESTART " + stuck + " of " + tried + " restarts deadlocked" + (check ? ", " + restartViolations + " broke rules" : ""));
 		} else if (invariants == null) {
 			simulator.advanceTo(runFrom + hours * HOUR);
 		} else {

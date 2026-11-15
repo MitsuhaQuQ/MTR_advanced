@@ -4,8 +4,9 @@ import java.util.*;
 
 /**
  * Checks a run as it goes for what must never happen, whatever the plan and whatever goes wrong on the day (end-to-end
- * check): trains don't appear on or vanish from the line except at their sidings, don't jump, don't overlap, and aren't
- * kept from going on for long. Read only: it changes nothing in the runner.
+ * check): trains don't appear on or vanish from the line except at their sidings, don't jump, don't overlap, don't move
+ * with their doors open (0.84.8, after 0.84.6 trains ran on along a front turn back's platform with their doors open), and
+ * aren't kept from going on for long. Read only: it changes nothing in the runner.
  * <p>
  * Call {@link #check()} after each tick, for example from {@link TickRunner#setAfterTick}. What breaks a rule is kept as a
  * readable line in {@link #getViolations()}; trains kept for long from going on, by a train ahead or waiting for their
@@ -89,6 +90,7 @@ public final class RunInvariants<T extends RunTrack> {
 					}
 				} else {
 					checkMove(millis, train, before, state);
+					checkDoors(millis, train, before, state);
 				}
 				checkStuck(millis, train, before, state);
 			} else if (before != null && before.onRoute && !before.atSiding) {
@@ -131,6 +133,28 @@ public final class RunInvariants<T extends RunTrack> {
 			return;
 		}
 		add(millis, train.id, "jumped", before, state);
+	}
+
+	/**
+	 * Doors are never open while a train moves (0.84.8): not open at any look at a train with speed, and, looked at every
+	 * tick, a train whose doors weren't shut at the end of a tick doesn't move in the next. A turn back moves the head by the
+	 * train's length with the train standing, doors shut, so it counts as moving here too.
+	 */
+	private void checkDoors(long millis, TickRunner<T>.HeadlessTrain train, Seen before, Seen state) {
+		if (state.speed > 0 && (state.doorValue > 0 || state.doorTarget)) {
+			add(millis, train.id, String.format("moves with its doors open (speed %.4f, doors %.3f)", state.speed, state.doorValue), before, state);
+		} else if (millis - before.millis <= transitsim.motion.MotionConstants.MILLIS_PER_TICK && before.doorValue > 0 && (Math.abs(state.offset - before.offset) > 1E-3 || !before.physical.equals(state.physical))) {
+			// Where it is on the track, not along its path: a path changed under a standing train (another way through a turn
+			// back spliced in) moves where it is along the path, but not the train
+			add(millis, train.id, String.format("moved with its doors open (doors %.3f before, %.3f after)", before.doorValue, state.doorValue), before, state);
+		}
+	}
+
+	/**
+	 * @return how many times a train was seen moving with its doors open, among {@link #getViolations()}
+	 */
+	public long countDoorViolations() {
+		return violations.stream().filter(line -> line.contains("with its doors open")).count();
 	}
 
 	private void checkStuck(long millis, TickRunner<T>.HeadlessTrain train, Seen before, Seen state) {
@@ -225,6 +249,9 @@ public final class RunInvariants<T extends RunTrack> {
 		 */
 		private final double offset;
 		private final double length;
+		private final float speed;
+		private final float doorValue;
+		private final boolean doorTarget;
 		private long stillSince;
 
 		private Seen(TickRunner<T>.HeadlessTrain train, long millis) {
@@ -232,6 +259,9 @@ public final class RunInvariants<T extends RunTrack> {
 			stillSince = millis;
 			onRoute = train.isOnRoute();
 			length = train.getTrainCars() * train.getSpacing();
+			speed = train.getSpeed();
+			doorValue = train.getDoorValue();
+			doorTarget = train.getDoorTarget();
 			final List<T> path = train.getPath();
 			if (path.isEmpty()) {
 				atSiding = true;

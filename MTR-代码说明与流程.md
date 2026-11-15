@@ -85,6 +85,12 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.84.9 停站中改了停车位置，列车不再开着门跑（用户 2026-11-16 游戏内“开着门往前跑然后折返出去”，查明不是 0.84.6 的原地停车造成，0.84.1 起就有）：
+- 原因：列车停在站台开着门时，玩家改了这个站台的停车位置（审计日志里 -2、2、5 来回改），游戏随即“从游戏的列车重新开始组件模拟器”。`TickRunner.HeadlessTrain.restore` 原样取回 `railProgress`、按已停时间把门恢复成开着，但新的停车点已经变了：`RunMotion.tick` 的 `findNextStop` 判断它不在站上，就进入行驶分支，门一 tick 一 tick 才关。停车点前移时开着门往前跑到新停车点再停；后移时车已越过停车点，直接取更远的下一站，开着门驶入反向轨道。
+- 修：① `TickRunner` 恢复时 `standAtMovedStop`：停站中途、车头还在停站那条轨道上、停车点却移动了的列车，直接放到新的停车点接着停站（最多挪站台余量那么几格，只在玩家改停车位置后的那次重启发生，是玩家操作的结果）；② `RunMotion.tick` 兜底：不在站上、静止、门没关的列车先关门，关好才起步。
+- 检查：组件 `RunInvariants.checkDoors`/`countDoorViolations`（有速度时门必须关；逐 tick 时上一 tick 门没关的车下一 tick 不能移动，按轨道上的物理位置判断）；`DoorsShutWhileMovingTest`（早高峰、站前折返四种停车位置、停站中途从记录重启）；`StopMovedUnderTrainTest`（停站中途改停车位置再重启，改前 0.84.8 失败：speed 0.01、doors 0.969）；`SimulateDay --restarts@N --check` 逐 tick 检查重启后的运行。Q: 存档副本上 S2 车厂改停车位置重启 12 次：改前 12/12 开门行驶，改后 0。
+- 只改组件（服务端），升第三位。
+
 0.84.8 撤回 0.84.6 的“站前折返掉头后原地停车”（用户 2026-11-16：站前折返出站会开着门往前跑，然后折返出去）：
 - 0.84.6 在组件和游戏里把掉头后出站那一停算成进站位置的镜像，并改了掉头时的定位（`MotionConstants.standsAtStopAfterReversal`、`TickRunner.startUp`、`RunMotion`、`TrainMotion`、`SpeedCurves`、`TrainServer.startUp`、`PathTiming`、`TrackViews`、`Train`、`TripPath`、`TurnTimes`、`RunTrack`）。游戏里列车出站时开着门往前开、再折返出去，比原来更糟。这些文件全部恢复到 0.84.5（断点 `pre-stop-tail-align`），`FrontTurnBackStopTest` 删除，原因另查，查清后再改。
 - 保留“车尾对齐进站端”这个停车位置（`StopPositions.TAIL_AT_ENTRY_END`，站台界面和网页的选项），它只是多一种偏移，不碰掉头。只改服务端规则，升第三位。

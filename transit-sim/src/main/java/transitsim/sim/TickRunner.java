@@ -1947,6 +1947,7 @@ public final class TickRunner<T extends RunTrack> {
 				restoredSegment = null;
 			}
 
+			standAtMovedStop();
 			if (!Float.isNaN(trainRecord.cruiseCap)) {
 				cruiseCap = trainRecord.cruiseCap;
 			} else if (onRoute && speed > 0) {
@@ -1955,6 +1956,25 @@ public final class TickRunner<T extends RunTrack> {
 			}
 			restoreDoors();
 			return true;
+		}
+
+		/**
+		 * A train standing part way through a stop whose stop moved from under it stands at the stop where it is now
+		 * (2026-11-16): a platform's stop position changed while it stood there, and the game started its simulator again
+		 * from its trains. Left where it was, it was away from its stop: it ran on to the stop with its doors open, or, the
+		 * stop now behind it, on through the turn back without turning. Only a train with its head still on the stop's rail,
+		 * so it moves no further than the platform's room; its speed curves have it start from the stop as it is now.
+		 */
+		private void standAtMovedStop() {
+			if (!onRoute || speed > 0 || elapsedDwellTicks <= 0 || nextStoppingIndex < 0 || nextStoppingIndex >= path.size() || path.get(nextStoppingIndex).getDwellTime() <= 0 || isContinuousMovement()) {
+				return;
+			}
+			final double stopDistance = getStopDistance(nextStoppingIndex);
+			final double railStart = nextStoppingIndex == 0 ? 0 : getDistance(nextStoppingIndex - 1);
+			if (Math.abs(stopDistance - railProgress) > 1E-3 && railProgress > railStart && railProgress <= getDistance(nextStoppingIndex) + 1E-3) {
+				railProgress = stopDistance;
+				restoredSegment = null;
+			}
 		}
 
 		/**

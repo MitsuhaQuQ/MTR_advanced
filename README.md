@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.84.9: a train standing at a platform whose stop position is changed no longer drives off with its doors open: it is put at the new stop point to finish its stop, and no train sets off with its doors not shut.
+
 0.84.8: takes back 0.84.6's stopping in place after a front turn-back (trains drove on with their doors open before turning back); the tail-at-entry-end stop position stays.
 
 0.84.7: the web editor's sync to now places the trains of every depot the component drives, as the depot's own place trains does; it left out depots whose duties the server works out.

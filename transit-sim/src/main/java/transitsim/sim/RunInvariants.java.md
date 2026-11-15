@@ -63,3 +63,4 @@
 - 构造函数：从 `HeadlessTrain` 读取上述值；路径为空时视为在停车线。
 - `toString()`：`"on|off 轨道 at 偏移"`。
 - 2026-11-15 `Seen.leavingSiding`：车尾还在路径开头的存车线里时新上线不算“appeared on the line away from its siding”（隔几秒看一次时，车头可能已出存车线）。
+- 2026-11-16（0.84.9）`checkDoors`、`countDoorViolations`：有速度时门必须关；逐 tick 时门没关的车下一 tick 不能在轨道上移动（按物理位置）。

@@ -51,3 +51,4 @@
 ### `private static void emit(MotionHooks hooks, MotionEvent.Type type, int rail)`
 直接转发 `hooks.emit`（与 `TrainMotion` 不同，不判断客户端）。调用者：`tick`、`follow`。
 - 0.83.8 `tick` 在站开车还要门已关好（这刻不开门且门值为 0）：总时长中途变短时先关门再走，剩余发车时间算上关门时间。测试 `PlatformDwellTest.aTrainWhoseStopTimeDropsShutsItsDoorsBeforeLeaving`。
+- 2026-11-16（0.84.9）`tick`：不在站上、静止、门没关的列车先关门（`setManualNotch(-2)`），关好才起步：停车点从停着的车下面移走时不再开着门跑。
