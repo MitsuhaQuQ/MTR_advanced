@@ -36,6 +36,7 @@
 - 作用：在数据副本上把单元内每个车厂的停车线运用替换为 `slots` 中对应部分，对单元所有路线模拟一天并返回统计。
 
 ### `private static void addPlatformNode(Map<Long, Long> platformNodes, SimDataset.DataTrack track)`
+（0.84.0 起调用方也遍历存车线的 `turnBackWays`。）
 站台轨道（有 stop ID）时记录站台 → 轨道起点节点（首次出现为准）。
 
 ### `private static Unit unitOf(SimDataset dataset, long depotId)`

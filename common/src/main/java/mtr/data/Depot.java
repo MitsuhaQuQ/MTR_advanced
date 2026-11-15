@@ -1462,6 +1462,19 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 				}
 				lines.add(" rails" + rails);
 			});
+			// The other ways round the duties' turn back points, each once (0.84.0)
+			final List<List<mtr.path.PathData>> ways = siding.getTurnBackWays();
+			for (int i = 0; i < ways.size(); i++) {
+				final StringBuilder rails = new StringBuilder();
+				for (final mtr.path.PathData pathData : ways.get(i)) {
+					rails.append(' ').append(pathData.startingPos.toShortString().replace(" ", "")).append('>').append(pathData.getLastPos().toShortString().replace(" ", ""));
+					if (pathData.getDwellTime() > 0) {
+						rails.append('@').append(pathData.getStopId()).append('/').append(pathData.getDwellTime());
+					}
+				}
+				lines.add("turn back way " + i);
+				lines.add(" rails" + rails);
+			}
 		}
 		try {
 			final java.nio.file.Path file = java.nio.file.Paths.get(folder, "depot-" + id + ".txt");
@@ -1830,8 +1843,12 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		final Set<String> found = new TreeSet<>();
 		mainPaths.forEach(mainPath -> mainPath.sidings.forEach(siding -> {
 			final double trainLength = siding.getTrainLength();
-			siding.getTripPaths().values().forEach(tripPath -> transitsim.plan.TurnBackLengths.find(tripPath.path, pathData -> pathData.rail != null && pathData.rail.railType == RailType.TURN_BACK, trainLength).forEach(shortTurnBack -> {
-				final mtr.path.PathData pathData = tripPath.path.get(shortTurnBack.rail);
+			final List<List<mtr.path.PathData>> paths = new ArrayList<>();
+			siding.getTripPaths().values().forEach(tripPath -> paths.add(tripPath.path));
+			// The other ways round the duties' turn back points, which no kept path has any more (0.84.0)
+			paths.addAll(siding.getTurnBackWays());
+			paths.forEach(path -> transitsim.plan.TurnBackLengths.find(path, pathData -> pathData.rail != null && pathData.rail.railType == RailType.TURN_BACK, trainLength).forEach(shortTurnBack -> {
+				final mtr.path.PathData pathData = path.get(shortTurnBack.rail);
 				found.add("(" + pathData.getLastPos().getX() + ", " + pathData.getLastPos().getY() + ", " + pathData.getLastPos().getZ() + ") " + Math.round(shortTurnBack.length) + " blocks for trains of " + Math.round(trainLength));
 			}));
 		}));

@@ -44,9 +44,10 @@ public final class SimDataset {
 	 * and the sidings' pools, version 6 the routes' own fastest times (L1), version 7 the sidings' pools across the depots of
 	 * an operating line, version 8 the routes' operating lines; version 13 the sidings' ways for turning back early (D4);
 	 * version 14 their ways out to where segments of their duties start (D5); version 15 the
-	 * highest speed of their vehicles; version 20 the depots' adopted buffers; older data is read without them.
+	 * highest speed of their vehicles; version 20 the depots' adopted buffers; version 21 the sidings' other ways round the turn back points of
+	 * their duties (0.84.0); older data is read without them.
 	 */
-	public static final int VERSION = 20;
+	public static final int VERSION = 21;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -159,6 +160,12 @@ public final class SimDataset {
 			final List<Long> added = depot.addedBuffers.toList();
 			writer.writeVarInt(added.size());
 			added.forEach(writer::writeLong);
+		});
+		sidings.forEach(siding -> {
+			writer.writeVarInt(siding.turnBackWays.size());
+			siding.turnBackWays.forEach(way -> writeTracks(writer, way));
+			writer.writeVarInt(siding.turnBackWayPoints.size());
+			siding.turnBackWayPoints.forEach(values -> writeLongs(writer, values));
 		});
 		return writer.toBytes();
 	}
@@ -299,6 +306,16 @@ public final class SimDataset {
 				depot.addedBuffers = transitsim.plan.Buffers.fromList(added);
 			}
 		}
+		if (version >= 21) {
+			for (final SidingData siding : dataset.sidings) {
+				for (int i = reader.readVarInt(); i > 0; i--) {
+					siding.turnBackWays.add(readTracks(reader));
+				}
+				for (int i = reader.readVarInt(); i > 0; i--) {
+					siding.turnBackWayPoints.add(readLongs(reader));
+				}
+			}
+		}
 		return dataset;
 	}
 
@@ -318,6 +335,7 @@ public final class SimDataset {
 			siding.turnLinks.values().forEach(apply);
 			siding.turnReturns.values().forEach(apply);
 			siding.wayOuts.values().forEach(apply);
+			siding.turnBackWays.forEach(apply);
 		});
 	}
 
@@ -438,8 +456,15 @@ public final class SimDataset {
 			sidingData.tripPaths.forEach(tripPath -> newTripPaths.add(new TripPath<>(new BinaryKeyed.Reader(new ByteArrayBinary.Reader(tripPath.values)), tripPath.path)));
 			WorkPool.forEach(newTripPaths, newTripPath -> newTripPath.generateTimes(generator));
 			newTripPaths.forEach(newTripPath -> siding.tripPaths.put(newTripPath.key, newTripPath));
+			// The other ways round its duties' turn back points, from which a train's path taking one is made (0.84.0)
+			final transitsim.plan.TurnBackWayStore<DataTrack> turnBackWays = transitsim.plan.TurnBackWayStore.of(sidingData.turnBackWayPoints, sidingData.turnBackWays);
 			// Its trains time a path passing stops the way its other paths were timed (D3)
 			siding.pathVariants = new transitsim.plan.PathVariants<DataTrack>() {
+				@Override
+				public transitsim.plan.TurnBackWayStore<DataTrack> getTurnBackWays() {
+					return turnBackWays;
+				}
+
 				@Override
 				public DataTrack pass(DataTrack track) {
 					return track.passed();
@@ -499,6 +524,8 @@ public final class SimDataset {
 			lockNetworks.addDepot(siding.depotId, byDuties.get(siding.depotId));
 			lockNetworks.addPath(siding.depotId, nodesOf(siding.path));
 			siding.tripPaths.forEach(tripPath -> lockNetworks.addPath(siding.depotId, nodesOf(tripPath.path)));
+			// Each other way round a turn back point once, as no kept path has it any more (0.84.0)
+			siding.turnBackWays.forEach(way -> lockNetworks.addPath(siding.depotId, nodesOf(way)));
 		});
 		return lockNetworks;
 	}
@@ -980,6 +1007,12 @@ public final class SimDataset {
 		 * The highest speed of its vehicles, in blocks per tick, or 0 for none.
 		 */
 		public float vehicleMaxSpeed;
+		/**
+		 * The other ways round the turn back points of its duties, each once, and which of them each point's ways are, as
+		 * {@link transitsim.plan.TurnBackWayStore#getPointValues} gives them (SimDataset 21, 0.84.0).
+		 */
+		public final List<List<DataTrack>> turnBackWays = new ArrayList<>();
+		public final List<long[]> turnBackWayPoints = new ArrayList<>();
 
 		public void addTurnLink(long fromPlatformId, long toPlatformId, List<DataTrack> tracks) {
 			turnLinks.put(new long[]{fromPlatformId, toPlatformId}, tracks);

@@ -1449,6 +1449,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 归属图按线路图画（0.83.7）：只在网页 `core/abstractNet.ts` 与 `views/NetworkSchematic.tsx`，组件和游戏不变。
 
+站前折返的另一种走法按需拼接（0.84.0）：规则进组件——`plan.TurnBackWayStore`（每种走法存一次）、`TripPath.withTurnBackWay`（原游戏 `Siding.DutyBody` 的拼接和停站轨道平移）、`TrainService.getPath`（按键取路径的唯一入口，现做并缓存）、`PathVariants.getTurnBackWays`/`indexDuty`、`SimDataset` 21；游戏 `Siding` 只收集走法、存档、交给组件，不再生成每点每走法的整份路径。两边的列车都走 `TrainService`，`FrontTurnBackRunTest` 比较整份保存与按需拼接、跳 tick、从记录接着跑。
+
 显示屏后续班次按时刻表（0.83.16）：新组件 `plan.DisplayArrivals`（运用的计划停站、晚点逐站传递、哪些运用有车会跑），`TrainService` 只加 `getDutyIndex`/`getDutyDayStart` 查询，运行规则不变；游戏 `PidsSchedules`/`TrainServer`/`RailwayData` 只做收集和转换。
 
 自动找的折返线只要站后连通的（0.83.15）：只在游戏 `DutyPathBuilder.getTurnBackNodesBeyond`，组件 `NearbyTurnBacks` 不变。

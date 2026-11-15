@@ -16,6 +16,9 @@
 ### `private PathPieces()`
 工具类，禁止实例化。
 
+### `public static String contentKey(List<PathData> rails)`（0.84.0）
+- 返回：轨道列表编码的 Base64，停站序号相对第一根轨道；两条走法一样的轨道列表相同，与各自的停站序号无关。`Siding` 给 `TurnBackWayStore.Builder` 作签名，运用折返点的另一种走法每种只存一次。私有 `signatureFrom(rails, stopBase)` 是共同的编码。
+
 ### `private static String signature(List<PathData> rails)`
 - 返回：轨道列表编码（起始序号 0）的 Base64，作为 `IndexedPath` 的签名。
 

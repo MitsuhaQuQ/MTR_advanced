@@ -1243,8 +1243,26 @@ final class DutyPathBuilder {
 		// Nearer the stop before first: the end trains come in by
 		final List<BlockPos> ends = platform.getOrderedPositions(previous == null ? platform.getMidPos() : previous.getMidPos(), false);
 		final Set<BlockPos> reached = new HashSet<>();
+		// The stop before's platform is never passed, nor another platform of the station: a way through one is back towards
+		// or round into the station, not past it (0.84.0)
+		final Set<BlockPos> neverPassed = new HashSet<>();
+		if (previous != null) {
+			neverPassed.addAll(previous.getOrderedPositions(previous.getMidPos(), false));
+		}
+		final Station station = dataCache.platformIdToStation.get(platform.id);
+		if (station != null) {
+			dataCache.platformIdToStation.forEach((platformId, platformStation) -> {
+				final Platform other = platformStation == station && platformId != platform.id ? dataCache.platformIdMap.get(platformId) : null;
+				if (other != null) {
+					neverPassed.addAll(other.getOrderedPositions(other.getMidPos(), false));
+				}
+			});
+		}
 		for (int i = previous == null ? 0 : 1; i < ends.size(); i++) {
-			reached.addAll(reachedFrom(ends.get(i), platform.getOtherPosition(ends.get(i)), rails));
+			final Set<BlockPos> blocked = new HashSet<>(neverPassed);
+			blocked.add(platform.getOtherPosition(ends.get(i)));
+			blocked.remove(ends.get(i));
+			reached.addAll(reachedFrom(ends.get(i), blocked, rails));
 		}
 		nearby.removeIf(node -> !reached.contains(node));
 		return nearby;
@@ -1256,9 +1274,13 @@ final class DutyPathBuilder {
 	static final int BEYOND_BLOCKS = 400;
 
 	/**
-	 * @return the nodes reached from a platform's end along the rails, not back over the platform, within {@link #BEYOND_BLOCKS}
+	 * @param blocked nodes never passed: the platform's other end, so the search comes back to the platform neither over it
+	 *                nor round through a crossover within the limit (0.84.0; 0.83.15 only left out the platform rail itself),
+	 *                and the ends of the stop before's platform
+	 * @return the nodes reached from a platform's end along the rails, not back over or round to the platform, within
+	 * {@link #BEYOND_BLOCKS}
 	 */
-	private static Set<BlockPos> reachedFrom(BlockPos end, BlockPos platformOther, Map<BlockPos, Map<BlockPos, Rail>> rails) {
+	static Set<BlockPos> reachedFrom(BlockPos end, Set<BlockPos> blocked, Map<BlockPos, Map<BlockPos, Rail>> rails) {
 		final Map<BlockPos, Double> distance = new HashMap<>();
 		final PriorityQueue<Object[]> queue = new PriorityQueue<>(Comparator.comparingDouble(entry -> (Double) entry[1]));
 		distance.put(end, 0.0);
@@ -1275,7 +1297,7 @@ final class DutyPathBuilder {
 				continue;
 			}
 			next.forEach((to, rail) -> {
-				if (node.equals(end) && to.equals(platformOther)) {
+				if (blocked.contains(to)) {
 					return;
 				}
 				final double total = soFar + rail.getLength();

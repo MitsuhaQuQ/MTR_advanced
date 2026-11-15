@@ -35,3 +35,12 @@
 - 作用（D5）：从停车线出到某站台的路径，该站台是运用中某一段的起点；用于接手运用余下部分或晚发车的列车。
 - 返回值：默认 null。
 - 主要调用者：`transitsim/plan/TripPath.java:494`。
+
+### `default TurnBackWayStore<T> getTurnBackWays()`
+- 作用（0.84.0）：存车线运用折返点的另一种走法表（每种走法只存一次，见 `TurnBackWayStore.java.md`），`TripPath.withTurnBackWay` 由它和运用常规路径拼出车要走的路径。
+- 返回值：默认 null（没有）。游戏 `Siding` 返回自己的 `turnBackWays`，组件 `SimDataset.buildRunner` 返回由 `SidingData.turnBackWays`/`turnBackWayPoints` 建的表。
+- 主要调用者：`TripPath.withTurnBackWay`、`TrainService.getPath`（缓存校验）、`TickRunner.getBlockSections`。
+
+### `default List<T> indexDuty(List<T> path, int[] dutyStarts, int[] boundaries)`
+- 作用（0.84.0）：让宿主按自己的方式保存组件拼出的运用路径（停站编号、存档切块）。默认原样返回。游戏 `Siding` 用 `PathPieces.indexDuty(path, boundaries, dutyStarts[0])`，与 `addDutyTripPath` 相同，所以拼出的路径和以前整份保存的逐项相同。
+- 主要调用者：`TripPath.withTurnBackWay`。

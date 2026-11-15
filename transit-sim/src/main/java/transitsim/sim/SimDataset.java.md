@@ -7,7 +7,7 @@
 ## 类 SimDataset（final）
 
 ### 常量
-- `VERSION = 19`：数据格式版本。2 加入列车状态（G0），3 信号闭塞区（G1），4 车厂按频率发车与停车线顺序、手动驾驶的停车线（G1），5 发车间隔与停车线池，6 线路自身最快时间（L1），7 跨运营线路车厂的停车线池，8 线路的运营线路，9 线路的终点/起点站台，10 联锁区标志，11 池总车数，12 只按运用发车，13 提前折返路径（D4），14 去运用分段起点的出库路径（D5），15 车辆最高速度，16 站台停车位置，17 早到阈值，18 最快时间多列（每时刻表一对），19 分段索引路径（`IndexedPath`），20 车厂采用的余量（0.75.0，`DepotData.addedBuffers`，`buildRunner` 交给 `DepotBoard.dispatcher.addedBuffers`，出库时按它提前发车）；更旧的数据缺少这些读取。（javadoc 只列到 15，其余由代码推断。）
+- `VERSION = 19`：数据格式版本。2 加入列车状态（G0），3 信号闭塞区（G1），4 车厂按频率发车与停车线顺序、手动驾驶的停车线（G1），5 发车间隔与停车线池，6 线路自身最快时间（L1），7 跨运营线路车厂的停车线池，8 线路的运营线路，9 线路的终点/起点站台，10 联锁区标志，11 池总车数，12 只按运用发车，13 提前折返路径（D4），14 去运用分段起点的出库路径（D5），15 车辆最高速度，16 站台停车位置，17 早到阈值，18 最快时间多列（每时刻表一对），19 分段索引路径（`IndexedPath`），20 车厂采用的余量（0.75.0，`DepotData.addedBuffers`，`buildRunner` 交给 `DepotBoard.dispatcher.addedBuffers`，出库时按它提前发车），21 存车线运用折返点的另一种走法（0.84.0，`SidingData.turnBackWays`/`turnBackWayPoints`，写在最后）；更旧的数据缺少这些读取。（javadoc 只列到 15，其余由代码推断。）
 - `UNLIMITED_TRAINS = 256`：不限车数的停车线最多发出的列车数（与游戏一致）。
 
 ### 字段
@@ -133,6 +133,7 @@
 - `turnLinks`（TreeMap<long[2], List<DataTrack>>，按两站台排序）：路径生成找到的从一个站台到同站另一站台的折返路径（D4）。
 - `turnReturns`（Map<Long, List<DataTrack>>）：从折返到达的站台空车回停车线的路径（D4）。
 - `wayOuts`（Map<Long, List<DataTrack>>）：出库到运用各分段起点站台的路径，供备用车接管和晚发列车使用（D5）。
+- `turnBackWays`（List<List<DataTrack>>）、`turnBackWayPoints`（List<long[]>）：运用折返点的另一种走法，每条一次，和各点用哪条（`TurnBackWayStore.getPointValues` 的格式），版本 21（0.84.0）。`buildRunner` 由它们建 `TurnBackWayStore` 交给存车线 `pathVariants.getTurnBackWays()`；`applyStopPositions`、`getLockNetworks`（每条走法一次）也算上。游戏 `Siding.toSimulation` 填写。
 - `void addTurnLink(long from, long to, List<DataTrack> tracks)` / `List<DataTrack> getTurnLink(long from, long to)` / `Collection<Long> getTurnTargets(long from)`：登记/查询折返路径，列出从某站台出发可折返去的站台。调用者：`Siding.java:1889`、`EarlyTurnTest.java:43`；`buildRunner` 的 `pathVariants`。
 - 构造函数（16 参数）。调用者：`Siding.java:1872`。
 - `write`/`read`（private）：基本字段、路径（`writePath`/`readPath`）、服务路径、折返设置；扩展字段由外层按版本写读。

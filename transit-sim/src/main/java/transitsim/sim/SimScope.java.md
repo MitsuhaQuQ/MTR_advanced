@@ -30,4 +30,4 @@
 反复把与已保留车厂共同运行任一线路的车厂加入 `kept`，直到不再增加。
 
 ### `private static void forEachNode(SimDataset.SidingData siding, LongConsumer consumer)`
-遍历停车线常用路径及所有服务路径中每条轨道的起止节点。
+遍历停车线常用路径及所有服务路径中每条轨道的起止节点。0.84.0 起还有运用折返点的另一种走法（`turnBackWays`）。

@@ -149,8 +149,12 @@
 #### `void setPathVariants(PathVariants<T> newPathVariants)`
 设置变体路径生成器。调用者：`Siding.java:403`、`TrainServer.java:1555`、`TickRunner`。
 
+#### `TripPath<T> getPath(Map<String, TripPath<T>> paths, String key)`（0.84.0）
+- 作用：按键取存车线路径的唯一入口：先查表；没有、有变体生成器、键是 `运用键|点:走法`（`TripPath.getTurnBackPointWay`）且底是运用常规路径时，用 `TripPath.withTurnBackWay` 现做（存车线不再为每个折返点每种走法保存整份路径）。做出的路径按键缓存最近 `TURN_BACK_WAY_PATHS`=4 条（`turnBackWayPaths`，LRU），只在常规路径对象和 `PathVariants.getTurnBackWays()` 都还是同一个时复用，所以 `chooseTurnBack` 在走法都被占、每 tick 重新权衡时不重做。列车回库（`update` 里结束服务）时清空。
+- 调用者：`findPath`（因此跳站、提前折返、中途开始/结束的键套在走法键上也能做，读档 `restoreTripPath` 也能把停在走法键上的车放回）、`chooseTurnBack` 四处、`dispatch`/`handOver`/`turnAt` 取底路径、`canSwap`、`isSwapPair`、`takeDuty`、`updateTripPath`。
+
 #### `TripPath<T> findPath(Map<String, TripPath<T>> paths, String key)`
-- 作用：取该键的路径；没有且有变体生成器时：跳站键由其基础路径 `TripPath.withSkips` 生成（缓存最近一个于 `skipPath`）；变更键（提前折返 turn、从中途开始 from、在中途结束 end，D4/D5）由基础路径 `withTurn`/`withFrom`/`withEnd` 生成（缓存于 `turnPath`）。
+- 作用：取该键的路径（0.84.0 起先经 `getPath`，折返点另一种走法的键也能取到）；没有且有变体生成器时：跳站键由其基础路径 `TripPath.withSkips` 生成（缓存最近一个于 `skipPath`）；变更键（提前折返 turn、从中途开始 from、在中途结束 end，D4/D5）由基础路径 `withTurn`/`withFrom`/`withEnd` 生成（缓存于 `turnPath`）。
 - 返回：路径或 null。
 - 调用者：`Depot.java:3052`、`Depot.java:3072`；本类多处。
 

@@ -140,6 +140,7 @@ public final class PlanCheck {
 		dataset.sidings.forEach(siding -> {
 			siding.path.forEach(track -> addPlatformNode(platformNodes, track));
 			siding.tripPaths.forEach(tripPath -> tripPath.path.forEach(track -> addPlatformNode(platformNodes, track)));
+			siding.turnBackWays.forEach(way -> way.forEach(track -> addPlatformNode(platformNodes, track)));
 		});
 		final List<DutyGenerator.SidingInput> sidings = new ArrayList<>();
 		boolean staysOnLine = false;

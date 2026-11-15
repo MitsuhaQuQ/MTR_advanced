@@ -46,6 +46,19 @@ public final class PathPieces {
 	private PathPieces() {
 	}
 
+	/**
+	 * @return the content of rails as the pieces of paths are told apart, their stop numbers from the first one's: the same
+	 * for two ways a train runs the same (0.84.0, the other ways round turn back points kept once)
+	 */
+	public static String contentKey(List<PathData> rails) {
+		return rails.isEmpty() ? "" : signatureFrom(rails, rails.get(0).stopIndex);
+	}
+
+	private static String signatureFrom(List<PathData> rails, int stopBase) {
+		try { return Base64.getEncoder().encodeToString(encode(rails, 0, rails.size(), stopBase)); }
+		catch (IOException e) { throw new IllegalStateException(e); }
+	}
+
 	private static String signature(List<PathData> rails) {
 		try { return Base64.getEncoder().encodeToString(encode(rails, 0, rails.size(), 0)); }
 		catch (IOException e) { throw new IllegalStateException(e); }

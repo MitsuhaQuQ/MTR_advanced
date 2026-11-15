@@ -126,5 +126,9 @@ public final class SimScope {
 			consumer.accept(track.getStartNode());
 			consumer.accept(track.getEndNode());
 		}));
+		siding.turnBackWays.forEach(way -> way.forEach(track -> {
+			consumer.accept(track.getStartNode());
+			consumer.accept(track.getEndNode());
+		}));
 	}
 }

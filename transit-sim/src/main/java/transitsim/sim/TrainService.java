@@ -202,6 +202,18 @@ public class TrainService<T extends PlanTrack> {
 	 */
 	private TripPath<T> turnPath;
 	/**
+	 * The duty's paths taking another way round a turn back point made lately (0.84.0), by key, with the usual path each was
+	 * made from: the train at a stop before a point weighs each way every tick while they are all taken, and makes each
+	 * once rather than every time.
+	 */
+	private final Map<String, Object[]> turnBackWayPaths = new java.util.LinkedHashMap<String, Object[]>(8, 0.75F, true) {
+		@Override
+		protected boolean removeEldestEntry(Map.Entry<String, Object[]> eldest) {
+			return size() > TURN_BACK_WAY_PATHS;
+		}
+	};
+	private static final int TURN_BACK_WAY_PATHS = 4;
+	/**
 	 * What a dispatcher ordered for the train (D6): {@link #DISPATCH_HOLD} to keep it at its next stop until let go,
 	 * {@link #DISPATCH_CLEAR_OUT} to clear it out at its next stop and take it back empty, {@link #DISPATCH_RETURN} to take
 	 * it back after this segment; the station to turn it back at; and how much longer to stand at a stop.
@@ -546,7 +558,7 @@ public class TrainService<T extends PlanTrack> {
 			dispatchFlags &= ~(DISPATCH_CLEAR_OUT | DISPATCH_RETURN);
 			return false;
 		}
-		final TripPath<T> base = tripPaths.get(baseKey);
+		final TripPath<T> base = getPath(tripPaths, baseKey);
 		if (base == null || base.dutyStarts == null || base.stopTimes.getSegmentEntry(0) < 0) {
 			return false;
 		}
@@ -652,7 +664,7 @@ public class TrainService<T extends PlanTrack> {
 		if (TripPath.isChangedKey(baseKey) || TripPath.isReturnKey(baseKey)) {
 			return false;
 		}
-		final TripPath<T> base = tripPaths.get(baseKey);
+		final TripPath<T> base = getPath(tripPaths, baseKey);
 		final List<DepotDuties.Segment> segments = getDutySegments();
 		if (base == null || base.dutyStarts == null || segments.size() != base.dutyStarts.length || base.stopTimes.getSegmentEntry(0) < 0) {
 			return false;
@@ -818,7 +830,7 @@ public class TrainService<T extends PlanTrack> {
 	 */
 	private boolean turnAt(int mode, Set<Long> platforms, boolean resume, int onlyRail, int stopIndex) {
 		final String baseKey = TripPath.getSkipBase(tripPathKey);
-		final TripPath<T> base = tripPaths.get(baseKey);
+		final TripPath<T> base = getPath(tripPaths, baseKey);
 		if (base == null || base.dutyStarts == null || TripPath.isReturnKey(baseKey)) {
 			return false;
 		}
@@ -921,7 +933,7 @@ public class TrainService<T extends PlanTrack> {
 	 * @return the path with this key among these, or one passing stops of one of them made from its key (D3), or null
 	 */
 	public TripPath<T> findPath(Map<String, TripPath<T>> paths, String key) {
-		final TripPath<T> path = paths.get(key);
+		final TripPath<T> path = getPath(paths, key);
 		if (path != null || pathVariants == null) {
 			return path;
 		}
@@ -941,7 +953,7 @@ public class TrainService<T extends PlanTrack> {
 			if (turnPath != null && turnPath.key.equals(key)) {
 				return turnPath;
 			}
-			final TripPath<T> base = paths.get(TripPath.getTurnBase(key));
+			final TripPath<T> base = getPath(paths, TripPath.getTurnBase(key));
 			final TripPath<T> newPath = base == null ? null : TripPath.isTurnKey(key) ? TripPath.withTurn(base, key, pathVariants) : TripPath.isFromKey(key) ? TripPath.withFrom(base, key, pathVariants) : TripPath.withEnd(base, key, pathVariants);
 			if (newPath != null) {
 				turnPath = newPath;
@@ -949,6 +961,37 @@ public class TrainService<T extends PlanTrack> {
 			return newPath;
 		}
 		return null;
+	}
+
+	/**
+	 * The one way to a path of the siding by its key: the path the siding keeps, or a duty's path taking another way round a
+	 * turn back point, made from the duty's usual path and the way the siding keeps for that point (0.84.0), as the siding
+	 * no longer keeps a whole path for each; or null.
+	 */
+	public TripPath<T> getPath(Map<String, TripPath<T>> paths, String key) {
+		final TripPath<T> path = paths == null || key == null ? null : paths.get(key);
+		if (path != null || pathVariants == null || key == null) {
+			return path;
+		}
+		final int[] pointWay = TripPath.getTurnBackPointWay(key);
+		if (pointWay == null) {
+			return null;
+		}
+		final TripPath<T> base = paths.get(TripPath.getTurnBackBase(key));
+		if (base == null || !base.isDuty()) {
+			return null;
+		}
+		final transitsim.plan.TurnBackWayStore<T> store = pathVariants.getTurnBackWays();
+		final Object[] cached = turnBackWayPaths.get(key);
+		if (cached != null && cached[0] == base && cached[1] == store) {
+			@SuppressWarnings("unchecked") final TripPath<T> cachedPath = (TripPath<T>) cached[2];
+			return cachedPath;
+		}
+		final TripPath<T> newPath = TripPath.withTurnBackWay(base, pointWay[0], pointWay[1], pathVariants);
+		if (newPath != null) {
+			turnBackWayPaths.put(key, new Object[]{base, store, newPath});
+		}
+		return newPath;
 	}
 
 	/**
@@ -1073,6 +1116,7 @@ public class TrainService<T extends PlanTrack> {
 			turnChosenStop = -1;
 			turnUnreachable = false;
 			turnPath = null;
+			turnBackWayPaths.clear();
 			handOverChosenStop = -1;
 			handOverFailure = 0;
 			dispatchChosenStop = -1;
@@ -1512,7 +1556,7 @@ public class TrainService<T extends PlanTrack> {
 		final int plannedWait = plannedDay == null ? DepotDuties.DayDuty.WAIT_ANY : plannedDay.getWait(dutyIndex);
 		for (int way = 0; way < turnBackPoint.getWayCount(); way++) {
 			final boolean isDefaultWay = way == turnBackPoint.defaultWay;
-			final TripPath<T> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : tripPaths.get(TripPath.getTurnBackKey(tripKey, point, way));
+			final TripPath<T> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : getPath(tripPaths, TripPath.getTurnBackKey(tripKey, point, way));
 			if (turnBackPoint.getRails(way) != null && (newPath != null || isDefaultWay && tripKey.isEmpty())) {
 				usableWays.add(way);
 				if (isRailWay(newPath, turnBacks.getStop(newPath == null ? null : newPath.turnBackStops, point), turnBackPoint.getLength(way))) {
@@ -1529,7 +1573,7 @@ public class TrainService<T extends PlanTrack> {
 			final int way = wayOrder[wayIndex];
 			final List<UUID> rails = turnBackPoint.getRails(way);
 			final boolean isDefaultWay = way == turnBackPoint.defaultWay;
-			final TripPath<T> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : tripPaths.get(TripPath.getTurnBackKey(tripKey, point, way));
+			final TripPath<T> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : getPath(tripPaths, TripPath.getTurnBackKey(tripKey, point, way));
 			if (rails == null || newPath == null && !(isDefaultWay && tripKey.isEmpty()) || !vehicle.isTurnBackFree(rails)) {
 				continue;
 			}
@@ -1553,7 +1597,7 @@ public class TrainService<T extends PlanTrack> {
 			final int way = wayOrder[wayIndex];
 			final List<UUID> rails = turnBackPoint.getRails(way);
 			final boolean isDefaultWay = way == turnBackPoint.defaultWay;
-			final TripPath<T> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : tripPaths.get(TripPath.getTurnBackKey(tripKey, point, way));
+			final TripPath<T> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : getPath(tripPaths, TripPath.getTurnBackKey(tripKey, point, way));
 			if (rails == null || newPath == null && !(isDefaultWay && tripKey.isEmpty()) || !vehicle.isTurnBackFree(rails)) {
 				continue;
 			}
@@ -1586,7 +1630,7 @@ public class TrainService<T extends PlanTrack> {
 			for (int way = 0; way < turnBackPoint.getWayCount(); way++) {
 				final List<UUID> rails = turnBackPoint.getRails(way);
 				final boolean isDefaultWay = way == turnBackPoint.defaultWay;
-				final TripPath<T> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : tripPaths.get(TripPath.getTurnBackKey(tripKey, point, way));
+				final TripPath<T> newPath = isDefaultWay ? tripKey.isEmpty() ? null : tripPaths.get(tripKey) : getPath(tripPaths, TripPath.getTurnBackKey(tripKey, point, way));
 				final List<UUID> wayRails = turnBackPoint.getWayRails(way);
 				ways.append(" [way ").append(way).append(isDefaultWay ? " default" : "").append(rails == null ? " no rails" : " rails " + rails.size()).append(newPath == null ? " no path" : "")
 						.append(rails != null && !vehicle.isTurnBackFree(rails) ? " TAKEN" : "").append(wayRails != null && !vehicle.isWayClear(wayRails) ? " WAY HELD" : "")
@@ -2169,7 +2213,7 @@ public class TrainService<T extends PlanTrack> {
 	 * same shape has the same key), not handing over, ordered about or swapping already
 	 */
 	private boolean canSwap() {
-		if (!isOnDuty() || swapDuty != null || takeover || hasDispatch() || tripPath.staysOnLine && isStayingOnLine() || tripPath.dutyStarts == null || tripPaths.get(tripPathKey) == null) {
+		if (!isOnDuty() || swapDuty != null || takeover || hasDispatch() || tripPath.staysOnLine && isStayingOnLine() || tripPath.dutyStarts == null || getPath(tripPaths, tripPathKey) == null) {
 			return false;
 		}
 		return !TripPath.isChangedKey(tripPathKey) && !TripPath.isReturnKey(tripPathKey);
@@ -2203,7 +2247,7 @@ public class TrainService<T extends PlanTrack> {
 			return false;
 		}
 		// Each has the other's path to take over
-		return standing.tripPaths.get(behind.tripPathKey) != null && behind.tripPaths.get(standing.tripPathKey) != null;
+		return standing.getPath(standing.tripPaths, behind.tripPathKey) != null && behind.getPath(behind.tripPaths, standing.tripPathKey) != null;
 	}
 
 	private static <T extends PlanTrack> void swap(TrainService<T> standing, int standingSegment, TrainService<T> behind, int behindSegment) {
@@ -2230,7 +2274,7 @@ public class TrainService<T extends PlanTrack> {
 	 * @return false if its path isn't there any more, when nothing changes
 	 */
 	private boolean takeDuty(DutyHandle handle) {
-		final TripPath<T> path = tripPaths.get(handle.pathKey);
+		final TripPath<T> path = getPath(tripPaths, handle.pathKey);
 		if (path == null || path.dutyStarts == null || handle.segment >= path.dutyStarts.length) {
 			return false;
 		}
@@ -2631,7 +2675,7 @@ public class TrainService<T extends PlanTrack> {
 				return route == null ? null : route.getTimetable();
 			})));
 			// A train that went another way round a turn back point keeps to it, as it may be past the point already
-			final TripPath<T> turnBackPath = newTripPath == null || tripPath == null ? newTripPath : tripPaths.get(TripPath.getTurnBackKey(newTripPath.tripKey, tripPath.turnBackPoint, tripPath.turnBackWay));
+			final TripPath<T> turnBackPath = newTripPath == null || tripPath == null ? newTripPath : getPath(tripPaths, TripPath.getTurnBackKey(newTripPath.tripKey, tripPath.turnBackPoint, tripPath.turnBackWay));
 			if (turnBackPath != null) {
 				linkedService = link.service;
 				linkedRouteId = link.routeId;

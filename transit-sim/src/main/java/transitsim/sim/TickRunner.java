@@ -445,6 +445,11 @@ public final class TickRunner<T extends RunTrack> {
 			sidings.values().forEach(sidingRun -> {
 				sidingRun.siding.path.forEach(track -> tracks.putIfAbsent(track.getTrackKey(), track));
 				sidingRun.siding.tripPaths.values().forEach(tripPath -> tripPath.path.forEach(track -> tracks.putIfAbsent(track.getTrackKey(), track)));
+				// The other ways round the duties' turn back points, which no kept path has any more (0.84.0)
+				final transitsim.plan.TurnBackWayStore<T> ways = sidingRun.siding.pathVariants == null ? null : sidingRun.siding.pathVariants.getTurnBackWays();
+				if (ways != null) {
+					ways.getWays().forEach(way -> way.forEach(track -> tracks.putIfAbsent(track.getTrackKey(), track)));
+				}
 			});
 			blockSections = new transitsim.network.BlockSections(signalBlockList, new transitsim.network.BlockSections.RailInfo() {
 				@Override

@@ -92,6 +92,7 @@
 调用者：`EventSimulator.java:354`。
 
 ### `public transitsim.network.BlockSections getBlockSections()`（2026-11-14 起 public，`SimulateDay` 查死锁时标出每条轨道所在的涂色分区）
+0.84.0 起也收集存车线 `pathVariants.getTurnBackWays()` 的每条走法的轨道（已没有保存的路径含有它们）。
 懒计算闭塞分区：收集所有停车线常用路径与服务路径的轨道（长度与切分速度 `cutSpeed`），`new BlockSections(signalBlockList, …)`。（源码在其上方有一段孤立 javadoc，描述 `shareReservations`。）
 
 ### `private static float cutSpeed(RunTrack track)`

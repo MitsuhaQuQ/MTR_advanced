@@ -31,10 +31,16 @@
 - `timeGenerator`（匿名 `TimeGenerator`）：`calculateStopTimes(path)` 与 `generateTimeSegments(...)` 委托本类。
 - `vehicle`（`VehicleSettings`）：服务端每 tick 开始时设为车池车辆（R1）；客户端与首次前为 null，用本停车线自己的设置。
 
+### 运用折返点的另一种走法（0.84.0）
+- 字段 `turnBackWays`（`TurnBackWayStore<PathData>`）：每种不同的走法一次，和各点用哪条、默认走法几根轨道。寻路时由 `addDutyPath` 交给 `TurnBackWayStore.Builder`（签名 `PathPieces::contentKey`），在服务器线程上与路径表、`turnBacks` 一起换上。`pathVariants.getTurnBackWays()` 交给组件，车在折返点走另一种走法时 `TrainService.getPath` 由运用常规路径和它当场拼出路径（`TripPath.withTurnBackWay`）。`pathVariants.indexDuty` 用 `PathPieces.indexDuty`，与 `addDutyTripPath` 同，拼出的路径和以前整份保存的逐项相同。
+- `public List<List<PathData>> getTurnBackWays()`：每条走法一次，给 `Depot` 的路径导出和短折返线检查。
+- 存档 `turn_back_ways`（每项一个 `path`）和 `turn_back_way_points`（`TurnBackWayStore.write`）；存车线的路径不进数据包、不走 `update`（同 `turn_links`），所以只有存档这一种写法。
+- 遍历存车线路径的地方都把每条走法算一次：`forEachPathNodes`（`LockNetworks`）、`getPathSignature`、`movesOf`、`trackUsesOf`、`recordPaths`（`siding:<id>:turn_back_way:<i>`）、`areTripPathsStale`、`toSimulation`（SimDataset 21）。
+
 ### 常量与存档键
 - `DEPOT_WAYS`（public static ThreadLocal<DepotWays>）：本线程找运用路径时用的出入库路查找。
 - `MAX_ROUTE_IDS = 1024`、`MAX_TRAINS = 999`、`MAX_UNLIMITED_TRAINS = 4096`。
-- 键：`rail_length`、`trip_paths`、`turn_links`（每项 `from`、`to`、`path`）、`turn_returns`（`platform`、`path`）、`way_outs`（`platform`、`path`）、`train_type`、`train_custom_id`、`unlimited_trains`、`max_trains`、`route_ids`、`fleet_size`、`recorded_depot_legs`、`siding_operation`（只作 update 键：线路与车队一起设置）、`is_manual`、`max_manual_speed`、`path`、`repeat_index_1`、`repeat_index_2`、`loop_join_index`、`trains`、`shed`、`duty_ledger`、`acceleration_constant`、`deceleration_constant`、`max_speed`，以及 `TurnBacks` 自己的键。
+- 键：`rail_length`、`trip_paths`、`turn_links`（每项 `from`、`to`、`path`）、`turn_returns`（`platform`、`path`）、`way_outs`（`platform`、`path`）、`turn_back_ways`（每项 `path`，0.84.0）、`turn_back_way_points`、`train_type`、`train_custom_id`、`unlimited_trains`、`max_trains`、`route_ids`、`fleet_size`、`recorded_depot_legs`、`siding_operation`（只作 update 键：线路与车队一起设置）、`is_manual`、`max_manual_speed`、`path`、`repeat_index_1`、`repeat_index_2`、`loop_join_index`、`trains`、`shed`、`duty_ledger`、`acceleration_constant`、`deceleration_constant`、`max_speed`，以及 `TurnBacks` 自己的键。
 
 ### `boolean cannotLeave()`（0.76.0）
 记录的出入库腿里一个首站都出不去（`outMillis` 空、`unreachableOut` 非空）。
@@ -48,7 +54,7 @@
 
 ### 构造函数
 - `Siding(long id, TransportMode, BlockPos pos1, BlockPos pos2, float railLength)` / `Siding(TransportMode, pos1, pos2, railLength)`：新停车线；选择第一个能放下的车型；默认不限列车数（列车数为车队，在高级编辑器中设）；加速度：连续移动为最大，否则默认。调用者：`RailwayData.java:1492`。
-- `Siding(Map<String, Value> map)`：从存档读：基本设置；旧存档无 `fleet_size` 时为原上限；`recorded_depot_legs`（旧存档无，按估计规划直到测量发现偏差）；加/减速度与最高速钳制；路径与时间段；`TurnBacks`；`turn_links`/`turn_returns`（0.32.0 起，D4）；`way_outs`（0.33.0 起，D5）；行程路径（完整或引用共享片段，第 5 轮第 2 步；片段缺失的重新生成；`PathPieces.remember` 使首次保存按原片段写出），待用车厂设置计时；运用账目（`DutyLedger`/`PathKeyIndex`；损坏的条目只跳过并记日志，停车线位置必须保留）；列车与库（`loadTrain`）；算距离；路径已不存在的列车删去（从停车线重新开始），跳站列车先设 `pathVariants`。调用者：`RailwayData.java:379`、`EditGuard.java:263`、`RailwayDataFileSaveModule.java:174`（`Siding::new`）。
+- `Siding(Map<String, Value> map)`：从存档读：基本设置；旧存档无 `fleet_size` 时为原上限；`recorded_depot_legs`（旧存档无，按估计规划直到测量发现偏差）；加/减速度与最高速钳制；路径与时间段；`TurnBacks`；`turn_links`/`turn_returns`（0.32.0 起，D4）；`way_outs`（0.33.0 起，D5）；行程路径（完整或引用共享片段，第 5 轮第 2 步；片段缺失的重新生成；`PathPieces.remember` 使首次保存按原片段写出），待用车厂设置计时；运用账目（`DutyLedger`/`PathKeyIndex`；损坏的条目只跳过并记日志，停车线位置必须保留）；列车与库（`loadTrain`）；算距离；路径已不存在的列车删去（从停车线重新开始），跳站列车先设 `pathVariants`。0.84.0：先读 `turn_back_ways`/`turn_back_way_points`；运用的 `键|点:走法` 整份路径（0.84.0 前的存档为每个点每种走法存的）不放进路径表；列车放回路径（`restoreTripPath`，停在走法键上的由常规路径和走法现做）失败、存档又有这种整份路径时，只把它那一条留下给它。调用者：`RailwayData.java:379`、`EditGuard.java:263`、`RailwayDataFileSaveModule.java:174`（`Siding::new`）。
 - `@Deprecated Siding(CompoundTag)`：旧 NBT。调用者：`RailwayData.java:427`。
 - `Siding(FriendlyByteBuf packet)`：客户端；字段顺序见 `writePacket`。调用者：`ClientEditing.java:321`。
 
@@ -59,10 +65,10 @@
 - 精简部分 + `duty_ledger`（所有列车、库、回库中的运用账目与路径键条目，按键排序）+ `trains` + `shed`（库与回库中）。
 
 ### `public void toReducedMessagePack(MessagePacker)`
-- 父类字段 + 上述设置键 + `path` + `trip_paths`（每项 `TripPath.WRITTEN_VALUES + 1` 个键，路径经 `PathPieces.writePath`）+ `TurnBacks` + `turn_links`/`turn_returns`/`way_outs`（按键排序）。调用者：`RailwayDataLoggingModule.java:114`。
+- 父类字段 + 上述设置键 + `path` + `trip_paths`（每项 `TripPath.WRITTEN_VALUES + 1` 个键，路径经 `PathPieces.writePath`）+ `TurnBacks` + `turn_links`/`turn_returns`/`way_outs`（按键排序）。最后 `turn_back_ways` 与 `turn_back_way_points`（0.84.0）。调用者：`RailwayDataLoggingModule.java:114`。
 
 ### `public int messagePackLength()` / `public int reducedMessagePackLength()`
-- 父类 + 26；精简为其 − 3。
+- 父类 + 28（0.84.0 起多了 `turn_back_ways`、`turn_back_way_points`）；精简为其 − 3。
 
 ### `public void writePacket(FriendlyByteBuf packet)`
 - 顺序：父类字段、`railLength`、`trainId`、`baseTrainType`、`unlimitedTrains`、`maxTrains`、`isManual`、`maxManualSpeed`、`accelerationConstant`、`decelerationConstant`、`maxSpeed`、运行设置（`writeOperation`：线路数、各线路、车队）、`recordedLegs`。调用者：`SandboxRuns.java:184`、`PacketTrainDataGuiServer`（发送全部）。
@@ -104,7 +110,7 @@
 - 返回：同车厂中列车可互相跑运用的停车线的共同点："车辆型号/节数"（解耦文档步骤 D，发车 4、5）。调用者：`EditorData.java:177`、`EditorDuties.java:192`。
 
 ### `public void forEachPathNodes(Consumer<long[]> consumer)`
-- 依次给出通常路径与各运用路径的节点，用于判断哪些车厂共轨（`LockNetworks`）。调用者：`RailwayData.java:132`。
+- 依次给出通常路径与各运用路径的节点，用于判断哪些车厂共轨（`LockNetworks`）。0.84.0 起还有每条折返点的另一种走法，田端 5 站台那样只有另一种走法到的进路照样联锁。调用者：`RailwayData.java:132`。
 
 ### `public long getPathSignature()` / `private static long pathSignature(...)` / `private static long[] nodesOf(...)`
 - 路径端点与长度的哈希（行程路径相加，与顺序无关），找路换路径时改变；节点序列。调用者：`RailwayData.java:118`。
@@ -148,9 +154,10 @@
 - 本停车线回不去时（0.75.4）：通常路径改为回同池第一条能回去的停车线（0.76.0 起先试能出车的，`cannotLeave`）（列车到末站时 `TrainService.chooseDutyReturn` 换到回那条的路径），不再整份失败；六线图 1、4 号线的车从一条存车线出、从末站只能回另一条。
 - `-Dmtr.debugDutyPaths=true` 时打印失败原因（没有出库路到哪个站台、从哪个站台回不到本停车线和同池哪些停车线）。
 - 返回：任一部分找不到为 false（并在非草稿时记入 `foundNoWayOut`/`foundNoWayBack`）。
+- 0.84.0：不再为每个折返点每种非默认走法用 `DutyBody` 复制整份路径、`indexDuty`、计时并存成 `键|点:走法`（一份全天 160 次站前折返的运用就是 160 份整天拷贝，Village 一条存车线 323 条路径、寻路 6–8 秒、存档 9 MB），只把每个点交给最后一个参数 `wayBuilder`（`TurnBackWayStore.Builder`，草稿为 null），每种走法存一次。
 
 ## static final class DutyBody
-运用主体按列车所走：每个折返点走通常方式，或其中一处走另一方式。
+运用主体按列车所走：每个折返点走通常方式，或其中一处走另一方式。0.84.0 起寻路只用通常方式（`changedSection` −1）；换一处走法的整份拷贝只在 `DutyBodyTest`、`SidingTurnBackWaysTest` 里用来对照组件 `TripPath.withTurnBackWay` 拼出的路径。
 - 字段：`body`（`JoinedPath`）、`segmentStarts`、`indexBoundaries`、`stopRails`（每个折返点之前停站的主体轨道，经过替换走法内部的点为 −1）。
 - `DutyBody(DutyPlan, List<TurnBackSection>, int changedSection, int way)`：`changedSection` 为走另一方式的区段或 −1；替换时停站与下一线路首站仍属主体（保留停站设置），之后的段起点、索引边界与停站轨道按多出的轨道数平移。调用者：`Siding.java:1361`、`:1389`、`DutyBodyTest.java:41`。
 - `join(List<PathData> wayOut)`：把主体接在出库路之后；出库路最后一段与主体首段是同一轨道时用主体那段（保留首站停站时间）。调用者：`LiveSimulation.java:397`、`DutyBodyTest`。
@@ -171,7 +178,7 @@
 - 用 `PathPieces.indexDuty` 建 `TripPath`、计时、加入。
 
 ### `private void recordPaths()`
-- 把通常路径（"siding:id"）与各行程路径（"siding:id:键"）交给 `graphRecords` 写入数据库。
+- 把通常路径（"siding:id"）与各行程路径（"siding:id:键"）交给 `graphRecords` 写入数据库。0.84.0 起还有每条折返点的另一种走法（"siding:id:turn_back_way:i"）。
 
 ### `private void addTripPath(...)`
 - 主路径前部 + 主路径到离开轨道 + 班次尾 + 回库路，记圈终、尾起点、重复终点，计时加入。
@@ -203,7 +210,7 @@
 - 列车长度（节数 × 间距，方块）；停车线（至少 2）是否放得下一节。调用者：`StopLengths.java:32`、`SidingScreen.java:228`。
 
 ### `public boolean areTripPathsStale(rails)` / `public boolean isPathStale(rails)`
-- 运用路径中有轨道没了或变了（测量出的出入库腿不再成立）；通常路径（非飞机、≥2 段）有轨道没了或类型/朝向/长度变了。调用者：`Depot.java:1149`、`RailwayData.java:1053`。
+- 运用路径中有轨道没了或变了（测量出的出入库腿不再成立）；折返点的另一种走法有轨道没了或变了也算（0.84.0）；通常路径（非飞机、≥2 段）有轨道没了或类型/朝向/长度变了。调用者：`Depot.java:1149`、`RailwayData.java:1053`。
 
 ### `toSimulation(long depotId, long[] routeIds, Function<List<PathData>, List<SimDataset.DataTrack>> toTracks[, boolean byDuties])`
 - 返回：组件模拟器需要的停车线（S4e），无路径或车厢为 null：基本参数、上限（按运用为车队 − 1 或不限）、速度曲线、默认最高速、重复下标、轨道、`TurnBacks` 二进制、手动、池键、线路池（`depot.getLineUnitKey() + "|" + 池键`，SimDataset 7）、池车队（SimDataset 11）、车辆最高速（15）、提前折返（13）、出库路（14）、按键排序的行程路径（保留正在用且未过期的）。调用者：`SimExport.java:73`、`SandboxRuns.java:242`。

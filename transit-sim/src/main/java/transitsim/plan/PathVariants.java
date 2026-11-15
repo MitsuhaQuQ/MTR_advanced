@@ -50,4 +50,23 @@ public interface PathVariants<T extends PlanTrack> {
 	default java.util.List<T> getWayOut(long platformId) {
 		return null;
 	}
+
+	/**
+	 * @return the other ways round the turn back points of the siding's duties, from which a duty's path taking one of them
+	 * is made when a train needs it (0.84.0, {@link TripPath#withTurnBackWay}), or null for none
+	 */
+	default TurnBackWayStore<T> getTurnBackWays() {
+		return null;
+	}
+
+	/**
+	 * Has the host keep a duty's path made here as it keeps the paths it makes itself: its stops numbered its way, its
+	 * rails kept in the pieces it saves. Nothing by default.
+	 *
+	 * @param dutyStarts the rail of the first stop of each segment
+	 * @param boundaries where the host's pieces of the path end
+	 */
+	default java.util.List<T> indexDuty(java.util.List<T> path, int[] dutyStarts, int[] boundaries) {
+		return path;
+	}
 }

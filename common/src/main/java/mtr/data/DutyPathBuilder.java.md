@@ -97,6 +97,10 @@
 ### `TurnBackSection<PathData> findConnectionTimed(...)`
 - 上述逻辑本体。0.76.1 起规则在组件 `transitsim.plan.TurnBackWays.connection`（列出的折返线加留置线优先；否则直接搜索的路与绕经附近折返线的走法比长度，短的赢，一样长用直接搜索的），这里只列出节点并找路（`waysRound`）。
 
+### `List<BlockPos> getTurnBackNodesBeyond(SavedRailBase platform, long previousPlatformId, rails)`（0.83.15）/ `static Set<BlockPos> reachedFrom(BlockPos end, Set<BlockPos> blocked, rails)`
+- 作用：线路没列折返节点时，附近找到的折返线只留从站台远端（离上一站远的那头）沿轨道往外、`BEYOND_BLOCKS`（400 格）以内能到的（站后）。
+- 0.84.0：`reachedFrom` 原来只挡“从远端直接走回站台另一头”那一根，经道岔绕一圈仍能回到站台另一头、再往站前找；现在整个搜索都不进 `blocked` 里的节点：站台另一头、上一站站台的两端、同站其他站台的两端（起点那头除外）。调用者：`holdWay`、`findConnectionTimed`。
+
 ### `TurnBackWays.Ways<BlockPos, PathData> waysRound(SavedRailBase from, SavedRailBase to, rails, graph, boolean useFastSpeed)`
 - 交给组件的找路：经某节点从一站到下一站的路（`PathFinder.findPath`）、两段是否同一轨道同方向（`isSameRail`）、不可用时记 `TURN_BACK_UNUSED` 失败。
 

@@ -270,6 +270,107 @@ public class TripPath<T extends PlanTrack> {
 	}
 
 	/**
+	 * A duty's path taking another way round one of its turn back points (0.84.0): the same as the usual one but for the
+	 * rails of that way, which move what comes after.
+	 */
+	private TripPath(TripPath<T> base, List<T> path, int[] dutyStarts, int[] turnBackStops, int turnBackPoint, int turnBackWay) {
+		key = getTurnBackKey(base.key, turnBackPoint, turnBackWay);
+		tripKey = base.tripKey;
+		this.turnBackStops = turnBackStops;
+		this.turnBackPoint = turnBackPoint;
+		this.turnBackWay = turnBackWay;
+		changeStop = base.changeStop;
+		routeIds.addAll(base.routeIds);
+		cutStops.putAll(base.cutStops);
+		entryStops.putAll(base.entryStops);
+		entryTimes.putAll(base.entryTimes);
+		entryLeads.putAll(base.entryLeads);
+		segmentCuts.putAll(base.segmentCuts);
+		segmentEntries.putAll(base.segmentEntries);
+		segmentEntryTimes.putAll(base.segmentEntryTimes);
+		segmentsKnown = base.segmentsKnown;
+		segmentLeadSources.putAll(base.segmentLeadSources);
+		joinIndex = base.joinIndex;
+		lapEnd = base.lapEnd;
+		this.path = IndexedPath.copyOf(path);
+		repeatIndex1 = base.repeatIndex1;
+		repeatIndex2 = base.repeatIndex2;
+		lapStop = base.lapStop;
+		entryRail = base.entryRail;
+		this.dutyStarts = dutyStarts;
+		staysOnLine = base.staysOnLine;
+		turnRail = base.turnRail;
+		turnResumeRail = base.turnResumeRail;
+	}
+
+	/**
+	 * The duty's path taking this other way round this point (0.84.0), made from its usual path and the way the siding keeps
+	 * for it, and timed: the rails from the stop before the point to the end of the usual way are that way's, the stop and the
+	 * end keeping the usual path's stop settings; the first stops of segments, the turn back stops of points and the host's
+	 * pieces after it move by how many more rails the way has, and points inside it aren't passed. It is the path the siding
+	 * used to keep in full for each point and way.
+	 *
+	 * @return the path, or null if the base isn't a duty's usual path passing the point, or the way doesn't fit it
+	 */
+	public static <T extends PlanTrack> TripPath<T> withTurnBackWay(TripPath<T> base, int point, int way, PathVariants<T> variants) {
+		final TurnBackWayStore<T> store = variants == null ? null : variants.getTurnBackWays();
+		if (store == null || base == null || base.dutyStarts == null || base.turnBackPoint >= 0 || base.turnRail >= 0 || point < 0 || point >= base.turnBackStops.length) {
+			return null;
+		}
+		final List<T> newWay = store.get(point, way);
+		final int usualLength = store.getUsualLength(point);
+		final int start = base.turnBackStops[point];
+		final int end = start + usualLength;
+		if (newWay == null || newWay.size() < 2 || start < 0 || usualLength < 1 || end >= base.path.size()) {
+			return null;
+		}
+		// The way starts at the stop and ends where the usual way does
+		if (!isSameTrack(newWay.get(0), base.path.get(start)) || !isSameTrack(newWay.get(newWay.size() - 1), base.path.get(end))) {
+			return null;
+		}
+		final int extraRails = newWay.size() - 1 - usualLength;
+		final List<T> newPath = new ArrayList<>(base.path.size() + Math.max(0, extraRails));
+		newPath.addAll(base.path.subList(0, start + 1));
+		newPath.addAll(newWay.subList(1, newWay.size() - 1));
+		newPath.addAll(base.path.subList(end, base.path.size()));
+
+		final int[] newStarts = new int[base.dutyStarts.length];
+		for (int i = 0; i < newStarts.length; i++) {
+			newStarts[i] = base.dutyStarts[i] + (base.dutyStarts[i] > start ? extraRails : 0);
+		}
+		final int[] newTurnBackStops = new int[base.turnBackStops.length];
+		for (int i = 0; i < newTurnBackStops.length; i++) {
+			final int stop = base.turnBackStops[i];
+			// A point within the way taken instead, like one after the station inside a way round its platforms, isn't passed
+			newTurnBackStops[i] = stop < 0 || i != point && stop > start && stop < end ? -1 : stop + (stop > start ? extraRails : 0);
+		}
+		// Cut where the usual path is cut, but not inside the way, and at the first stops of segments
+		final java.util.SortedSet<Integer> boundaries = new java.util.TreeSet<>();
+		if (base.path instanceof IndexedPath) {
+			final IndexedPath<T> indexed = (IndexedPath<T>) base.path;
+			final int segmentCount = indexed.segments().size();
+			for (int i = 0; i <= segmentCount; i++) {
+				final int boundary = i == segmentCount ? indexed.size() : indexed.segmentStart(i);
+				if (boundary <= start || boundary >= end) {
+					boundaries.add(boundary + (boundary > start ? extraRails : 0));
+				}
+			}
+		}
+		for (final int newStart : newStarts) {
+			boundaries.add(newStart);
+		}
+		boundaries.add(newPath.size());
+		final List<T> indexedPath = variants.indexDuty(newPath, newStarts, boundaries.stream().mapToInt(Integer::intValue).toArray());
+		final TripPath<T> tripPath = new TripPath<>(base, indexedPath == null ? newPath : indexedPath, newStarts, newTurnBackStops, point, way);
+		tripPath.generateTimes(variants.getTimeGenerator());
+		return tripPath;
+	}
+
+	private static boolean isSameTrack(PlanTrack track, PlanTrack other) {
+		return track.getTrackKey().equals(other.getTrackKey()) && !track.isOppositeOf(other);
+	}
+
+	/**
 	 * The path with these stops of it passed without stopping (D3), timed again, for a train told to skip some stations.
 	 *
 	 * @param rails the rails of the stops passed, in order
@@ -891,6 +992,37 @@ public class TripPath<T extends PlanTrack> {
 	 */
 	public static String getTurnBackKey(String tripKey, int point, int way) {
 		return tripKey + "|" + point + ":" + way;
+	}
+
+	/**
+	 * @return the point and way of a key {@link #getTurnBackKey} made, with nothing after it, or null for any other key
+	 */
+	public static int[] getTurnBackPointWay(String key) {
+		final int index = key.lastIndexOf('|');
+		if (index < 0) {
+			return null;
+		}
+		final int colon = key.indexOf(':', index);
+		if (colon < index + 2 || colon + 1 >= key.length()) {
+			return null;
+		}
+		for (int i = index + 1; i < key.length(); i++) {
+			if (i != colon && !Character.isDigit(key.charAt(i))) {
+				return null;
+			}
+		}
+		try {
+			return new int[]{Integer.parseInt(key.substring(index + 1, colon)), Integer.parseInt(key.substring(colon + 1))};
+		} catch (NumberFormatException e) {
+			return null;
+		}
+	}
+
+	/**
+	 * @return the key of the path a key {@link #getTurnBackKey} made takes another way round, or the key itself
+	 */
+	public static String getTurnBackBase(String key) {
+		return getTurnBackPointWay(key) == null ? key : key.substring(0, key.lastIndexOf('|'));
 	}
 
 	/**

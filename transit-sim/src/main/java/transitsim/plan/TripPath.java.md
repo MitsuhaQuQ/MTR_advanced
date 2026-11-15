@@ -53,6 +53,11 @@
 - `private TripPath(TripPath<T> base, String key, List<T> path, int[] dutyStarts, int segmentCount, int[] turnBackStops, int turnRail, int turnResumeRail, boolean staysOnLine)`：运用路径的改动版（提前折返、从中途开始、交接回库）：只保留前 `segmentCount` 段的路线与按段信息，`segmentsKnown = true`。
 - `public TripPath(KeyedReader reader, List<T> path)`：按 `write` 读回，路径由宿主另外保存后传入；兼容旧的单一截断路线键；`dutyStarts` 仅当 key 以 `DutyShapes.KEY_PREFIX` 开头时保留；`turnRail`/`turnResumeRail` 不保存，读回为 -1。主要调用者：`common/src/main/java/mtr/data/Siding.java:373`。
 
+### 折返点的另一种走法（0.84.0）
+- `public static <T> TripPath<T> withTurnBackWay(TripPath<T> base, int point, int way, PathVariants<T> variants)`：运用常规路径（`turnBackPoint`、`turnRail` 都是 −1）在折返点 `point` 换走法 `way` 的路径，按需拼出：取 `variants.getTurnBackWays()` 的这条走法和默认走法长度 `getUsualLength(point)`，把 `turnBackStops[point]`（停站轨道）到默认走法终点之间换成走法中间的轨道，首尾两根用常规路径自己的（停站设置不变；首尾轨道键或方向对不上则返回 null）；`dutyStarts` 大于停站轨道的后移多出的轨道数；`turnBackStops` 在走法内部的点为 −1，其后的点后移；宿主切块（常规路径是 `IndexedPath` 时取它的段起点）去掉走法内部的、后面的后移，加上新段起点和末尾，交给 `variants.indexDuty`；key 为 `getTurnBackKey(base.key, point, way)`，其余字段沿用常规路径，最后 `generateTimes`。与以前 `Siding.DutyBody` 为每点每走法保存的整份路径逐项相同（`TurnBackWaySpliceTest`、`SidingTurnBackWaysTest`）。不是运用常规路径、没有这个点或走法时返回 null。主要调用者：`transitsim/sim/TrainService.java` 的 `getPath`。
+- 私有构造 `TripPath(base, path, dutyStarts, turnBackStops, turnBackPoint, turnBackWay)`：上面拼出的路径。
+- `public static int[] getTurnBackPointWay(String key)`：`getTurnBackKey` 生成的 key（最后一个 `|` 之后恰好是 `数字:数字`）的点和走法，其他 key（含后面还带跳站等标记的）为 null。`public static String getTurnBackBase(String key)`：去掉 `|p:w` 后的常规路径 key。主要调用者：`TrainService.getPath`。
+
 ### 跳站（D3）
 - `public static <T> TripPath<T> withSkips(TripPath<T> base, int[] rails, PathVariants<T> variants)`：把指定停站轨道（`0 < rail < size`）换成通过版本（`variants.pass`），key 为 `getSkipKey`，并重新计时。主要调用者：`transitsim/sim/TrainService.java:884`。
 - `public static String getSkipKey(String baseKey, int[] rails)`：`baseKey + "~skip:" + 逗号分隔轨道`；无轨道时返回 `baseKey`。主要调用者：`transitsim/sim/TrainService.java:953`。
@@ -117,7 +122,7 @@
 `dutyStarts != null`。主要调用者：`common/src/main/java/mtr/data/DepotLegs.java:152`、`mtr/data/PidsSchedules.java:49`、`transitsim/sim/BufferRecorder.java:90`。
 
 ### key 生成
-- `public static String getTurnBackKey(String tripKey, int point, int way)`：`tripKey + "|" + point + ":" + way`。主要调用者：`common/src/main/java/mtr/data/Siding.java:1394`、`:1601`、`:1609`。
+- `public static String getTurnBackKey(String tripKey, int point, int way)`：`tripKey + "|" + point + ":" + way`。主要调用者：`common/src/main/java/mtr/data/Siding.java` 的 `addTurnBackPaths`（环线路径，仍整份保存）、`TripPath.withTurnBackWay`（运用路径，0.84.0 起按需拼接）、`transitsim/sim/TrainService.java` 的 `chooseTurnBack`、`updateTripPath`。
 - `public static String getDepotReturnKey(int routeIndex)`：`"depot|" + routeIndex`。主要调用者：`common/src/main/java/mtr/data/Siding.java:1632`、`transitsim/sim/TrainService.java:1609`。
 - `public static String getReturnKey(String dutyKey, long sidingId)`：`dutyKey + "#" + sidingId`，同一运用回到同池另一停车线（解耦文档 D 步，车厂派车第 5 点）。主要调用者：`common/src/main/java/mtr/data/Siding.java:1376`、`transitsim/sim/TickRunner.java:294`、`common/src/main/java/mtr/data/TrainServer.java:1044`。
 - `public static long getReturnSidingId(String fullKey)`：去掉跳站后取最后一个 `#` 之后的停车线 ID；不是此类 key 或解析失败为 0。主要调用者：`transitsim/sim/BufferRecorder.java:109`、`transitsim/sim/TrainService.java:1007`。

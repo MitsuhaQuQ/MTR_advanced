@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.84.0: a duty turning back in front of its terminus on one of two platforms (the second terminal platform a route lists) keeps that other way round once per siding, instead of a whole copy of the duty's day for every turn; a train taking it has its path made then from the duty's usual path, running exactly as before. A siding whose duty turns back 160 times a day finds its paths in milliseconds again instead of seconds, and its save shrinks from megabytes back to its usual size; saves gain the field turn_back_ways (older saves load, their whole copies are dropped except one a train stands on). Turn back rails found by themselves beyond a terminus no longer count rails reached by coming round to the platform's other end or through another platform of the station.
+
 0.83.18: villagers and other mobs take indented platforms as solid ground they can jump up onto, and glass fences and screen door and gate blocks as in their way, instead of open like air.
 
 0.83.17: a station sign with no station chosen shows the station it stands in instead of the untitled name; the Japanese for customer service centre is サービスセンター; the Japanese line of three-language signs is drawn smaller than the Chinese.
