@@ -91,6 +91,7 @@
 - 服务端 `TrainServer` 在列车起步时门值仍大于 0 时打一行 “left stop … with its doors not shut”，以后出现可查。
 - 测试：`transit-sim` `PlatformDwellTest.aTrainWhoseStopTimeDropsShutsItsDoorsBeforeLeaving`（`MotionFixture.totalDwell` 可在停站中改总时长）；改前它在总时长变短后 1 刻就开车、门开着 0.8。
 只改服务端（组件、`TrainServer`），升第三位。
+- 同版网页：汇总表终点站推算出来的到/发（`td.derived`）又是斜体。792e2c46 汇总表新样式在 `editor-web/src/legacy-theme.css` 把它写成了 `font-style: normal`，盖过旧样式的斜体，而清单 U215 和这里一直写斜体；六线图自动测试 z-terminals 发现（每张表所有推算格子都不是斜体）。
 - 同时查了全天测试 `WholeDayTest`（benchmark 才跑）报的“07:15 2 号车在存车线外出现在线上”：改前代码同样报。是检查的问题：`RunInvariants` 每 2 秒看一次，列车两次之间从存车线起步，车头已出存车线、车尾还在里面，被当成凭空出现。`Seen.leavingSiding`：车尾还在路径开头的存车线里算从存车线起步。测试 `RunInvariantsTest.aPlainMorningLookedAtNowAndThenBreaksNothing`（每 37/41/47 刻看一次，改前误报 4 次）。全天固定结果 `scenarios/whole-day.txt` 自 3830f331 后没跟着规则更新，按现在的结果重新固定（不违规、不死锁、全部回库）。
 
 0.83.7 归属图按线路图画（用户 2026-11-15 截图：归属图走向、画法形状奇怪）：

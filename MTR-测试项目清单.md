@@ -705,7 +705,7 @@
 | U212 | 中 | 停运后恢复 | Shift 选一段班次"停运选中的 N 班"，应用、重启服务器后仍是停运；再"恢复选中的 N 班"并应用：照常出车，时刻、例外、直通和指令都还在 | 已有自动测试（2026-11-14 整理）：SuspendedServicesTest.servicesThatDontRunAreKeptWithTheTimetableAndOldDataStillReads、aServiceTakenOutOfTheTableLosesItsMark（存档往返）。 |
 | U213 | 中 | 停运的班次不报冲突 | 把一班停运后改到和别的线路同一股道、同一时刻：不报时刻表冲突；恢复它后同步，冲突出现 | 未测，可写成自动测试：没找到停运班次不报冲突的测试。可在 TimetableConflictsTest 加一例，或 cases-lines 停运后点冲突检查读文字。 |
 | U214 | 低 | 游戏时刻表界面显示停运 | 游戏里打开时刻表界面选中停运的班次：按钮上写"停运（在高级编辑器里设）" | 未测，可写成自动测试：文字 gui.mtr.timetable_suspended 仍在。TestKit 打开时刻表界面（仿 T28/T55）选停运班次读按钮文字。 |
-| U215 | 高 | 终点站的到和发 | 网页时刻表：起点多一行"到"、终点多一行"发"，同站台折返时终点"发"等于下一班的发车、下一班起点"到"等于上一班的到达，斜体，鼠标悬停写怎么来的；没有接续的只算本班停站 | 未测，可写成自动测试：SummaryTable.tsx 仍算终点“发”（terminalText）。Playwright 在 cases-lines 读汇总表首末站行和悬停提示。 |
+| U215 | 高 | 终点站的到和发 | 网页时刻表：起点多一行"到"、终点多一行"发"，同站台折返时终点"发"等于下一班的发车、下一班起点"到"等于上一班的到达，斜体，鼠标悬停写怎么来的；没有接续的只算本班停站 | **失败→已修，待复测**（自动测试 z-terminals.spec.ts，六线图 2026-11-15 `20261115-201930`：推算的到/发格子全都不是斜体，`legacy-theme.css` 盖掉了；0.83.8 改回斜体） |
 | U216 | 高 | 运行图上的折返 | 单站台终点：上一班到达到下一班发车画一条横线；12 站 A 到 B：从 A 的到达拉虚线到 B；有运用的按运用画，没有运用的画淡（推测） | 未测，可写成自动测试：运行图折返线在 RunningDiagram.tsx，diagram.test.ts 仅快照。Playwright 读运行图数据或截图比对。 |
 | U217 | 高 | 指定接下一班 | 终点"发"格或表头右键"接下一班 ▸"选一班：表头写"接 hh:mm"，横线变粗，时刻表终点"发"跟着变；那一班原来由别的班指定接的，原来的取消；"取消指定接续"后回到按运用或就近 | 已有自动测试（2026-11-14 整理）：transit-sim TerminalPairsTest.theTrainThePlayerSetComesFirst（指定接续优先）；“接下一班”菜单仍在 oldEditor.js cellMenu。 |
 | U218 | 高 | 站台被长时间占着 | 指定一列车接很晚的一班，同站台期间还有别的车到：线路设了轮用站台时后车改到另一个站台，同步状态写"一直停到 …，N 列车改用别的站台"；没有轮用站台时同步状态报"没有空站台可停"，冲突检查也报 | 已有自动测试（2026-11-14 整理）：TimetableConflictsTest.aTrainSetToRunALaterServiceHoldsThePlatformUntilThen、aTrainSetToRunALaterServiceTakesAnotherPlatformToTurnBackAt。 |

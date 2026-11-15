@@ -73,7 +73,7 @@
 .legacy.legacy-slot table.tt td.exc { color: var(--sel); font-weight: 600; background: color-mix(in srgb, var(--sel) 8%, transparent); }
 .legacy.legacy-slot table.tt td.fast { color: var(--warn); font-weight: 600; }
 .legacy.legacy-slot table.tt td.wait::before { color: var(--sel); font-family: var(--font-ui); }
-.legacy.legacy-slot table.tt td.derived { color: var(--muted); font-style: normal; }
+.legacy.legacy-slot table.tt td.derived { color: var(--muted); font-style: italic; }
 .legacy.legacy-slot table.tt td.out { box-shadow: inset -2px 0 0 var(--accent); }
 .legacy.legacy-slot table.tt td input { height: 22px; width: 6em; border: 1px solid var(--sel); border-radius: 4px; font-size: 13px; }
 .legacy.legacy-slot .table-empty { padding: 24px 16px; font-size: 13px; color: var(--muted); }

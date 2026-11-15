@@ -1449,7 +1449,7 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 归属图按线路图画（0.83.7）：只在网页 `core/abstractNet.ts` 与 `views/NetworkSchematic.tsx`，组件和游戏不变。
 
-不关门不开车（0.83.8）：运行规则在组件 `run.RunMotion` 里改，宿主只加日志；`TickRunner` 跳 tick 的快路径在要开车时本来就走整 tick，跳与不跳结果仍相同。
+不关门不开车（0.83.8）：运行规则在组件 `run.RunMotion` 里改，宿主只加日志；`TickRunner` 跳 tick 的快路径在要开车时本来就走整 tick，跳与不跳结果仍相同。同版网页汇总表推算到/发恢复斜体，只在 `legacy-theme.css`，与组件无关。
 
 区间追踪间隔（0.82.0）的算法在组件 `transitsim.run.Headways`（用运行时同一套分区 `PathClaims.between`），检查在组件 `TimetableConflicts.checkHeadways`；游戏只负责准备路径、车型和运用里每班的车池（`RoutePaths.RoutePath.getHeadways`、`PacketTrainDataGuiServer`）。
 
