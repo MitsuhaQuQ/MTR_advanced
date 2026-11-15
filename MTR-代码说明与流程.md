@@ -85,6 +85,12 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.84.14 运行层每 tick 的咽喉锁开销（Q 世界全天检查，2026-11-16：全天模拟 45 分钟，jstack 主线程几乎都在 `runLayerTick` → `ThroatLocks.getItems`）：
+- `TickRunner` 的 `HeadlessTrain.getThroatClaims` 按锁对象和路径距离（对象、长度、末值）缓存咽喉项的位置和占用，不再每 tick 每车新建；
+- `PathClaims.attach` 先只留起点在最后一组终点之前的项，原来每组都要看整天路径上几千个项。结果不变（Q 世界 3 小时 89 s → 10 s，报告逐行相同）。
+- `RunInvariants` 违例时刻改按运营日时区（原来是 UTC）；`SimulateDay` 改报“平均每 tick 移动的车数”（原来的百分比按开局车数除，会超过 100%）。
+只改组件，升第三位。
+
 0.84.13 线上过夜车起步瞬移、开服下一站被改成 0（Q 世界全天检查，2026-11-16）：
 - 瞬移：车次路径以停站开头（过夜留在线上的车）时，停站位置在“车在存车线起步的位置”（(存车线长+车长)/2）之前，`SpeedCurves.build` 第一段 run 退化成起点处的零长段；起步时 `getRun` 取到它，`RunMotion` 新段一走就结束，`setRailProgress(target)` 把车放到授权终点（S2 车辆段 773 格）。改法：`SpeedCurves.build` 这种停站的 run 放在停站本身（`from = min(runStart, stopAt)`），站着的车取下一段；`RunMotion` 段结束只停在段自己的终点（`segment.target`），与 `TrainMotion` 一样。测试 `SpeedCurvesTest.aPathStartingAtAStopShortOfTheSidingStartRunsOnFromThatStop`。
 - 开服下一站：`Siding.loadTrain` 用存车线自己的 path（1 条轨）构造 `TrainServer`，`Train.repairLoaded` 拿它检查 nextStoppingIndex/nextPlatformIndex，线上车全部被改成 0，再交给组件。改法：`Train.isPathToRestore()`（`TrainServer` 有车次路径 key 时为真）时 `repairLoaded` 跳过下标检查，`TrainServer.restoreTripPath` 装回车次路径后再用 `repairPathIndexes(true)` 检查。

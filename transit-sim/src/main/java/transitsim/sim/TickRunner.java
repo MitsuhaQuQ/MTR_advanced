@@ -1817,6 +1817,11 @@ public final class TickRunner<T extends RunTrack> {
 		private final Siding<T> siding;
 		private List<T> path;
 		private ThroatLocks throatLocks;
+		private List<transitsim.run.PathClaims.Attached> throatClaims = Collections.emptyList();
+		private ThroatLocks throatClaimsLocks;
+		private List<Double> throatClaimsDistances;
+		private int throatClaimsSize;
+		private double throatClaimsLast;
 		/**
 		 * What the train's run request asks for, asked again as it is when the host ticks without the runner.
 		 */
@@ -2224,15 +2229,7 @@ public final class TickRunner<T extends RunTrack> {
 					}
 				};
 				// The turnouts and zones of the stations' throats, claimed with the section taking the train past each (L2)
-				final List<transitsim.run.PathClaims.Attached> throats = new ArrayList<>();
-				final ThroatLocks locks = getThroatLocks();
-				if (locks != null) {
-					for (final transitsim.network.ThroatRoutes.Item item : locks.getItems()) {
-						final double itemStart = item.index <= 0 ? 0 : distances.get(Math.min(item.index, distances.size()) - 1);
-						final double itemEnd = item.endIndex <= 0 ? 0 : distances.get(Math.min(item.endIndex, distances.size()) - 1);
-						throats.add(new transitsim.run.PathClaims.Attached(itemStart, itemEnd, RunReservations.claimsOf(ThroatLocks.toMoves(Collections.singletonList(item)))));
-					}
-				}
+				final List<transitsim.run.PathClaims.Attached> throats = getThroatClaims(getThroatLocks());
 				final double target = onRoute && atStop && !inDeadEnd && (yields || TrainRules.waitsBeforeRequestingRun(this, stop)) ? head : getStopDistance(targetStop);
 				// A car's length of room to other trains, front and back (user, 2026-11-12)
 				authority.setMargin(siding.spacing);
@@ -2750,6 +2747,32 @@ public final class TickRunner<T extends RunTrack> {
 		 * @return the throat locks of the train's path, made again when the path changes, or null if they are off or the
 		 * train isn't on duty
 		 */
+		/**
+		 * @return the turnouts and zones of the stations' throats along the path, where they are and what they claim, made
+		 * once for the locks and the path's distances rather than every tick (Q: world 2026-11-16: a whole day's path has
+		 * thousands of stops, and making them again each tick for each train took most of a simulated day's time)
+		 */
+		private List<transitsim.run.PathClaims.Attached> getThroatClaims(ThroatLocks locks) {
+			if (locks == null) {
+				return Collections.emptyList();
+			}
+			final double lastDistance = distances.isEmpty() ? 0 : distances.get(distances.size() - 1);
+			if (throatClaimsLocks != locks || throatClaimsDistances != distances || throatClaimsSize != distances.size() || throatClaimsLast != lastDistance) {
+				final List<transitsim.run.PathClaims.Attached> throats = new ArrayList<>();
+				for (final transitsim.network.ThroatRoutes.Item item : locks.getItems()) {
+					final double itemStart = item.index <= 0 ? 0 : distances.get(Math.min(item.index, distances.size()) - 1);
+					final double itemEnd = item.endIndex <= 0 ? 0 : distances.get(Math.min(item.endIndex, distances.size()) - 1);
+					throats.add(new transitsim.run.PathClaims.Attached(itemStart, itemEnd, RunReservations.claimsOf(ThroatLocks.toMoves(Collections.singletonList(item)))));
+				}
+				throatClaims = Collections.unmodifiableList(throats);
+				throatClaimsLocks = locks;
+				throatClaimsDistances = distances;
+				throatClaimsSize = distances.size();
+				throatClaimsLast = lastDistance;
+			}
+			return throatClaims;
+		}
+
 		private ThroatLocks getThroatLocks() {
 			if (!ThroatLocks.enabled || !service.isOnDuty() || path.isEmpty() || !sidingRun.depot.throatLocksAllowed) {
 				return null;

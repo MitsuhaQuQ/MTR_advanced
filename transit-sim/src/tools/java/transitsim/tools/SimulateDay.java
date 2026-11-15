@@ -560,7 +560,7 @@ public final class SimulateDay {
 		}
 		events.stream().filter(event -> event.kind == SimEvent.Kind.DEADLOCK || event.kind == SimEvent.Kind.CONFLICT).forEach(event -> System.out.println("  " + clock(event.time) + " " + event.kind + " " + event.reason));
 		final long ticks = hours * HOUR / 50;
-		System.out.printf("Built in %d ms, simulated in %d ms; %.1f%% of %d ticks skipped, trains moved in %.2f%% of ticks%n", (runStart - buildStart) / 1000000, (runEnd - runStart) / 1000000, 100.0 * simulator.getRunner().getSkippedTicks() / ticks, ticks, trains.isEmpty() ? 0 : 100.0 * simulator.getRunner().getTrainTicks() / ticks / trains.size());
+		System.out.printf("Built in %d ms, simulated in %d ms; %.1f%% of %d ticks skipped, %.2f trains moved in a tick on average%n", (runStart - buildStart) / 1000000, (runEnd - runStart) / 1000000, 100.0 * simulator.getRunner().getSkippedTicks() / ticks, ticks, (double) simulator.getRunner().getTrainTicks() / ticks);
 		if (invariants != null) {
 			final long deadlocks = kinds.getOrDefault(SimEvent.Kind.DEADLOCK, 0);
 			System.out.printf("CHECK %d rules broken, %d trains stuck over 10 minutes, %d deadlocks%n", invariants.getViolations().size(), invariants.getStuck().size(), deadlocks);

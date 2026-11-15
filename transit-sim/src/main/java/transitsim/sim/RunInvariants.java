@@ -221,9 +221,12 @@ public final class RunInvariants<T extends RunTrack> {
 		return a + "-" + b;
 	}
 
+	/**
+	 * In the operating day's time zone, as the rest of the day report (it was UTC: 20:00:00 for 05:00 in Tokyo)
+	 */
 	private static String clock(long millis) {
-		final long inDay = Math.floorMod(millis, 24 * 3600000L);
-		return String.format("%02d:%02d:%02d", inDay / 3600000, inDay / 60000 % 60, inDay / 1000 % 60);
+		final java.time.LocalTime time = java.time.Instant.ofEpochMilli(millis).atZone(transitsim.plan.OperatingDay.getTimeZone()).toLocalTime();
+		return String.format("%02d:%02d:%02d", time.getHour(), time.getMinute(), time.getSecond());
 	}
 
 	private final class Seen {

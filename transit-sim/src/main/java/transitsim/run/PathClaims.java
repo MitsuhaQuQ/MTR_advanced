@@ -83,9 +83,19 @@ public final class PathClaims {
 	 * track before its loop track, inside the other zone, as the loop track came with the zone at its far end)
 	 */
 	public static List<Group> attach(List<Group> groups, Collection<Attached> attached) {
-		if (attached.isEmpty()) {
+		if (attached.isEmpty() || groups.isEmpty()) {
 			return groups;
 		}
+		// Only what starts short of the last group's end can go with any of them: a whole day's path has thousands of
+		// throat items ahead, and every group looked at each of them every tick (Q: world 2026-11-16, a day took 45 minutes)
+		final double lastEnd = groups.get(groups.size() - 1).end;
+		final List<Attached> near = new ArrayList<>();
+		for (final Attached each : attached) {
+			if (each.start < lastEnd - 1E-6) {
+				near.add(each);
+			}
+		}
+		attached = near;
 		final List<Group> result = new ArrayList<>(groups.size());
 		double previousEnd = Double.NEGATIVE_INFINITY;
 		for (final Group group : groups) {
