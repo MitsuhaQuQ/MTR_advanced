@@ -85,6 +85,16 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.83.13 改了运用会自动重新寻路、缺路径时不摆车（用户 2026-11-15：Village 新运用排出来但“车没了”）：
+- 原因：网页“一键生成运用”后应用，`EditorDuties.apply` 只发运用，不请求寻路；服务端每 100 刻的 `Depot.takeAutoDutiesChange` 只看规划单元的键，手动设的运用（`duties.diagramMode`）内容变了不会重新寻路。存车线的 `tripPaths` 还是旧运用的键，新运用三份都找不到路径：出车（`DepotDispatcher` `getPath` 为 null 就跳过）、按时刻表摆车（`TickRunner.placeDutyTrains`）都没提示地跳过，日志一直“put by timetable: Village 0”；摆车还先删了存车线现有的车（`LiveSimulation.takeInto`），一列没摆上也不补回。这个问题早就有，以前开服、改车厂、改时刻表时顺带寻路才没显出来。
+- 修：`Depot.generateMainRoute` 开始时记下当时手动运用的哈希（`pathDutiesHash`，`dutiesHash` = `duties.toBytes()` 的哈希）；`takeAutoDutiesChange` 发现手动运用的哈希变了就返回 true，交给现有的寻路队列重新寻路（几秒内）。组件 `TickRunner.countDutiesWithoutPath` 数今天没有路径的运用；`LiveSimulation.takeInto` 按运用摆车前若有，就打日志、告诉玩家（`gui.mtr.place_trains_no_paths`）并什么都不改，不再收走现有的车。只改服务端，升第三位。
+
+0.83.13 归属层快速刷轨道和高亮跟着画的轨道（用户 2026-11-15：“没有办法快速选择全部需要的轨道”；截图“选择和表示线路差异太大”）：
+- 成片刷（拿着画笔或橡皮时，在实景图 `#net-canvas` 上）：点一段画它所在的整段，并把它记作起点（蓝色虚线加圆点）；Shift+点另一段画两段之间最短的一条路，终点又成为下一段路的起点；按住左键拖，经过的轨道都画上；Shift+拖出方框，框里和压到框边的轨道都画上；双击顺着轨道往两头画，到道岔（节点上多于两条轨道）或轨道尽头为止。拖动和框选时先在图上标出将要画的整段，松开才画。每个动作是一步撤销。拿着画笔时左键拖不再平移，改为右键拖或按住空格拖平移（右键拖过的不弹菜单），滚轮缩放不变；Esc 先取消起点，再放下画笔。
+- 代码：纯逻辑在 `editor-web/src/core/railPick.ts`：`railPath`（以“轨道 + 离开的节点”为状态的 Dijkstra，按轨道长度；经过节点时转弯须小于直角，不在道岔处折返，实在没有这样的路才放开）、`railsAlong`（只穿过恰好两条轨道的节点）、`railsInBox`、`railsNearSegment`（鼠标两次移动之间的线段在命中距离内碰到的轨道）。几何都是 `net.railPoints`（画轨道颜色用的同一组点）。手势在 `views/OwnershipPanel.tsx` 的 `useBrushGestures`（捕获阶段，抢在旧处理函数前）；标记放在 `net.paintMarks`，由 `oldEditor.js` 的 `drawPaintMarks` 画。一次画很多段走 `legacy/retired.ts` 新加的 `setRailsLogicalLine`/`setRailsOwnerOverride`：每个区段只改一次、最后只重画一次，草稿一次变化即一步撤销（`engine.ts` `checkDraft`）。
+- 高亮：原来缩小时悬停高亮画的是示意图的折线（`chainShape`：简化并取 0°/45°/90°），而归属颜色画在轨道自己的点上，两者对不上。现在归属层的 `chainShape` 一律返回轨道原样的点，悬停高亮画点击会画的整段（`sectionOf`）各条轨道的 `net.railPoints`，`netRailAt` 在归属层按轨道本身命中（网格查找），所以高亮、点选和颜色是同一条线。物理层不变。
+- 测试：`editor-web/test/railPick.test.ts`（道岔处顺向通过、不折返而走远路、只有折返时放开、到道岔为止、环线只走一圈、框选、拖动）。只改网页，升第三位。
+
 0.83.12 过夜车没接到早班就马上回库（用户 2026-11-15 截图：Village 新运用 06:00–06:32 只有一列车，车 2 06:32 才出来，“计算有问题”）：
 - 原因：`transitsim.planning.DutyPlanner.retireIdleTrains` 在允许留线的车厂（`cycle_routes`，`MAX_STAY_MILLIS`）里，空等的车从它“最早能跑的行程”（`waitFrom`，过夜后只看停着的站台）起再等 `MAX_LAYOVER_MILLIS`（30 分钟）才回库。三列车前一晚都停在落难新村（单站台终点），早上 06:01 只有一列能接，另两列的 `waitFrom` 都是 06:01，站到 06:31 才回库；这期间它们既不在车厂也跑不了车，`takeFromDepot` 派不出车，06:03:30–06:29:30 每天 15 班无车（配属 3 每周 105 班）。车 2“从中间走”是因为车厂在线路中间（紧挨维拉吉），出库线从那里画出。
 - 修：`missedMorning`——过夜车第二天能跑的第一个行程已过（与前一晚结束不在同一运营日）就立即回库。白天的等待不变。

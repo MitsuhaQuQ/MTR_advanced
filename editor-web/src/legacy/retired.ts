@@ -180,6 +180,18 @@ export function dutyRules(get: () => Legacy) {
   }
 }
 
+/** Each section of some rails once, by the first of its rails given, with its rails' keys */
+function eachSection(v: any, indices: number[], each: (key: string, section: string[]) => void) {
+  const done = new Set<string>()
+  indices.forEach(index => {
+    const entry = v.net.ownerOf && v.net.ownerOf.get(index)
+    const id = entry ? "s:" + entry.section : "r:" + index
+    if (done.has(id)) return
+    done.add(id)
+    each(v.netRailKey(index), v.sectionOf(index).map(v.netRailKey))
+  })
+}
+
 /** Step 6: the network settings (core/settings.ts); a rail's section is the old real map's (sectionOf, netRailKey) */
 export function settingsRules(get: () => Legacy) {
   const keysOf = (index: number) => { const { v } = get(); return { key: v.netRailKey(index), section: v.sectionOf(index).map(v.netRailKey) as string[] } }
@@ -214,6 +226,18 @@ export function settingsRules(get: () => Legacy) {
       const { key, section } = keysOf(index)
       X.setSectionLogicalLine(get().v.data, get().v.draft, key, section, id)
       done(true)
+    },
+    /** Many rails' sections at once (0.83.13), each section once, drawn again once: one step of undo */
+    setRailsLogicalLine(indices: number[], id: string | null) {
+      const { v } = get()
+      eachSection(v, indices, (key, section) => X.setSectionLogicalLine(v.data, v.draft, key, section, id))
+      done(true)
+    },
+    setRailsOwnerOverride(indices: number[], lines: string[] | null) {
+      const { v } = get()
+      eachSection(v, indices, (key, section) => X.setSectionOwners(v.data, v.draft, key, section, lines))
+      done()
+      get().fn.drawNetwork()
     },
     newLogicalId: X.newLogicalId,
     draftOwnerOverrides: () => X.draftOwnerOverrides(get().v.draft),

@@ -425,6 +425,7 @@
   "gui.mtr.node_boundary_rail": "边界轨道 → %s, %s, %s",
   "gui.mtr.node_set": "设定",
   "gui.mtr.place_trains_done": "已按时刻表摆到现在的位置（车厂 列车数）：%s",
+  "gui.mtr.place_trains_no_paths": "没有摆车：今天有 %s 份运用没有路径，摆了也没有车跑，现有的车还会被收走。先刷新车厂路径（改了运用几秒内会自动重新寻路），再按时刻表摆车",
   "gui.mtr.place_trains_failed": "按时刻表算不出列车的位置，没有改动，详见服务端日志",
   "gui.mtr.place_trains_busy": "已经在按时刻表摆车，完成后再试",
   "gui.mtr.place_trains_working": "正在按时刻表计算 %s 的列车现在的位置…",

@@ -189,6 +189,10 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	private String autoDutiesKey;
 	/**
+	 * The duties set by hand as they were when the depot's paths were last found ({@link #dutiesHash}), or 0 before then
+	 */
+	private int pathDutiesHash;
+	/**
 	 * The plan the auto duties were given from, as {@link LineDuties.Plan#toBytes} wrote it, or empty; server only.
 	 */
 	byte[] autoPlanRecord = new byte[0];
@@ -1200,7 +1204,17 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 		System.out.println("Minecraft Transit Railway: depot " + name + " sends its trains out by a timetable from now on, " + departures.size() + " services a day" + (departures.size() >= RouteTimetable.MAX_SERVICES ? " (as many as a timetable takes; the rest left out)" : "") + (services.size() < routes.size() ? ", only " + services.size() + " of its " + routes.size() + " routes as the others' times aren't known" : ""));
 	}
 
+	/**
+	 * @return a hash of the duties set by hand, never 0
+	 */
+	private int dutiesHash() {
+		final int hash = Arrays.hashCode(duties.toBytes());
+		return hash == 0 ? 1 : hash;
+	}
+
 	public void generateMainRoute(MinecraftServer minecraftServer, Level world, DataCache liveDataCache, RailwayDataPathGenerationModule.Snapshot snapshot, Set<Siding> unorderedSidings, Consumer<java.util.concurrent.Future<?>> callback) {
+		// The duties these paths are found for, to find them again once they change
+		pathDutiesHash = dutiesHash();
 		// By ID: the world's sidings are a hash set of objects hashed by identity, so taken as they come the sidings were
 		// grouped and given their duties in another order each time the server started, and the same plan gave a depot's
 		// sidings different duties (found 2026-11-13 comparing the yel world's duty paths across starts)
@@ -2382,6 +2396,12 @@ public class Depot extends AreaBase implements IReducedSaveData, TrainService.Bo
 	 */
 	public boolean takeAutoDutiesChange(LineDuties.Unit unit) {
 		setLineUnit(unit);
+		// Duties set by hand changed since the paths were found (applied from the web editor, which sends only the duties):
+		// found again, or no train has a path for the new ones (2026-11-15, the user's Village)
+		if (duties.diagramMode && pathDutiesHash != 0 && pathDutiesHash != dutiesHash()) {
+			pathDutiesHash = dutiesHash();
+			return true;
+		}
 		final String key = unit == null ? null : unit.key;
 		if (key == null) {
 			// No longer planned by line, as when its routes were deleted or lost their timetables: its paths are found once

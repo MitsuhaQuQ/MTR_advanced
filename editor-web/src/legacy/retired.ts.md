@@ -45,6 +45,7 @@
 - `draftSettingsPart(part, change)`：`X.setSettingsPart` 后 `done(true)`。
 - `setRailLogicalLine(index, id)`：`X.setSectionLogicalLine` 后 `done(true)`。
 - `setOwnerOverride(index, lines)`：`X.setSectionOwners` 后 `done()`、`fn.drawNetwork()`。
+- `setRailsLogicalLine(indices, id)`、`setRailsOwnerOverride(indices, lines)`（0.83.13）：一次画很多轨道所在的区段：经内部 `eachSection` 每个区段只改一次（按 `v.net.ownerOf` 的区段号去重，没有归属的轨道各自一段），全部改完才 `done(true)` / `done()`+`fn.drawNetwork()` 一次，草稿一次变化即一步撤销。调用者：`views/OwnershipPanel.tsx` 的 `paintMany`（经 `fn`）。
 - `platformSpeedItems(platformId)`、`platformStopItems(platformId)`：过站限速、停车位置菜单（停车位置文字用旧 `fn.stopPositionText`）。
 - `platformStationItems(platformId)`：站台所属车站菜单："自动"加最近 8 个车站（当前设定的车站不在其中时追加）。
 - `storeDepotEntry(depot, entry, sameAdded?)`：`X.storeDepotEntry` 后 `done()`。调用者：`views/MoveLinePanel.tsx:59`、`views/MoveLinePanel.tsx:60`（经 `fn`）。

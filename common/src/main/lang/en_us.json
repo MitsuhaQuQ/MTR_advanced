@@ -426,6 +426,7 @@
   "gui.mtr.node_boundary_rail": "Boundary rail to %s, %s, %s",
   "gui.mtr.node_set": "Set",
   "gui.mtr.place_trains_done": "Trains put where the timetable has them now (depot, trains): %s",
+  "gui.mtr.place_trains_no_paths": "Not placed: %s of today's duties have no path, so no train could run them and the trains there now would be taken away. Find the depot's paths again (they are found again by themselves within a few seconds after duties change), then place the trains",
   "gui.mtr.place_trains_failed": "Couldn't work out where the trains are by the timetable; nothing was changed. See the server log",
   "gui.mtr.place_trains_busy": "Trains are already being put by the timetable; try again when that is done",
   "gui.mtr.place_trains_working": "Working out where the trains of %s are now by the timetable…",

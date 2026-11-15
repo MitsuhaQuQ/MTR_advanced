@@ -114,7 +114,7 @@
 - `indexNetwork`（L659，函数）：为每段轨道整理点序列、在网格中登记包围盒（找鼠标下的轨道）、按节点对索引轨道。
 - `netChains`（L720，函数）：示意图用的轨道链：经过度为 2 的节点首尾相连、种类和隔离状态相同的轨道合成一条，使站台、存车线、隔离轨道各自成链。
 - `netLevel`（L789，常量）：示意图计算的缩放级别（以半个 2 的幂为一级）。
-- `chainShape`（L792，函数）：一条链在当前缩放下的画法：放大时为实际形状，否则简化并对齐 0°/45°/90°。
+- `chainShape`（L792，函数）：一条链在当前缩放下的画法：放大时或在归属层（0.83.13，与归属颜色、画笔点选同一几何）为实际形状，否则简化并对齐 0°/45°/90°。
 - `simplifyPoints`（L800，函数）：对 `[x, z, x, z, …]` 做 Douglas–Peucker 简化。
 - `octilinear`（L830，函数）：把相邻两点间的每段对齐到横、竖或 45°（接近者保留，否则直—斜—直）。
 - `cutSteps`（L862，函数）：把相邻两段形成的直角台阶斜切掉。
@@ -138,7 +138,8 @@
 - `netStatus`（L985，函数）：轨道隔离状态（叠加草稿边界）：0 普通、1 联络线独占、2 已放行、3 寻路边界。
 - `drawNetwork`（L994，函数）：在下一动画帧画全网配线图（只在路网视图且在时刻工作区时）。 新页面调用：`editor-web/src/legacy/dialogs.ts:105`、`editor-web/src/legacy/engine.ts:170` 等 17 处（经 `legacy.fn`）。
 - `drawNetworkFrame`（L1000，函数）：画一帧全网配线图：网格、轨道（按图层、隔离、归属/逻辑线路着色，示意或实际形状）、车站、所选线路组的路线、点选状态（`drawPicking`/`drawWayPick`）、调度台（`drawConsole`）等。
-- `netRailAt`（L1177，函数）：鼠标附近几像素内最近的轨道序号（缩小时为鼠标下链中最近的一段），无则 -1。 新页面调用：`editor-web/src/views/OwnershipPanel.tsx:81`（经 `legacy.fn`）。
+- `drawPaintMarks(g, stroke)`（0.83.13，内部函数，`drawNetworkFrame` 在悬停高亮后调用）：画归属画笔的标记 `net.paintMarks = { rails, start, box }`（由 `views/OwnershipPanel.tsx` 设置）：拖动或框选将要画的轨道、一段路的起点（所在整段蓝色虚线加圆点）、正在拉的方框（屏幕坐标）。只在归属层。悬停高亮在归属层改为画 `sectionOf(hover)` 各条轨道的 `net.railPoints`（点击会画的整段，和颜色同一组点）。
+- `netRailAt`（L1177，函数）：鼠标附近几像素内最近的轨道序号（缩小时为鼠标下链中最近的一段；归属层一律按轨道本身经网格查找，0.83.13），无则 -1。 新页面调用：`editor-web/src/views/OwnershipPanel.tsx:81`（经 `legacy.fn`）。
 - `netSegmentDistance`（L1228，函数）：点到线段距离（世界坐标）。
 - `netRailText`（L1234，函数）：轨道的悬停说明：种类（轨道/站台/存车线/留置位）、隔离状态、链长、归属或逻辑线路等。
 - `consoleState`（L1257，常量）：调度台状态（D6）：`open`、`data`（`api/console`）、`timer`、`system`（所选路网）、`selected`（所选列车）。

@@ -787,9 +787,13 @@ export function createLegacy(env) {
 	/** The scale the schematic is worked out at, in steps of half a power of two, so it is kept while zooming a little. */
 	const netLevel = () => Math.round(Math.log2(net.scale) * 2);
 
-	/** A run of track as drawn at the scale: exact when zoomed in, otherwise simplified and set along 0°, 45° and 90°. */
+	/**
+	 * A run of track as drawn at the scale: exact when zoomed in, otherwise simplified and set along 0°, 45° and 90°. On
+	 * the ownership layer always as the track lies, as the sections' colours are drawn on the rails' own points and the
+	 * brushes pick by them (0.83.13: the highlight cut the corners of the curves it was drawn over).
+	 */
 	function chainShape(chain) {
-		if (netExact()) return chain.points;
+		if (netExact() || net.layer === "owners") return chain.points;
 		const level = netLevel();
 		if (!chain.drawn.has(level)) chain.drawn.set(level, octilinear(simplifyPoints(chain.points, NET_SIMPLIFY_PX / Math.pow(2, level / 2))));
 		return chain.drawn.get(level);
@@ -1153,7 +1157,12 @@ export function createLegacy(env) {
 			netRouteCache.set(route, { network: d, points });
 			stroke(points, colorOf(route.color), 4);
 		});
-		if (net.hover >= 0 && net.hover < d.rails.length) stroke(!netExact() ? chainShape(chains[net.railChain[net.hover]]) : net.railPoints[net.hover], css("--sel"), 4);
+		// On the ownership layer the section a click paints, on the rails' own points as its colour is drawn (0.83.13)
+		if (net.hover >= 0 && net.hover < d.rails.length) {
+			if (net.layer === "owners") sectionOf(net.hover).forEach(index => stroke(net.railPoints[index], css("--sel"), 4));
+			else stroke(!netExact() ? chainShape(chains[net.railChain[net.hover]]) : net.railPoints[net.hover], css("--sel"), 4);
+		}
+		drawPaintMarks(g, stroke);
 		if (net.scale >= NET_STATION_SCALE) {
 			g.fillStyle = ink;
 			g.font = `12px ${css("--font-ui")}`;
@@ -1170,13 +1179,46 @@ export function createLegacy(env) {
 	}
 
 	/**
+	 * The ownership brushes' marks (views/OwnershipPanel.tsx, 0.83.13): the rails a stroke or a box will paint, the start
+	 * of a way between two rails, and the box being drawn, in screen pixels.
+	 */
+	function drawPaintMarks(g, stroke) {
+		const marks = net.paintMarks;
+		if (!marks || net.layer !== "owners") return;
+		const sel = css("--sel");
+		(marks.rails || []).forEach(index => { if (net.railPoints[index]) stroke(net.railPoints[index], sel, 5); });
+		if (marks.start >= 0 && marks.start < net.railPoints.length) {
+			sectionOf(marks.start).forEach(index => stroke(net.railPoints[index], css("--panel"), 9));
+			sectionOf(marks.start).forEach(index => stroke(net.railPoints[index], sel, 6, [6, 4]));
+			const p = net.railPoints[marks.start], half = Math.floor(p.length / 4) * 2;
+			g.setLineDash([]);
+			g.fillStyle = sel;
+			g.beginPath();
+			g.arc(netX(p[half]), netZ(p[half + 1]), 5, 0, Math.PI * 2);
+			g.fill();
+		}
+		if (marks.box) {
+			const { x0, z0, x1, z1 } = marks.box;
+			g.setLineDash([4, 3]);
+			g.lineWidth = 1;
+			g.strokeStyle = sel;
+			g.globalAlpha = 0.12;
+			g.fillStyle = sel;
+			g.fillRect(Math.min(x0, x1), Math.min(z0, z1), Math.abs(x1 - x0), Math.abs(z1 - z0));
+			g.globalAlpha = 1;
+			g.strokeRect(Math.min(x0, x1), Math.min(z0, z1), Math.abs(x1 - x0), Math.abs(z1 - z0));
+		}
+		g.setLineDash([]);
+	}
+
+	/**
 	 * @return the rail nearest the mouse within a few pixels, or -1; zoomed out, the nearest rail of the run of track drawn
-	 * under the mouse
+	 * under the mouse (on the ownership layer the nearest rail, as it is drawn there as it lies)
 	 */
 	function netRailAt(px, pz) {
 		if (!net.data || !net.grid) return -1;
 		const x = netWorldX(px), z = netWorldZ(pz), reach = NET_HIT_PX / net.scale;
-		if (!netExact()) {
+		if (!netExact() && net.layer !== "owners") {
 			let bestChain = null, bestChainDistance = reach;
 			netChains().forEach(chain => {
 				const p = chainShape(chain), box = netGeometry(p);
@@ -1235,7 +1277,7 @@ export function createLegacy(env) {
 		const a = d.nodes[rail[0]], b = d.nodes[rail[1]];
 		const kind = rail[2] === 1 ? tr("站台") : rail[2] === 2 ? tr("存车线") : rail[2] === 3 ? tr("留置位（一列车，在游戏里用留置色的信号闭塞分区标出）") : tr("轨道");
 		const isolation = status === 3 ? tr("寻路边界") : status === 1 ? tr("联络线独占") : status === 2 ? tr("联络线已放行") : "";
-		const run = !netExact() && net.chains ? net.chains[net.railChain[index]].rails.length : 1;
+		const run = !netExact() && net.layer !== "owners" && net.chains ? net.chains[net.railChain[index]].rails.length : 1;
 		let owners = "";
 		if (net.layer === "owners" && usesLogicalLines()) {
 			const line = railLogicalLine(index), entry = net.ownerOf && net.ownerOf.get(index);

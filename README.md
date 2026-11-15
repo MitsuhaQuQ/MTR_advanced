@@ -40,6 +40,10 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.83.13: duties set by hand that change (as applied from the web editor) make the server find the depot's paths again within seconds; before, the new duties had no paths and no train left. Placing trains by the timetable while some of today's duties have no path now tells so and changes nothing, instead of taking the trains away.
+
+The web editor's ownership layer paints many sections at once while a brush or the eraser is in hand: a click paints a section and marks it as the start, Shift+click another paints the shortest way along the rails between them (never turning back at a turnout while another way exists), a left-drag paints every rail passed over, Shift+drag a box paints every rail inside or crossing it, and a double click paints along the rail both ways up to the turnouts; each gesture is one step of undo, and right-drag or Space+drag pans. The highlight under the mouse follows the rails as they are drawn instead of cutting corners.
+
 0.83.12: trains staying on the line overnight at a terminal of one platform: those that don't get the morning's first service go back to the depot at once in the duty plan, so the depot sends trains out for the next services instead of none for half an hour. The timetable's 跑完这一班留在线上过夜 is on every stop of a service, and greyed with the reason where no depot's duty runs it.
 
 0.83.11: the timetable's menu on a service's last stop and on its head has 跑完这一班留在线上过夜: by duties drawn by hand it ticks the overnight stay of the duty ending with that service; a depot planning from the timetables opens its settings, where trains are let stay on the line.

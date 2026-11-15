@@ -534,6 +534,14 @@ public final class LiveSimulation {
 				if (byDuties) {
 					final TickRunner<SimDataset.DataTrack> runner = SimDataset.start(dataset, now).get();
 					runner.setTrainIds(trainIds);
+					// Duties with no path would get no train, and the trains there now would be taken away for none: told and
+					// nothing changed, until the depot's paths are found again (2026-11-15)
+					final int missing = runner.countDutiesWithoutPath();
+					if (missing > 0) {
+						System.out.println("Minecraft Transit Railway: didn't put the trains of depots " + depotIds + " by their timetables: " + missing + " of today's duties have no path, so the depots' paths are found again first");
+						tell(player, Text.translatable("gui.mtr.place_trains_no_paths", missing));
+						return null;
+					}
 					runner.placeDutyTrains();
 					dayRecord = runner.record();
 				} else {

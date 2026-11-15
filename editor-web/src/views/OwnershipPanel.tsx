@@ -8,10 +8,14 @@
  * Without: the brushes are the operating lines (the section owned by that line alone), "open to every line", and "worked
  * out again" (old setOwnerOverride), with the first draft of logical lines a click away.
  *
- * A click that pans the map doesn't paint; Esc or the brush again puts it down. Right-click menus still work.
+ * Many sections at once (0.83.13): Shift+click a second rail paints the way between it and the rail clicked before, a
+ * drag paints every rail passed over, Shift+drag a box paints every rail in it, and a double click paints along the rail
+ * both ways up to the turnouts. Each is one step of undo. Right-drag or Space+drag pans while a brush is in hand, the
+ * wheel zooms; Esc drops the way's start, then puts the brush down. Right-click menus still work.
  */
-import { useEffect, useMemo, useSyncExternalStore } from "react"
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { legacy, useLegacy } from "../legacy/engine"
+import { railPath, railsAlong, railsInBox, railsNearSegment } from "../core/railPick"
 import { ConfirmButton } from "../ui/bits"
 import { tr } from "../i18n"
 import { colorOf, shortName } from "./now"
@@ -29,6 +33,170 @@ export function paint(index: number, brush: Brush) {
   const { fn } = legacy
   if (brush.kind === "logical") fn.setRailLogicalLine(index, brush.id)
   else fn.setOwnerOverride(index, brush.lines)
+}
+
+/** Paints many rails' sections with a brush at once, each section once: one step of undo (0.83.13). */
+export function paintMany(indices: number[], brush: Brush) {
+  if (!indices.length) return
+  const { fn } = legacy
+  if (brush.kind === "logical") fn.setRailsLogicalLine(indices, brush.id)
+  else fn.setRailsOwnerOverride(indices, brush.lines)
+}
+
+/** Whether a key goes to something typed into, where Space is a space */
+const typing = (target: EventTarget | null) => target instanceof HTMLElement && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))
+
+type Gesture = { kind: "stroke" | "box" | "pan"; x: number; z: number; px: number; pz: number; started: boolean; last: number[]; rails: Set<number> }
+
+/**
+ * The brush's gestures on the real map (0.83.13), ahead of the old handlers: a click paints a section and is the start of
+ * a way, Shift+click paints the way to it, a drag paints what it passes over, Shift+drag a box, a double click along the
+ * rail to the turnouts. Left-drag paints, so right-drag and Space+drag pan. What a drag or a box will paint is marked on
+ * the map (`net.paintMarks`, drawn by the old code) and painted when the button is let go.
+ */
+function useBrushGestures(brush: Brush | null, start: { current: number }, setStart: (index: number) => void) {
+  useEffect(() => {
+    const canvas = document.getElementById("net-canvas") as HTMLCanvasElement | null
+    if (!canvas || !brush) return
+    const { v, fn } = legacy
+    const net = () => v.net
+    const on = () => net().layer === "owners" && Boolean(net().data && net().railPoints)
+    const local = (e: MouseEvent) => { const box = canvas.getBoundingClientRect(); return [e.clientX - box.left, e.clientY - box.top] }
+    const world = (px: number, pz: number) => [v.netWorldX(px), v.netWorldZ(pz)]
+    let space = false, swallowClick = false, rightMoved = false
+    let gesture: Gesture | null = null
+    const cursor = () => { canvas.style.cursor = space || gesture?.kind === "pan" ? "grab" : "crosshair" }
+    /** Marks the sections of the rails a gesture will paint, the start of a way, and the box */
+    const mark = (rails: Iterable<number> = [], box: { x0: number; z0: number; x1: number; z1: number } | null = null) => {
+      const shown = new Set<number>()
+      for (const index of rails) for (const each of v.sectionOf(index)) shown.add(each)
+      net().paintMarks = { rails: [...shown], start: start.current, box }
+      fn.drawNetwork()
+    }
+    // A brush taken up starts without a way's start
+    setStart(-1)
+
+    const onMove = (e: MouseEvent) => {
+      const now = gesture
+      if (!now) return
+      if (!now.started) {
+        if (Math.hypot(e.clientX - now.x, e.clientY - now.z) <= 4) return
+        now.started = true
+      }
+      if (now.kind === "pan") { rightMoved = true; return }
+      const [px, pz] = local(e), [x, z] = world(px, pz)
+      if (now.kind === "stroke") {
+        const reach = v.NET_HIT_PX / net().scale
+        railsNearSegment(net().railPoints, now.last[0], now.last[1], x, z, reach).forEach(index => now.rails.add(index))
+        now.last = [x, z]
+        mark(now.rails)
+      } else {
+        const [x0, z0] = world(now.px, now.pz)
+        now.rails = new Set(railsInBox(net().railPoints, x0, z0, x, z))
+        mark(now.rails, { x0: now.px, z0: now.pz, x1: px, z1: pz })
+      }
+    }
+    const onUp = () => {
+      removeEventListener("mousemove", onMove)
+      removeEventListener("mouseup", onUp)
+      const done = gesture
+      gesture = null
+      cursor()
+      if (!done || done.kind === "pan" || !done.started) return
+      // The click that ends the drag isn't one
+      swallowClick = true
+      setTimeout(() => { swallowClick = false })
+      mark()
+      paintMany([...done.rails], brush)
+    }
+    const onDown = (e: MouseEvent) => {
+      swallowClick = false
+      if (!on()) return
+      const [px, pz] = local(e)
+      if (e.button === 2) {
+        // Panned as the old left-drag does: the old mousemove pans while there is a drag
+        rightMoved = false
+        net().drag = { x: e.clientX, z: e.clientY, cx: net().cx, cz: net().cz }
+        gesture = { kind: "pan", x: e.clientX, z: e.clientY, px, pz, started: false, last: [], rails: new Set() }
+        cursor()
+      } else if (e.button === 0 && !space) {
+        // Not a pan: the old handler doesn't see it
+        e.stopPropagation()
+        e.preventDefault()
+        gesture = { kind: e.shiftKey ? "box" : "stroke", x: e.clientX, z: e.clientY, px, pz, started: false, last: world(px, pz), rails: new Set() }
+      } else return
+      addEventListener("mousemove", onMove)
+      addEventListener("mouseup", onUp)
+    }
+    const onClick = (e: MouseEvent) => {
+      if (swallowClick) { swallowClick = false; e.stopPropagation(); return }
+      if (net().dragged || !on()) return
+      const [px, pz] = local(e)
+      const index = fn.netRailAt(px, pz)
+      if (index < 0) return
+      e.stopPropagation()
+      if (e.shiftKey && start.current >= 0) {
+        const way = railPath(net().data.rails, net().railPoints, start.current, index)
+        paintMany(way.length ? way : [index], brush)
+      } else paint(index, brush)
+      // The end of a way is the start of the next
+      setStart(index)
+    }
+    const onDouble = (e: MouseEvent) => {
+      if (!on()) return
+      const [px, pz] = local(e)
+      const index = fn.netRailAt(px, pz)
+      if (index < 0) return
+      e.stopPropagation()
+      paintMany(railsAlong(net().data.rails, index), brush)
+    }
+    const onMenu = (e: MouseEvent) => {
+      // A right-drag that panned opens no menu
+      if (!rightMoved) return
+      rightMoved = false
+      e.preventDefault()
+      e.stopPropagation()
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (start.current >= 0) setStart(-1)
+        else setBrushNow(null)
+      } else if (e.key === " " && !typing(e.target)) {
+        e.preventDefault()
+        if (!space) { space = true; cursor() }
+      }
+    }
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.key !== " " || typing(e.target)) return
+      e.preventDefault()
+      space = false
+      cursor()
+    }
+    const onBlur = () => { space = false; cursor() }
+    canvas.addEventListener("mousedown", onDown, true)
+    canvas.addEventListener("click", onClick, true)
+    canvas.addEventListener("dblclick", onDouble, true)
+    canvas.addEventListener("contextmenu", onMenu, true)
+    addEventListener("keydown", onKey)
+    addEventListener("keyup", onKeyUp)
+    addEventListener("blur", onBlur)
+    cursor()
+    return () => {
+      canvas.removeEventListener("mousedown", onDown, true)
+      canvas.removeEventListener("click", onClick, true)
+      canvas.removeEventListener("dblclick", onDouble, true)
+      canvas.removeEventListener("contextmenu", onMenu, true)
+      removeEventListener("keydown", onKey)
+      removeEventListener("keyup", onKeyUp)
+      removeEventListener("blur", onBlur)
+      removeEventListener("mousemove", onMove)
+      removeEventListener("mouseup", onUp)
+      canvas.style.cursor = ""
+      start.current = -1
+      net().paintMarks = null
+      fn.drawNetwork()
+    }
+  }, [brush]) // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 /** Takes a logical line away with its sections and the operating lines' choices of it (old deleteLogicalLine, unasked). */
@@ -66,29 +234,21 @@ export function OwnershipPanel({ className }: { className: string }) {
   const { fn, v } = legacy
   const data = v.data, net = v.net
   const brush = useBrush(), setBrush = setBrushNow
+  // The start of a way between two rails: the rail clicked last
+  const start = useRef(-1), [hasStart, setHasStart] = useState(false)
+  const setStart = (index: number) => {
+    start.current = index
+    setHasStart(index >= 0)
+    legacy.v.net.paintMarks = { rails: [], box: null, ...legacy.v.net.paintMarks, start: index }
+    legacy.fn.drawNetwork()
+  }
+  useBrushGestures(brush, start, setStart)
+  useEffect(() => { if (!brush) setHasStart(false) }, [brush])
   // Put down when the panel goes
   useEffect(() => () => setBrushNow(null), [])
   const canEdit = Boolean(data?.canEdit)
   const logical = fn.usesLogicalLines() as boolean
 
-  // Painting on the map: a click that didn't pan, on a rail; ahead of the old handlers, which then don't see it
-  useEffect(() => {
-    const canvas = document.getElementById("net-canvas") as HTMLCanvasElement | null
-    if (!canvas || !brush) return
-    const onClick = (e: MouseEvent) => {
-      if (legacy.v.net.dragged || legacy.v.net.layer !== "owners") return
-      const box = canvas.getBoundingClientRect()
-      const index = legacy.fn.netRailAt(e.clientX - box.left, e.clientY - box.top)
-      if (index < 0) return
-      e.stopPropagation()
-      paint(index, brush)
-    }
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setBrush(null) }
-    canvas.addEventListener("click", onClick, true)
-    addEventListener("keydown", onKey)
-    canvas.style.cursor = "crosshair"
-    return () => { canvas.removeEventListener("click", onClick, true); removeEventListener("keydown", onKey); canvas.style.cursor = "" }
-  }, [brush])
   // A brush whose logical line is gone is put down
   useEffect(() => {
     if (brush?.kind === "logical" && brush.id !== null && !fn.logicalLinesShown().has(brush.id)) setBrush(null)
@@ -131,9 +291,18 @@ export function OwnershipPanel({ className }: { className: string }) {
       <div className="flex flex-col gap-3 p-3">
         <section>
           <h3 className="label-sm m-0 mb-1">{logical ? tr("逻辑线路画笔") : tr("归属画笔")}</h3>
-          <p className="m-0 mb-2 text-[12px] leading-[18px] text-dim">
-            {brush ? tr("在图上点轨道：它所在的整段（到下一个道岔或边界）都画进去。拖动照常平移；Esc 放下画笔。") : tr("选一支画笔，再在图上点轨道，一次改一整段。右键菜单照常可用。")}
-          </p>
+          {brush ? (
+            <ul className="m-0 mb-2 list-disc pl-4 text-[12px] leading-[18px] text-dim">
+              <li>{tr("点轨道：画它所在的整段（到下一个道岔或边界）。")}</li>
+              <li className={hasStart ? "font-semibold text-ink" : ""}>{hasStart ? tr("起点已选（蓝色虚线）：Shift+点另一段，画两段之间最短的一条路；终点又是下一段路的起点。") : tr("先点一段当起点，再 Shift+点另一段：画两段之间最短的一条路。")}</li>
+              <li>{tr("按住左键拖：经过的轨道都画上。")}</li>
+              <li>{tr("Shift+拖出方框：框里和压到框边的轨道都画上。")}</li>
+              <li>{tr("双击：顺着轨道往两头画，到道岔或轨道尽头为止。")}</li>
+              <li>{tr("右键拖或按住空格拖：平移；滚轮缩放。每个动作撤销一次就退回。Esc 先取消起点，再放下画笔。")}</li>
+            </ul>
+          ) : (
+            <p className="m-0 mb-2 text-[12px] leading-[18px] text-dim">{tr("选一支画笔，再在图上点轨道，一次改一整段；也能连路、拖动、框选、双击成片地画。右键菜单照常可用。")}</p>
+          )}
           <ul className="m-0 flex list-none flex-col gap-0.5 p-0">
             {logical ? <>
               {logicalLines.map((line: any) => brushRow("l" + line.id, { kind: "logical", id: line.id }, colorOf(line.color), line.name, (

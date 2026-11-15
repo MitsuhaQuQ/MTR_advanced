@@ -755,6 +755,35 @@ public final class TickRunner<T extends RunTrack> {
 	 * Every train on the line goes to where the plan has it now (6.3), furthest along first.
 	 */
 	/**
+	 * @return how many of today's duties have no path on their siding, so no train can run them: the depot's paths were
+	 * found for other duties (2026-11-15, the user's Village: duties applied from the web editor, paths not found again,
+	 * no train left and placing the trains by the timetable put none)
+	 */
+	public int countDutiesWithoutPath() {
+		final int weekday = OperatingDay.getWeekday(millis);
+		int missing = 0;
+		for (final DepotBoard depot : depots) {
+			if (!depot.duties.diagramMode) {
+				continue;
+			}
+			for (final SidingRun sidingRun : depotSidings.get(depot)) {
+				final List<DepotDuties.Slot> slots = depot.duties.getSlots(sidingRun.sidingId);
+				for (int i = 0; i < slots.size(); i++) {
+					final DepotDuties.DayDuty duty = slots.get(i).getDuty(weekday);
+					if (duty == null || duty.segments.isEmpty()) {
+						continue;
+					}
+					final String key = DutyShapes.getSlotKey(slots, i, weekday, routes);
+					if (key == null || sidingRun.siding.tripPaths.get(key) == null) {
+						missing++;
+					}
+				}
+			}
+		}
+		return missing;
+	}
+
+	/**
 	 * Puts a train on every duty of the depots running by duties that is out now and has no train, where the duty has it
 	 * now: at the stop it stands at, or on its run between two (decoupling document, step D). Nothing is worked out from
 	 * the start of the day, so it is done at once. The duties started earliest are put first, as they are furthest along,
