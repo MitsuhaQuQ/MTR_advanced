@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.83.12: trains staying on the line overnight at a terminal of one platform: those that don't get the morning's first service go back to the depot at once in the duty plan, so the depot sends trains out for the next services instead of none for half an hour. The timetable's 跑完这一班留在线上过夜 is on every stop of a service, and greyed with the reason where no depot's duty runs it.
+
 0.83.11: the timetable's menu on a service's last stop and on its head has 跑完这一班留在线上过夜: by duties drawn by hand it ticks the overnight stay of the duty ending with that service; a depot planning from the timetables opens its settings, where trains are let stay on the line.
 
 0.83.10: with too few trains for every service, the duties run every k-th service evenly only if that runs nearly as many services (90 %) as the trains can take one after another; before, a depot of two trains could be given one duty running a third of its services.

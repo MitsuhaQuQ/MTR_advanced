@@ -1221,6 +1221,7 @@ const I18N = (() => {
 			// Context menus of services and cells
 			"删除这一班": "Delete this service",
 			"跑完这一班不回库": "Stay on the line after this service",
+			"跑完这一班留在线上过夜：没有车厂的运用跑这一班": "Stay overnight after this service: no depot's duty runs it",
 			"跑完这一班留在线上过夜（车 {0} 的运用）": "Stay on the line overnight after this service (train {0}'s duty)",
 			"跑完这一班留在线上过夜：车厂{0}自动排班，在“编辑车厂…”里勾“允许长时间停在线上”…": "Stay overnight after this service: depot {0} plans its duties from the timetables; tick \"may stay long on the line\" in Edit depot…",
 			"跑完这一班回库": "Return to the depot after this service",

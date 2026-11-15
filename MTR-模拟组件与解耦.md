@@ -1449,6 +1449,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 归属图按线路图画（0.83.7）：只在网页 `core/abstractNet.ts` 与 `views/NetworkSchematic.tsx`，组件和游戏不变。
 
+过夜车没接到早班就回库（0.83.12）：只在组件 `DutyPlanner.retireIdleTrains`/`missedMorning`，游戏自动运用、网页一键生成和组件 `AutoDuties` 都经它。
+
 时刻表右键过夜（0.83.11）：只在网页 `oldEditor.js`，改的是运用的 `stay`，组件不变。
 
 车不够时的抽班（0.83.10）：只在组件 `DutyGenerator.generateSpread`，抽班要跑到完整生成的 90% 才采用；游戏、网页一键生成和组件的 `AutoDuties`/`PlanCheck` 都经它，一起变。

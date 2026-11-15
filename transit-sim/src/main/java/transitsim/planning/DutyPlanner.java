@@ -274,17 +274,28 @@ public final class DutyPlanner {
 	 * line it stays on, once it has waited a normal layover ({@link RouteTimetable#MAX_LAYOVER_MILLIS}) from the first
 	 * trip it could have run: a train staying overnight waits for the morning, but one no trip can take (more trains end
 	 * at a terminal than leave it, or the next day's trips leave from another platform) doesn't stay for days, nor make
-	 * the depot send out more and more trains week after week.
+	 * the depot send out more and more trains week after week. A train out overnight whose morning trip, the first it
+	 * could run, has gone by goes back at once: another train out overnight at the same platform took it, and this one,
+	 * not in the depot, kept the depot from sending a train out for the next trips (2026-11-15, the user's Village: two of
+	 * three trains stood at a terminal of one platform until 06:31, and the services until then had no train).
 	 */
 	private void retireIdleTrains(List<OpenDuty> open, Map<Long, List<Long>> depotReady, long nowMillis, WeekResult result) {
 		for (int i = 0; i < open.size(); ) {
 			final OpenDuty duty = open.get(i);
-			if (duty.readyMillis + maxLayoverMillis < nowMillis || maxLayoverMillis > RouteTimetable.MAX_LAYOVER_MILLIS && waitFrom(duty, open) + RouteTimetable.MAX_LAYOVER_MILLIS < nowMillis) {
+			if (duty.readyMillis + maxLayoverMillis < nowMillis || maxLayoverMillis > RouteTimetable.MAX_LAYOVER_MILLIS && (waitFrom(duty, open) + RouteTimetable.MAX_LAYOVER_MILLIS < nowMillis || missedMorning(duty, open, nowMillis))) {
 				retire(open, duty, result, null);
 			} else {
 				i++;
 			}
 		}
+	}
+
+	/**
+	 * @return whether a train out overnight has let the first trip it could run go by, the next day
+	 */
+	private boolean missedMorning(OpenDuty duty, List<OpenDuty> open, long nowMillis) {
+		final long first = waitFrom(duty, open);
+		return first < nowMillis && Math.floorDiv(first, OperationTime.DAY_MILLIS) != Math.floorDiv(duty.endMillis, OperationTime.DAY_MILLIS);
 	}
 
 	/**

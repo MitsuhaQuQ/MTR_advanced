@@ -2258,7 +2258,8 @@ export function createLegacy(env) {
 		data.depots.forEach(depot => {
 			if (found || !depot.routes.includes(s.route.id)) return;
 			const duties = dutiesOf(depot);
-			if (duties.mode !== "diagram") {
+			// Duties the game works out (自动排班, 自动运用) stay out by the depot's setting, not each duty's
+			if (duties.mode !== "diagram" || duties.auto) {
 				auto = auto || depot;
 				return;
 			}
@@ -2273,7 +2274,8 @@ export function createLegacy(env) {
 			dutyForEditing(found.depot, all.sidings[found.siding][found.index], state.weekday).stay = !found.stay;
 		})];
 		if (auto) return [tr("跑完这一班留在线上过夜：车厂{0}自动排班，在“编辑车厂…”里勾“允许长时间停在线上”…", shortName(auto.name)), () => depotDialog(auto)];
-		return null;
+		// Shown greyed rather than left out, so it is found and says why (user, 2026-11-15: 这里还是没添加过夜选项)
+		return [tr("跑完这一班留在线上过夜：没有车厂的运用跑这一班"), null];
 	}
 
 	function cellMenu(e, cell) {
@@ -2346,7 +2348,8 @@ export function createLegacy(env) {
 			if (s.deployOrder && s.deployOrder.stop === stop) items.push([tr("改出车的车厂…"), () => serviceOrderDialog(s, "deploy", stop)]);
 			if (s.deployOrder) items.push([tr("取消出车指令"), () => edit(table => setServiceOrder(table, s.service, "deploy", 0, null))]);
 			if (s.returnOrder) items.push([tr("取消回送"), () => edit(table => setServiceOrder(table, s.service, "return", 0, null))]);
-			if (stop === n - 1 && data.canEdit) {
+			// On any stop of the service, not only its last (2026-11-15: looked for on a stop in the middle)
+			if (data.canEdit) {
 				const overnight = overnightItem(s);
 				if (overnight) items.push(overnight);
 			}

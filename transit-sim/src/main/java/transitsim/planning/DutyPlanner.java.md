@@ -57,7 +57,7 @@
 在外列车 = Σ(车厂开始列车数 − 已就绪于 `timeMillis` 之前的库存数)，更新最大值。
 
 ### `private void retireIdleTrains(List<OpenDuty> open, Map<Long, List<Long>> depotReady, long nowMillis, WeekResult result)`
-- 作用：列车等待超过线路允许（`readyMillis + maxLayoverMillis < now`），或在允许留线的线路上（`maxLayoverMillis > MAX_LAYOVER_MILLIS`）从它能跑的第一个行程起已等了正常折返时长（`MAX_LAYOVER_MILLIS`），则结束其运用回库。这样过夜列车等到早上，但没有行程能接的列车（终点到达多于发出、或次日行程从别的站台出发）不会停好几天，也不会让车厂逐周越派越多。
+- 作用：列车等待超过线路允许（`readyMillis + maxLayoverMillis < now`），或在允许留线的线路上（`maxLayoverMillis > MAX_LAYOVER_MILLIS`）从它能跑的第一个行程起已等了正常折返时长（`MAX_LAYOVER_MILLIS`），则结束其运用回库。另外（0.83.12）留线时过夜的列车若第二天它能跑的第一个行程已过（`missedMorning`：`waitFrom` < 现在，且与它前一晚结束不在同一运营日，即同站台另一列过夜车接走了早班），立即回库，车厂才能为接下来的行程派车（用户的 Village：单站台终点三列过夜车里两列站到 06:31，之前的班次无车）。这样过夜列车等到早上，但没有行程能接的列车（终点到达多于发出、或次日行程从别的站台出发）不会停好几天，也不会让车厂逐周越派越多。
 
 ### `private long waitFrom(OpenDuty duty, List<OpenDuty> open)`
 - 返回值：按 `findTrainInService` 的规则列车最早能跑行程的时刻（考虑下一周的行程，以便列车跨周日夜）；过夜后只能从停下的站台出发；没有行程能接时为就绪时刻。结果按 (就绪时刻, 站台) 缓存在 `OpenDuty` 中。
