@@ -85,6 +85,10 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.83.14 附近自动找到的折返线走不通不再算车厂失败（用户 2026-11-15：Village “路径未生成，它一直试图去根本没有连着的折返线” -2640, 83, 2326）：
+- 原因：明珠线终点田端站台 6 没指定折返节点，`DutyPathBuilder` 就用 `NearbyTurnBacks`（200 格内，只看距离）找附近的折返线，找到下层 S1 那条和明珠线完全不连通的折返线。`turnTimesFor` 的 `holdWay`（混合折返）和 `findConnectionTimed` 去试它，`waysRound(...).unusable` 把 `failure` 记成 `TURN_BACK_UNUSED`，`generateDutiesOnly` 见 failure 不为 NONE 就返回 0，车厂整体显示“路径未生成”；运用路径其实都找到了（日志 “2 paths”）。11 月初（9148a522、000076f8）就有。
+- 修：`waysRound(..., report)`：只有线路列出的折返节点走不通才报 `TURN_BACK_UNUSED`；附近自动找来的只试，走不通就跳过（`holdWay` 传 `!listed.isEmpty()`，`findConnectionTimed` 传 `!turnBackNodes.isEmpty()`）。断点 `pre-nearby-turnback-quiet`。只改服务端，升第三位。
+
 0.83.13 改了运用会自动重新寻路、缺路径时不摆车（用户 2026-11-15：Village 新运用排出来但“车没了”）：
 - 原因：网页“一键生成运用”后应用，`EditorDuties.apply` 只发运用，不请求寻路；服务端每 100 刻的 `Depot.takeAutoDutiesChange` 只看规划单元的键，手动设的运用（`duties.diagramMode`）内容变了不会重新寻路。存车线的 `tripPaths` 还是旧运用的键，新运用三份都找不到路径：出车（`DepotDispatcher` `getPath` 为 null 就跳过）、按时刻表摆车（`TickRunner.placeDutyTrains`）都没提示地跳过，日志一直“put by timetable: Village 0”；摆车还先删了存车线现有的车（`LiveSimulation.takeInto`），一列没摆上也不补回。这个问题早就有，以前开服、改车厂、改时刻表时顺带寻路才没显出来。
 - 修：`Depot.generateMainRoute` 开始时记下当时手动运用的哈希（`pathDutiesHash`，`dutiesHash` = `duties.toBytes()` 的哈希）；`takeAutoDutiesChange` 发现手动运用的哈希变了就返回 true，交给现有的寻路队列重新寻路（几秒内）。组件 `TickRunner.countDutiesWithoutPath` 数今天没有路径的运用；`LiveSimulation.takeInto` 按运用摆车前若有，就打日志、告诉玩家（`gui.mtr.place_trains_no_paths`）并什么都不改，不再收走现有的车。只改服务端，升第三位。

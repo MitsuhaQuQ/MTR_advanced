@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.83.14: a turn back rail found near a terminus by itself (none set for the route) that no way goes round is skipped, not told as the depot's paths failing; one set for the route still is.
+
 0.83.13: duties set by hand that change (as applied from the web editor) make the server find the depot's paths again within seconds; before, the new duties had no paths and no train left. Placing trains by the timetable while some of today's duties have no path now tells so and changes nothing, instead of taking the trains away.
 
 The web editor's ownership layer paints many sections at once while a brush or the eraser is in hand: a click paints a section and marks it as the start, Shift+click another paints the shortest way along the rails between them (never turning back at a turnout while another way exists), a left-drag paints every rail passed over, Shift+drag a box paints every rail inside or crossing it, and a double click paints along the rail both ways up to the turnouts; each gesture is one step of undo, and right-drag or Space+drag pans. The highlight under the mouse follows the rails as they are drawn instead of cutting corners.

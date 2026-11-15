@@ -999,13 +999,23 @@ final class DutyPathBuilder {
 			final List<PathData> direct = new ArrayList<>();
 			PathFinder.findPath(direct, rails, graph, Arrays.asList(from, to), null, 1, depot.cruisingAltitude, useFastSpeed);
 			return direct;
-		}, () -> getNearbyTurnBackNodes(from, rails), waysRound(from, to, rails, graph, useFastSpeed));
+		}, () -> getNearbyTurnBackNodes(from, rails), waysRound(from, to, rails, graph, useFastSpeed, !turnBackNodes.isEmpty()));
 	}
 
 	/**
 	 * @return the ways round each turn back node from one stop to the next, as the component asks for them
 	 */
 	TurnBackWays.Ways<BlockPos, PathData> waysRound(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed) {
+		return waysRound(from, to, rails, graph, useFastSpeed, true);
+	}
+
+	/**
+	 * @param report whether a turn back rail no way goes round is told as the depot's failure: only for those the route
+	 *               lists; those found near the platform by themselves are only tried, and one that isn't joined to the
+	 *               line at all (2026-11-15, the user's Village: the S1 turn back rail 40 blocks from 明珠线's terminus, on
+	 *               another level and not connected) made the whole depot's paths show as not generated
+	 */
+	TurnBackWays.Ways<BlockPos, PathData> waysRound(SavedRailBase from, SavedRailBase to, Map<BlockPos, Map<BlockPos, Rail>> rails, RailGraph<Rail> graph, boolean useFastSpeed, boolean report) {
 		return new TurnBackWays.Ways<BlockPos, PathData>() {
 			@Override
 			public List<PathData> find(BlockPos node) {
@@ -1021,7 +1031,9 @@ final class DutyPathBuilder {
 
 			@Override
 			public void unusable(BlockPos node) {
-				failure = new PathFailure(PathFailure.Type.TURN_BACK_UNUSED, node.asLong());
+				if (report) {
+					failure = new PathFailure(PathFailure.Type.TURN_BACK_UNUSED, node.asLong());
+				}
 			}
 		};
 	}
@@ -1060,7 +1072,7 @@ final class DutyPathBuilder {
 				final Platform from = dataCache.platformIdMap.get(platform);
 				final List<BlockPos> listed = getTurnBackNodes(before, graph);
 				final List<BlockPos> nodes = listed.isEmpty() ? getNearbyTurnBackNodes(from, rails) : withStabling(listed, from, rails);
-				final TurnBackSection<PathData> hold = nodes.isEmpty() ? null : findTurnBackSection(from, from, nodes, 0, rails, graph, useFastSpeed);
+				final TurnBackSection<PathData> hold = nodes.isEmpty() ? null : TurnBackWays.section(nodes, 0, waysRound(from, from, rails, graph, useFastSpeed, !listed.isEmpty()));
 				if (hold == null || hold.getDefaultWay().isEmpty()) {
 					return null;
 				}
