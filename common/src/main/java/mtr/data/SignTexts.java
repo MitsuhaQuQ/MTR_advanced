@@ -46,6 +46,7 @@ public final class SignTexts {
 		put("logo", "我的世界鐵路", "Minecraft Transit Railway", "マインクラフト鉄道");
 		put("male", "男洗手間", "Male Toilet", "男性用トイレ");
 		put("platform", "月台", "Platform", "のりば");
+		put("platform_direction", "方向", "Direction", "方面");
 		put("sp1900", "列車", "Trains", "列車");
 		put("station", "車站", "Station", "駅");
 		put("tickets", "車票", "Tickets", "きっぷ");

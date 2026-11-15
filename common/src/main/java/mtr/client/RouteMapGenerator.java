@@ -270,6 +270,13 @@ public class RouteMapGenerator implements IGui {
 	}
 
 	public static NativeImage generateDirectionArrow(long platformId, boolean hasLeft, boolean hasRight, HorizontalAlignment horizontalAlignment, boolean showToString, float paddingScale, float aspectRatio, int backgroundColor, int textColor, int transparentColor) {
+		return generateDirectionArrow(platformId, hasLeft, hasRight, horizontalAlignment, showToString, paddingScale, aspectRatio, backgroundColor, textColor, transparentColor, true);
+	}
+
+	/**
+	 * @param showPlatformNumber false for the direction only: no circle with the platform's number, and no room kept for it
+	 */
+	public static NativeImage generateDirectionArrow(long platformId, boolean hasLeft, boolean hasRight, HorizontalAlignment horizontalAlignment, boolean showToString, float paddingScale, float aspectRatio, int backgroundColor, int textColor, int transparentColor, boolean showPlatformNumber) {
 		if (aspectRatio <= 0) {
 			return null;
 		}
@@ -308,8 +315,9 @@ public class RouteMapGenerator implements IGui {
 				}
 
 				final int tilePadding = tileSize / 4;
-				final int leftSize = ((hasLeft ? 1 : 0) + (leftToRight ? 1 : 0)) * (tileSize + tilePadding);
-				final int rightSize = ((hasRight ? 1 : 0) + (leftToRight ? 0 : 1)) * (tileSize + tilePadding);
+				final int circleSlots = showPlatformNumber ? 1 : 0;
+				final int leftSize = ((hasLeft ? 1 : 0) + (leftToRight ? circleSlots : 0)) * (tileSize + tilePadding);
+				final int rightSize = ((hasRight ? 1 : 0) + (leftToRight ? 0 : circleSlots)) * (tileSize + tilePadding);
 
 				final int[] dimensionsDestination = new int[2];
 				final byte[] pixelsDestination = clientCache.getTextPixels(destinationString, dimensionsDestination, width - leftSize - rightSize - padding * (showToString ? 2 : 1), (int) (tileSize * ClientCache.LINE_HEIGHT_MULTIPLIER), tileSize * 3 / 5, tileSize * 3 / 10, tilePadding, leftToRight ? HorizontalAlignment.LEFT : HorizontalAlignment.RIGHT);
@@ -326,12 +334,12 @@ public class RouteMapGenerator implements IGui {
 				circleX = leftPadding + leftSize + (leftToRight ? -tileSize - tilePadding : dimensionsDestination[0] - tilePadding);
 			}
 
-			for (int i = 0; i < colors.size(); i++) {
+			for (int i = 0; showPlatformNumber && i < colors.size(); i++) {
 				drawResource(nativeImage, CIRCLE_RESOURCE, circleX, padding, tileSize, tileSize, false, (float) i / colors.size(), (i + 1F) / colors.size(), colors.get(i), false);
 			}
 
 			final Platform platform = clientCache.platformIdMap.get(platformId);
-			if (platform != null) {
+			if (platform != null && showPlatformNumber) {
 				final int[] dimensionsPlatformNumber = new int[2];
 				final byte[] pixelsPlatformNumber = clientCache.getTextPixels(platform.name, dimensionsPlatformNumber, tileSize, (int) (tileSize * ClientCache.LINE_HEIGHT_MULTIPLIER * 3 / 4), tileSize * 3 / 4, tileSize * 3 / 4, 0, HorizontalAlignment.CENTER);
 				drawString(nativeImage, pixelsPlatformNumber, circleX + tileSize / 2, padding + tileSize / 2, dimensionsPlatformNumber, HorizontalAlignment.CENTER, VerticalAlignment.CENTER, 0, ARGB_WHITE, false);

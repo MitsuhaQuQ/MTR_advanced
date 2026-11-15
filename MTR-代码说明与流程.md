@@ -85,6 +85,10 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.84.5 只写方向的站台牌（用户 2026-11-16：“去掉站台号的版本”）：
+- 新牌子类型 `BlockRailwaySign.SignType.PLATFORM_DIRECTION`（和 `_FLIPPED`），图标沿用站台牌，名称“方向|Direction|方面”（`SignTexts`）。选站台和站台牌一样（`RailwaySignScreen`）；画的时候 `getDirectionArrow(..., showPlatformNumber=false)`：不画线路色圆圈和站台号，也不给它留位置，只写方向（终点）。`RouteMapGenerator.generateDirectionArrow` 和 `ClientCache.getDirectionArrow` 加了这个参数的重载，其它调用照旧。
+- 牌子按类型名存档，旧版本客户端不认识新类型，所以客户端都要换。只改客户端渲染和牌子类型，升第三位。
+
 0.84.4 站前折返轮替的站台，站台牌也显示方向（用户 2026-11-16：“轮替的那个站台显示不出方向”）：
 - 站台牌（`RouteMapGenerator.generateDirectionArrow`）的方向来自 `getRouteStream`：经过这个站台、在这里不终到的线路的终点。轮替折返的站台（如田端 5）只在线路的 `terminalPlatforms` 里，不在任何线路的停站里，于是一条也找不到，牌子没有方向。
 - 现在：某条线路的 `terminalPlatforms` 含这个站台时，从这条线路终点站台（如田端 6）出发的线路也算从这里出发，按它们首站的终点显示方向。只改客户端，升第三位。

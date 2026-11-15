@@ -305,6 +305,9 @@ public class BlockRailwaySign extends BlockDirectionalMapper implements EntityBl
 		ESCALATOR_TO_CONCOURSE_DOWN_FLIPPED("escalator", "escalator_to_concourse_down", true, true, true, true, 0),
 		PLATFORM("platform", true, false, true),
 		PLATFORM_FLIPPED("platform", true, true, true),
+		// The direction only, without the platform's number (user, 2026-11-16)
+		PLATFORM_DIRECTION("platform", "platform_direction", true, false, false, true, 0),
+		PLATFORM_DIRECTION_FLIPPED("platform", "platform_direction", true, false, true, true, 0),
 		LINE("line", true, false, true),
 		LINE_FLIPPED("line", true, true, true),
 		STATION("station", false, false, true),

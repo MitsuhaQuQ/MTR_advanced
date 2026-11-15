@@ -1465,6 +1465,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 时刻表右键过夜（0.83.11）：只在网页 `oldEditor.js`，改的是运用的 `stay`，组件不变。
 
+只写方向的站台牌（0.84.5）：只在客户端牌子类型和渲染，组件不变。
+
 轮替站台的站台牌方向（0.84.4）：只在客户端 `RouteMapGenerator.getRouteStream`，组件不变。
 
 显示屏不列终到车（0.84.3）：只在游戏 `RailwayData` 发包时用 `PidsSchedules.withoutTerminating` 过滤，组件不变。

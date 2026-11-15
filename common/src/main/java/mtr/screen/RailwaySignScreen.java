@@ -309,7 +309,7 @@ public class RailwaySignScreen extends ScreenBase implements IGui {
 		if (editingIndex >= 0 && editingIndex < signIds.length) {
 			signIds[editingIndex] = newSignId;
 			final boolean isExitLetter = newSignId != null && (newSignId.equals(BlockRailwaySign.SignType.EXIT_LETTER.toString()) || newSignId.equals(BlockRailwaySign.SignType.EXIT_LETTER_FLIPPED.toString()));
-			final boolean isPlatform = newSignId != null && (newSignId.equals(BlockRailwaySign.SignType.PLATFORM.toString()) || newSignId.equals(BlockRailwaySign.SignType.PLATFORM_FLIPPED.toString()));
+			final boolean isPlatform = newSignId != null && (newSignId.equals(BlockRailwaySign.SignType.PLATFORM.toString()) || newSignId.equals(BlockRailwaySign.SignType.PLATFORM_FLIPPED.toString()) || newSignId.equals(BlockRailwaySign.SignType.PLATFORM_DIRECTION.toString()) || newSignId.equals(BlockRailwaySign.SignType.PLATFORM_DIRECTION_FLIPPED.toString()));
 			final boolean isLine = newSignId != null && (newSignId.equals(BlockRailwaySign.SignType.LINE.toString()) || newSignId.equals(BlockRailwaySign.SignType.LINE_FLIPPED.toString()));
 			final boolean isStation = newSignId != null && (newSignId.equals(BlockRailwaySign.SignType.STATION.toString()) || newSignId.equals(BlockRailwaySign.SignType.STATION_FLIPPED.toString()));
 			if ((isExitLetter || isPlatform || isLine || isStation) && minecraft != null) {
