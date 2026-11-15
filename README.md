@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.83.15: turn back rails found near a terminus by themselves (none set for the route) are only those a train reaches along the rails going on past the platform's far end, within 400 blocks; one before the platform, on another level or not joined is not tried, so a line turning back in front of its platform just reverses there.
+
 0.83.14: a turn back rail found near a terminus by itself (none set for the route) that no way goes round is skipped, not told as the depot's paths failing; one set for the route still is.
 
 0.83.13: duties set by hand that change (as applied from the web editor) make the server find the depot's paths again within seconds; before, the new duties had no paths and no train left. Placing trains by the timetable while some of today's duties have no path now tells so and changes nothing, instead of taking the trains away.

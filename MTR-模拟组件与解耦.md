@@ -1449,6 +1449,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 归属图按线路图画（0.83.7）：只在网页 `core/abstractNet.ts` 与 `views/NetworkSchematic.tsx`，组件和游戏不变。
 
+自动找的折返线只要站后连通的（0.83.15）：只在游戏 `DutyPathBuilder.getTurnBackNodesBeyond`，组件 `NearbyTurnBacks` 不变。
+
 附近折返线走不通不报失败（0.83.14）：只在游戏 `DutyPathBuilder.waysRound`，组件 `TurnBackWays` 不变。
 
 改了运用自动重新寻路（0.83.13）：游戏 `Depot.takeAutoDutiesChange`/`pathDutiesHash`、`LiveSimulation.takeInto`；组件只加查询 `TickRunner.countDutiesWithoutPath`，运行规则不变。

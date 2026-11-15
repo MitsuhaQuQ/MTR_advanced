@@ -85,6 +85,10 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.83.15 自动找的折返线只要站后能连通的（用户 2026-11-15：明珠线是站前折返，不需要找折返线；“只找站后轨道能连通的”）：
+- `DutyPathBuilder.getTurnBackNodesBeyond`：线路没列折返节点时，`NearbyTurnBacks` 找到的附近折返线（200 格直线）再筛一遍：只留从站台远端（离上一站远的那头，`getOrderedPositions` 按上一站站台中点排序取第二个）沿轨道往外、不回头经过站台、`BEYOND_BLOCKS`（400 格）以内能到的节点（`reachedFrom`，按轨道长度的最短路）。上一站不知道时两头都算。用在 `holdWay`（混合折返等候）和 `findConnectionTimed`（换线路时的折返）。站前、别的层或别的线上、不连通的折返线都不再试，明珠线这样的站前折返就在站台掉头。
+- 只改服务端，升第三位。
+
 0.83.14 附近自动找到的折返线走不通不再算车厂失败（用户 2026-11-15：Village “路径未生成，它一直试图去根本没有连着的折返线” -2640, 83, 2326）：
 - 原因：明珠线终点田端站台 6 没指定折返节点，`DutyPathBuilder` 就用 `NearbyTurnBacks`（200 格内，只看距离）找附近的折返线，找到下层 S1 那条和明珠线完全不连通的折返线。`turnTimesFor` 的 `holdWay`（混合折返）和 `findConnectionTimed` 去试它，`waysRound(...).unusable` 把 `failure` 记成 `TURN_BACK_UNUSED`，`generateDutiesOnly` 见 failure 不为 NONE 就返回 0，车厂整体显示“路径未生成”；运用路径其实都找到了（日志 “2 paths”）。11 月初（9148a522、000076f8）就有。
 - 修：`waysRound(..., report)`：只有线路列出的折返节点走不通才报 `TURN_BACK_UNUSED`；附近自动找来的只试，走不通就跳过（`holdWay` 传 `!listed.isEmpty()`，`findConnectionTimed` 传 `!turnBackNodes.isEmpty()`）。断点 `pre-nearby-turnback-quiet`。只改服务端，升第三位。

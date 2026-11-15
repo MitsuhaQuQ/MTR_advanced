@@ -999,7 +999,7 @@ final class DutyPathBuilder {
 			final List<PathData> direct = new ArrayList<>();
 			PathFinder.findPath(direct, rails, graph, Arrays.asList(from, to), null, 1, depot.cruisingAltitude, useFastSpeed);
 			return direct;
-		}, () -> getNearbyTurnBackNodes(from, rails), waysRound(from, to, rails, graph, useFastSpeed, !turnBackNodes.isEmpty()));
+		}, () -> getTurnBackNodesBeyond(from, previousPlatformOf(routeBefore), rails), waysRound(from, to, rails, graph, useFastSpeed, !turnBackNodes.isEmpty()));
 	}
 
 	/**
@@ -1071,7 +1071,7 @@ final class DutyPathBuilder {
 				// there while others use the platform (混合折返)
 				final Platform from = dataCache.platformIdMap.get(platform);
 				final List<BlockPos> listed = getTurnBackNodes(before, graph);
-				final List<BlockPos> nodes = listed.isEmpty() ? getNearbyTurnBackNodes(from, rails) : withStabling(listed, from, rails);
+				final List<BlockPos> nodes = listed.isEmpty() ? getTurnBackNodesBeyond(from, previousPlatformOf(before), rails) : withStabling(listed, from, rails);
 				final TurnBackSection<PathData> hold = nodes.isEmpty() ? null : TurnBackWays.section(nodes, 0, waysRound(from, from, rails, graph, useFastSpeed, !listed.isEmpty()));
 				if (hold == null || hold.getDefaultWay().isEmpty()) {
 					return null;
@@ -1223,6 +1223,76 @@ final class DutyPathBuilder {
 				ConnectionStats.nearby(platform.id, System.nanoTime() - start);
 			}
 		}
+	}
+
+	/**
+	 * The turn back rails found near a platform by themselves (none listed for the route) that a train reaches going on past
+	 * the platform's far end, the one away from the stop before, along the rails within {@link #BEYOND_BLOCKS}: those behind
+	 * the platform (站后). One before the platform, on another line or level, or not joined at all is left out (user,
+	 * 2026-11-15: 只找站后轨道能连通的; 明珠线 turns back in front of its platform, and an S1 turn back rail 40 blocks away on
+	 * another level was tried).
+	 *
+	 * @param previousPlatformId the stop before the platform on the route arriving, or 0 if not known (both ends then)
+	 */
+	List<BlockPos> getTurnBackNodesBeyond(SavedRailBase platform, long previousPlatformId, Map<BlockPos, Map<BlockPos, Rail>> rails) {
+		final List<BlockPos> nearby = new ArrayList<>(getNearbyTurnBackNodes(platform, rails));
+		if (nearby.isEmpty()) {
+			return nearby;
+		}
+		final SavedRailBase previous = previousPlatformId == 0 ? null : dataCache.platformIdMap.get(previousPlatformId);
+		// Nearer the stop before first: the end trains come in by
+		final List<BlockPos> ends = platform.getOrderedPositions(previous == null ? platform.getMidPos() : previous.getMidPos(), false);
+		final Set<BlockPos> reached = new HashSet<>();
+		for (int i = previous == null ? 0 : 1; i < ends.size(); i++) {
+			reached.addAll(reachedFrom(ends.get(i), platform.getOtherPosition(ends.get(i)), rails));
+		}
+		nearby.removeIf(node -> !reached.contains(node));
+		return nearby;
+	}
+
+	/**
+	 * How far along the rails past a platform's end a turn back rail may be to be its own
+	 */
+	static final int BEYOND_BLOCKS = 400;
+
+	/**
+	 * @return the nodes reached from a platform's end along the rails, not back over the platform, within {@link #BEYOND_BLOCKS}
+	 */
+	private static Set<BlockPos> reachedFrom(BlockPos end, BlockPos platformOther, Map<BlockPos, Map<BlockPos, Rail>> rails) {
+		final Map<BlockPos, Double> distance = new HashMap<>();
+		final PriorityQueue<Object[]> queue = new PriorityQueue<>(Comparator.comparingDouble(entry -> (Double) entry[1]));
+		distance.put(end, 0.0);
+		queue.add(new Object[]{end, 0.0});
+		while (!queue.isEmpty()) {
+			final Object[] entry = queue.poll();
+			final BlockPos node = (BlockPos) entry[0];
+			final double soFar = (Double) entry[1];
+			if (soFar > distance.getOrDefault(node, Double.MAX_VALUE)) {
+				continue;
+			}
+			final Map<BlockPos, Rail> next = rails.get(node);
+			if (next == null) {
+				continue;
+			}
+			next.forEach((to, rail) -> {
+				if (node.equals(end) && to.equals(platformOther)) {
+					return;
+				}
+				final double total = soFar + rail.getLength();
+				if (total <= BEYOND_BLOCKS && total < distance.getOrDefault(to, Double.MAX_VALUE)) {
+					distance.put(to, total);
+					queue.add(new Object[]{to, total});
+				}
+			});
+		}
+		return distance.keySet();
+	}
+
+	/**
+	 * @return the stop before a route's last, or 0
+	 */
+	private static long previousPlatformOf(Route route) {
+		return route == null || route.platformIds.size() < 2 ? 0 : route.platformIds.get(route.platformIds.size() - 2).platformId;
 	}
 
 	List<BlockPos> getNearbyTurnBackNodesTimed(SavedRailBase platform, Map<BlockPos, Map<BlockPos, Rail>> rails) {
