@@ -748,6 +748,19 @@ public class RouteMapGenerator implements IGui {
 				}
 			}
 		});
+		// A platform trains turn back at in turn with the last stop's own (站前折返, a route's terminal platforms): the routes
+		// leaving from that last stop leave from here too (user, 2026-11-16: 轮替的那个站台显示不出方向)
+		final Set<Route> leavingInTurn = new TreeSet<>((a, b) -> a.color == b.color ? a.compareTo(b) : a.color - b.color);
+		ClientData.ROUTES.stream().filter(route -> !route.isHidden && route.terminalPlatforms.contains(platformId) && !route.containsPlatformId(platformId)).forEach(arriving -> {
+			final long lastPlatformId = arriving.getLastPlatformId();
+			ClientData.ROUTES.stream().filter(route -> !route.isHidden && !route.platformIds.isEmpty() && route.platformIds.get(0).platformId == lastPlatformId && !route.containsPlatformId(platformId)).forEach(leavingInTurn::add);
+		});
+		leavingInTurn.forEach(route -> {
+			nonTerminatingCallback.accept(route, 0);
+			if (!colors.contains(route.color)) {
+				colors.add(route.color);
+			}
+		});
 		if (colors.isEmpty()) {
 			colors.addAll(terminatingColors);
 		}

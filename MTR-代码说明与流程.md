@@ -85,6 +85,10 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.84.4 站前折返轮替的站台，站台牌也显示方向（用户 2026-11-16：“轮替的那个站台显示不出方向”）：
+- 站台牌（`RouteMapGenerator.generateDirectionArrow`）的方向来自 `getRouteStream`：经过这个站台、在这里不终到的线路的终点。轮替折返的站台（如田端 5）只在线路的 `terminalPlatforms` 里，不在任何线路的停站里，于是一条也找不到，牌子没有方向。
+- 现在：某条线路的 `terminalPlatforms` 含这个站台时，从这条线路终点站台（如田端 6）出发的线路也算从这里出发，按它们首站的终点显示方向。只改客户端，升第三位。
+
 0.84.3 显示屏不再列在本站终到的车（用户 2026-11-16 截图：犬宫 1 站台的显示屏列出“犬宫 16 分钟”，即终点就是本站的车）：
 - `RailwayData` 发给玩家的到站包（`PACKET_UPDATE_SCHEDULE`）里，`PidsSchedules.withoutTerminating` 去掉 `currentStationIndex` 是线路最后一站的条目（环线除外）。乘客在这里上不了这班车；车接着跑下一条线路时，下一条线路首站的条目照常在。本模组和其它模组（如 YJCM）的显示屏都读这个包，所以都不再列。
 - 服务端自己用的（传感器、到站触发、网页到站表）不变，仍有终到条目。

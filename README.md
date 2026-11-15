@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.84.4: platform signs on a platform trains turn back at in turn with the terminus's own (a route's terminal platforms) show the direction of the routes leaving the terminus.
+
 0.84.3: passenger displays no longer list trains ending their route at that station.
 
 0.84.2: the web editor's top bar has 同步到现在 (sync to now): every depot's paths are found again, then the trains of the depots running by their timetables are put where the timetables have them now.
