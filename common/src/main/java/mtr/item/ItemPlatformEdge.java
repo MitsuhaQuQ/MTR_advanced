@@ -17,6 +17,7 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import transitsim.geometry.PlatformEdges;
@@ -26,7 +27,8 @@ import java.util.List;
 import java.util.Set;
 
 /**
- * Puts down a platform edge block cut along the nearest platform's track (0.88.0); used sneaking, lays the whole edge of
+ * Puts down a platform edge block cut along the nearest platform's track (0.88.0), looking like the platform block it is
+ * put against (0.89.0, {@link BlockPlatformEdge#sourceFor}); used sneaking, lays the whole edge of
  * that side of the platform at that height, in the free places only, the platform's part of each block from where the cars'
  * sides need it to a block and a half beyond.
  */
@@ -52,7 +54,7 @@ public class ItemPlatformEdge extends ItemWithCreativeTabBase {
 		final ItemStack stack = context.getItemInHand();
 		final boolean creative = player != null && player.isCreative();
 		if (player != null && player.isShiftKeyDown()) {
-			final int placed = layEdge(world, pos, creative ? Integer.MAX_VALUE : stack.getCount());
+			final int placed = layEdge(world, pos, BlockPlatformEdge.sourceFor(world, pos, context.getClickedPos()), creative ? Integer.MAX_VALUE : stack.getCount());
 			if (!creative) {
 				stack.shrink(placed);
 			}
@@ -70,6 +72,7 @@ public class ItemPlatformEdge extends ItemWithCreativeTabBase {
 			return InteractionResult.FAIL;
 		}
 		world.setBlockAndUpdate(pos, state);
+		setSource(world, pos, BlockPlatformEdge.sourceFor(world, pos, context.getClickedPos()));
 		if (!creative) {
 			stack.shrink(1);
 		}
@@ -80,7 +83,7 @@ public class ItemPlatformEdge extends ItemWithCreativeTabBase {
 	 * @return how many blocks were laid along the edge of the platform nearest the place, on the place's side and at its
 	 * height, at most the given number; -1 when no platform is near
 	 */
-	private static int layEdge(Level world, BlockPos pos, int most) {
+	private static int layEdge(Level world, BlockPos pos, BlockState source, int most) {
 		final RailwayData railwayData = RailwayData.getInstance(world);
 		final Platform platform = railwayData == null ? null : BlockPlatformEdge.nearestPlatform(railwayData, pos);
 		final Rail rail = platform == null ? null : PlatformCurves.railOf(platform, railwayData.getRails());
@@ -126,10 +129,21 @@ public class ItemPlatformEdge extends ItemWithCreativeTabBase {
 			final BlockState state = BlockPlatformEdge.stateAt(world, place, platform);
 			if (state != null) {
 				world.setBlockAndUpdate(place, state);
+				setSource(world, place, source);
 				placed++;
 			}
 		}
 		return placed;
+	}
+
+	/**
+	 * Gives an edge block just put down the look of the platform it was put against (0.89.0)
+	 */
+	private static void setSource(Level world, BlockPos pos, BlockState source) {
+		final BlockEntity entity = world.getBlockEntity(pos);
+		if (source != null && entity instanceof BlockPlatformEdge.TileEntityPlatformEdge) {
+			((BlockPlatformEdge.TileEntityPlatformEdge) entity).setSource(source);
+		}
 	}
 
 	@Override

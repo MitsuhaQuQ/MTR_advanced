@@ -6,14 +6,20 @@ import mtr.data.PlatformCurves;
 import mtr.data.RailwayData;
 import mtr.data.Platform;
 import mtr.data.Rail;
+import mtr.mappings.BlockEntityClientSerializableMapper;
 import mtr.mappings.BlockEntityMapper;
 import mtr.mappings.BlockMapper;
 import mtr.mappings.EntityBlockMapper;
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.NbtUtils;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.RenderShape;
+import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.StateDefinition;
 import net.minecraft.world.level.block.state.properties.IntegerProperty;
@@ -150,10 +156,76 @@ public class BlockPlatformEdge extends BlockMapper implements EntityBlockMapper 
 		return best;
 	}
 
-	public static class TileEntityPlatformEdge extends BlockEntityMapper {
+	/**
+	 * @return the block whose look an edge block put down here takes (0.89.0): the block clicked when it is a platform or an
+	 * edge block, else a platform or edge block beside the place, else any whole block beside it; null for the default look
+	 */
+	public static BlockState sourceFor(Level world, BlockPos pos, BlockPos clicked) {
+		final BlockState clickedSource = sourceOf(world, clicked, false);
+		if (clickedSource != null) {
+			return clickedSource;
+		}
+		for (final boolean anyWholeBlock : new boolean[]{false, true}) {
+			for (final Direction direction : Direction.Plane.HORIZONTAL) {
+				final BlockState source = sourceOf(world, pos.relative(direction), anyWholeBlock);
+				if (source != null) {
+					return source;
+				}
+			}
+		}
+		return null;
+	}
+
+	private static BlockState sourceOf(Level world, BlockPos pos, boolean anyWholeBlock) {
+		final BlockState state = world.getBlockState(pos);
+		if (state.getBlock() instanceof BlockPlatformEdge) {
+			final BlockEntity entity = world.getBlockEntity(pos);
+			return entity instanceof TileEntityPlatformEdge ? ((TileEntityPlatformEdge) entity).getSource() : null;
+		}
+		if (state.getBlock() instanceof BlockPlatform || anyWholeBlock && !state.isAir() && state.isCollisionShapeFullBlock(world, pos)) {
+			return state;
+		}
+		return null;
+	}
+
+	/**
+	 * Keeps the block whose look it takes (0.89.0), sent to the players with it
+	 */
+	public static class TileEntityPlatformEdge extends BlockEntityClientSerializableMapper {
+
+		private static final String KEY_SOURCE = "source";
+		private BlockState source;
 
 		public TileEntityPlatformEdge(BlockPos pos, BlockState state) {
 			super(BlockEntityTypes.PLATFORM_EDGE_TILE_ENTITY.get(), pos, state);
+		}
+
+		/**
+		 * @return the block whose top, sides and edge marking it is drawn with; null for the default platform
+		 */
+		public BlockState getSource() {
+			return source;
+		}
+
+		public void setSource(BlockState source) {
+			this.source = source;
+			setChanged();
+			syncData();
+		}
+
+		@Override
+		public void readCompoundTag(CompoundTag compoundTag) {
+			source = compoundTag.contains(KEY_SOURCE) ? NbtUtils.readBlockState(BuiltInRegistries.BLOCK.asLookup(), compoundTag.getCompound(KEY_SOURCE)) : null;
+			if (source != null && source.isAir()) {
+				source = null;
+			}
+		}
+
+		@Override
+		public void writeCompoundTag(CompoundTag compoundTag) {
+			if (source != null) {
+				compoundTag.put(KEY_SOURCE, NbtUtils.writeBlockState(source));
+			}
 		}
 	}
 }

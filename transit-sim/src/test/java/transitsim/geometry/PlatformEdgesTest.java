@@ -42,8 +42,15 @@ class PlatformEdgesTest {
 				assertEquals(x >= 8, mask[x * 16 + z], x + " " + z);
 			}
 		}
-		// Wholly platform, wholly track
-		assertEquals(PlatformEdges.FULL, PlatformEdges.cutOf(11, 3, 10.5, 3, 1, 0));
+		// Wholly platform but within the edge marking's reach: the line kept; further in: wholly platform; wholly track
+		final int near = PlatformEdges.cutOf(11, 3, 10.5, 3, 1, 0);
+		assertTrue(near >= 0);
+		final boolean[] nearMask = PlatformEdges.mask(PlatformEdges.angleOf(near), PlatformEdges.cutOfPacked(near));
+		for (final boolean solid : nearMask) {
+			assertTrue(solid);
+		}
+		assertEquals(4, PlatformEdges.outline(PlatformEdges.angleOf(near), PlatformEdges.cutOfPacked(near)).length / 2);
+		assertEquals(PlatformEdges.FULL, PlatformEdges.cutOf(12, 3, 10.5, 3, 1, 0));
 		assertEquals(PlatformEdges.EMPTY, PlatformEdges.cutOf(9, 3, 10.5, 3, 1, 0));
 	}
 

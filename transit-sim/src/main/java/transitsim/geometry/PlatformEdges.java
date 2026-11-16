@@ -33,9 +33,11 @@ public final class PlatformEdges {
 	 */
 	public static final int ANGLES = 64;
 	/**
-	 * Distances of a cut line from the block's centre: from -{@link #CUT_CENTRE} to +{@link #CUT_CENTRE} sixteenths.
+	 * Distances of a cut line from the block's centre: from -{@link #CUT_CENTRE} to +{@link #CUT_CENTRE} sixteenths. Beyond
+	 * the block's corner by up to a block (0.89.0), so a block wholly platform near the edge keeps the line's direction and
+	 * the platform's edge marking is drawn along it.
 	 */
-	public static final int CUT_CENTRE = 12;
+	public static final int CUT_CENTRE = 28;
 	public static final int CUTS = CUT_CENTRE * 2 + 1;
 	public static final int CELLS = 16;
 
@@ -117,7 +119,7 @@ public final class PlatformEdges {
 		final double centreX = blockX + 0.5;
 		final double centreZ = blockZ + 0.5;
 		final double d = (edgeX - centreX) * towardsTrackX + (edgeZ - centreZ) * towardsTrackZ;
-		if (d >= Math.abs(towardsTrackX) * 0.5 + Math.abs(towardsTrackZ) * 0.5) {
+		if (d >= Math.abs(towardsTrackX) * 0.5 + Math.abs(towardsTrackZ) * 0.5 + MARKING_REACH) {
 			return FULL;
 		}
 		if (d <= -(Math.abs(towardsTrackX) * 0.5 + Math.abs(towardsTrackZ) * 0.5)) {
@@ -129,6 +131,11 @@ public final class PlatformEdges {
 		return pack(angleIndex, cutIndex);
 	}
 
+	/**
+	 * How far from the edge the platform's edge marking reaches, in blocks: a block nearer the edge than this keeps the cut
+	 * line even when wholly platform
+	 */
+	public static final double MARKING_REACH = 1;
 	public static final int FULL = -1;
 	public static final int EMPTY = -2;
 
