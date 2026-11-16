@@ -536,10 +536,24 @@ public final class EditorActions implements IPacket {
 						}
 					}
 				}
+				// Lines joined into another's running diagram (2026-11-16): joined line key to the key of the line it joins, or
+				// null to take it out again; a join that would make a chain or a line joined into itself is refused
+				if (operation.has("diagramJoins") && operation.get("diagramJoins").isJsonObject()) {
+					for (final Map.Entry<String, JsonElement> entry : operation.getAsJsonObject("diagramJoins").entrySet()) {
+						if (entry.getValue().isJsonNull()) {
+							settings.diagramJoins.remove(entry.getKey());
+						} else {
+							settings.diagramJoins.remove(entry.getKey());
+							if (!settings.putDiagramJoin(entry.getKey(), entry.getValue().getAsString())) {
+								return TranslatedMessage.get("gui.mtr.editor_bad_change");
+							}
+						}
+					}
+				}
 			} catch (RuntimeException e) {
 				return TranslatedMessage.get("gui.mtr.editor_bad_change");
 			}
-			if (settings.logicalLines.size() > mtr.data.NetworkSettings.MAX_LOGICAL_LINES || settings.railLines.size() > mtr.data.NetworkSettings.MAX_RAIL_LINES || settings.lineTracks.size() > mtr.data.NetworkSettings.MAX_LINE_TRACKS || settings.runningSides.size() > mtr.data.NetworkSettings.MAX_RUNNING_SIDES) {
+			if (settings.logicalLines.size() > mtr.data.NetworkSettings.MAX_LOGICAL_LINES || settings.railLines.size() > mtr.data.NetworkSettings.MAX_RAIL_LINES || settings.lineTracks.size() > mtr.data.NetworkSettings.MAX_LINE_TRACKS || settings.runningSides.size() > mtr.data.NetworkSettings.MAX_RUNNING_SIDES || settings.diagramJoins.size() > mtr.data.NetworkSettings.MAX_DIAGRAM_JOINS) {
 				return TranslatedMessage.get("gui.mtr.editor_bad_change");
 			}
 			ClientData.DATA_CACHE.networkSettings.copyFrom(settings);

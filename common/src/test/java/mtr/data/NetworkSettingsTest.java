@@ -180,6 +180,38 @@ class NetworkSettingsTest {
 	}
 
 	@Test
+	void linesJoinedIntoAnothersDiagramAreSavedSentAndCopiedWithoutChains() throws IOException {
+		// 0.85.0: every area of track shared by systems planned apart has to be one running diagram
+		final NetworkSettings settings = new NetworkSettings();
+		assertTrue(settings.putDiagramJoin("TRAIN|line 2", "TRAIN|line 1"));
+		assertFalse(settings.putDiagramJoin("TRAIN|line 3", "TRAIN|line 3"), "not into itself");
+		assertFalse(settings.putDiagramJoin("TRAIN|line 3", "TRAIN|line 2"), "not into a line joined into another");
+		assertFalse(settings.putDiagramJoin("TRAIN|line 1", "TRAIN|line 4"), "not one other lines are joined into");
+		assertTrue(settings.putDiagramJoin("TRAIN|line 5", "TRAIN|line 1"));
+
+		final MessageBufferPacker packer = MessagePack.newDefaultBufferPacker();
+		packer.packMapHeader(settings.messagePackLength());
+		settings.toMessagePack(packer);
+		packer.close();
+		final Map<String, Value> map = RailwayData.castMessagePackValueToSKMap(MessagePack.newDefaultUnpacker(packer.toByteArray()).unpackValue());
+		assertEquals(settings, new NetworkSettings(map));
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		settings.writePacket(packet);
+		final NetworkSettings read = new NetworkSettings();
+		read.read(packet);
+		assertEquals(settings, read);
+		assertEquals(0, packet.readableBytes());
+		final NetworkSettings copy = new NetworkSettings();
+		copy.copyFrom(settings);
+		assertEquals(settings, copy);
+		assertEquals("TRAIN|line 1", copy.diagramJoins.get("TRAIN|line 5"));
+		// A save from before has none
+		final Map<String, Value> old = new HashMap<>(map);
+		old.remove("diagram_joins");
+		assertTrue(new NetworkSettings(old).diagramJoins.isEmpty());
+	}
+
+	@Test
 	void ownersSetByHandAreSavedSentAndKeptByRail() throws IOException {
 		// Web layers step 2: the owners of a section set by hand, by a rail's two nodes in either order
 		final NetworkSettings settings = new NetworkSettings();

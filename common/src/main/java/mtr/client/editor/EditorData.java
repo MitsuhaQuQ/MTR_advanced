@@ -97,6 +97,10 @@ public final class EditorData {
 		final JsonObject runningSidesObject = new JsonObject();
 		ClientData.DATA_CACHE.networkSettings.runningSides.forEach(runningSidesObject::addProperty);
 		networkSettingsObject.add("runningSides", runningSidesObject);
+		// Lines joined into another's running diagram (2026-11-16): joined line key to the key of the line it joins
+		final JsonObject diagramJoinsObject = new JsonObject();
+		ClientData.DATA_CACHE.networkSettings.diagramJoins.forEach(diagramJoinsObject::addProperty);
+		networkSettingsObject.add("diagramJoins", diagramJoinsObject);
 		final JsonObject railLinesObject = new JsonObject();
 		ClientData.DATA_CACHE.networkSettings.railLines.forEach((railKey, id) -> railLinesObject.addProperty(mtr.data.NetworkSettings.railKeyText(railKey), String.valueOf(id)));
 		networkSettingsObject.add("railLines", railLinesObject);
@@ -469,6 +473,32 @@ public final class EditorData {
 		data.add("depots", depotsArray);
 		// The contingency plans of each rail system (D2)
 		data.add("contingencySystems", EditorContingencies.systemsToJson());
+		// The track run on by depots planned apart, as the server sent it (2026-11-16): each area's units, their depots and
+		// the lines they run there, the stations on it and its length
+		final JsonArray sharedArray = new JsonArray();
+		mtr.packet.SharedTrackPackets.areas.forEach(area -> {
+			final JsonObject areaObject = new JsonObject();
+			areaObject.addProperty("key", area.key);
+			final JsonArray unitsArray = new JsonArray();
+			area.units.forEach(unit -> {
+				final JsonObject unitObject = new JsonObject();
+				final JsonArray depotIds = new JsonArray();
+				unit.depotIds.forEach(depotId -> depotIds.add(String.valueOf(depotId)));
+				unitObject.add("depots", depotIds);
+				final JsonArray lines = new JsonArray();
+				unit.lines.forEach(lines::add);
+				unitObject.add("lines", lines);
+				unitsArray.add(unitObject);
+			});
+			areaObject.add("units", unitsArray);
+			final JsonArray stationIds = new JsonArray();
+			area.stationIds.forEach(stationId -> stationIds.add(String.valueOf(stationId)));
+			areaObject.add("stations", stationIds);
+			areaObject.addProperty("length", Math.round(area.length));
+			areaObject.addProperty("start", area.start.getX() + ", " + area.start.getY() + ", " + area.start.getZ());
+			sharedArray.add(areaObject);
+		});
+		data.add("sharedAreas", sharedArray);
 		return data;
 	}
 

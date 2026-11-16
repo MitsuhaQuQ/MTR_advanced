@@ -197,6 +197,9 @@ export function syncProblems(connection: Connection, model: Model | null, draft:
     })
     if (duties.mode === "diagram" && depot.sidings.some((siding: any) => (duties.sidings[siding.id] || []).length && !siding.legs)) problems.push({ level: "warn", text: tr("车厂{0}还没有出入库时刻，刷新路径后运行图上才画出出库和回库", name) })
   })
+  // Track run on by depots planned apart (2026-11-16): every area shared has to be one running diagram, the player choosing
+  // which line joins which; sent to the game at once. Lines joined already are told too, with a way to take them out again
+  sharedTrackProblems(data).forEach(problem => problems.push(problem))
   // Platforms in more than one station's area with none set for them, and where they went
   ;((data.topology && data.topology.overlapping) || []).slice(0, 20).forEach((overlap: any) => problems.push({ level: "hint", text: overlap.byIdAlone
     ? tr("{0} 在几个车站的范围里，这些车站都还没有别的站台可参照，暂时归到 {1}；右键时刻表里这一站可以指定", platformText(data, overlap.platform), stationNameOf(data, overlap.station))
@@ -208,5 +211,48 @@ export function syncProblems(connection: Connection, model: Model | null, draft:
     else problems.push({ level: "err", text: tr("{0}：{1} 到 {2} 的车没有空站台可停，也没有空的折返线，要等前面的车开走", from ? routeTitle(from.route) : "?", warning.at, warning.platform), route: from && from.route.id })
   })
   data.routes.filter(r => r.timetable && !r.hasTimes).forEach(r => problems.push({ level: "warn", text: r.pathFailure ? tr("{0}：找不到路，{1}", routeTitle(r), r.pathFailure) : tr("{0}：还没有各站时刻", routeTitle(r)), route: r.id }))
+  return problems
+}
+
+/** The name of an operating line by its key ("mode|name"), from the routes running it */
+function lineName(model: Model, lineKey: string) {
+  const route: any = model.routes.find((r: any) => r.lineKey === lineKey)
+  return route ? shortName(route.line) : lineKey.split("|").slice(1).join("|") || lineKey
+}
+
+/**
+ * The check list items of the track run on by depots planned apart (2026-11-16), each with the joins the player can
+ * choose: a line of one unit into a line of another, as the game allows it (none into itself, none into a line joined
+ * into another, none joined that others are joined into); and the lines joined already, with a way to take them out.
+ */
+export function sharedTrackProblems(model: Model): SyncProblem[] {
+  const problems: SyncProblem[] = []
+  const data: any = model
+  const joins: Record<string, string> = (data.networkSettings && data.networkSettings.diagramJoins) || {}
+  const hosts = new Set(Object.values(joins))
+  const canJoin = (joined: string, host: string) => joined !== host && !joins[host] && !hosts.has(joined) && !joins[joined]
+  const join = (joined: string, host: string) => ({ label: tr("{0} 并入 {1} 的运行图", lineName(model, joined), lineName(model, host)), op: { type: "networkSettings", diagramJoins: { [joined]: host } } })
+  ;(data.sharedAreas || []).forEach((area: any) => {
+    const units: any[] = area.units || []
+    const unitText = (unit: any) => {
+      const depots = (unit.depots || []).map((id: string) => { const depot: any = model.depotById(id); return depot ? shortName(depot.name) || tr("（未命名车厂）") : id }).join("、")
+      const lines = (unit.lines || []).map((key: string) => lineName(model, key)).join("、")
+      return lines ? tr("车厂{0}（{1}）", depots, lines) : tr("车厂{0}", depots)
+    }
+    const stations = (area.stations || []).map((id: string) => stationNameOf(model, id)).filter(Boolean)
+    const where = stations.length ? tr("经过 {0} 的一段 {1} 格轨道", stations.join("、"), area.length) : tr("从 {0} 起的一段 {1} 格轨道", area.start, area.length)
+    const actions: SyncProblem["actions"] = []
+    // Each line of one unit into each line of another, both ways, a few at most
+    for (let i = 0; i < units.length; i++) {
+      for (let j = 0; j < units.length; j++) {
+        if (i === j) continue
+        ;(units[i].lines || []).slice(0, 2).forEach((joined: string) => (units[j].lines || []).slice(0, 2).forEach((host: string) => {
+          if (canJoin(joined, host) && actions.length < 8) actions.push(join(joined, host))
+        }))
+      }
+    }
+    problems.push({ level: "warn", text: tr("{0} 分开排班，却共用{1}。共用的区域必须成为一张运行图：选一条线路并入另一条的运行图（之后一起排班；共用段转成直通、运行图上显示接入接出的部分还在做），或者用寻路边界把它们分开", units.map(unitText).join(tr("和")), where), actions })
+  })
+  Object.entries(joins).forEach(([joined, host]) => problems.push({ level: "hint", text: tr("{0} 已并入 {1} 的运行图，和它一起排班", lineName(model, joined), lineName(model, host)), actions: [{ label: tr("撤销并入"), op: { type: "networkSettings", diagramJoins: { [joined]: null } } }] }))
   return problems
 }

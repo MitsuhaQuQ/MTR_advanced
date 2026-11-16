@@ -215,6 +215,40 @@ public final class LineDuties {
 	}
 
 	/**
+	 * Only which depots are planned together, as {@link #unitsOf} has them, without making the units: for telling the track
+	 * shared by depots planned apart (2026-11-16, {@link transitsim.network.SharedAreas}), on the server and on the client.
+	 *
+	 * @return each depot's planning unit as its depots in order; a depot not planning by line is a unit of its own
+	 */
+	public static Map<Long, Set<Long>> unitDepotIdsOf(Collection<Depot> depots, DataCache dataCache) {
+		final Map<Long, Set<Long>> units = new HashMap<>();
+		final Map<TransportMode, Lines> linesByMode = new EnumMap<>(TransportMode.class);
+		depots.forEach(depot -> {
+			if (units.containsKey(depot.id)) {
+				return;
+			}
+			if (!plansByLine(depot, dataCache)) {
+				units.put(depot.id, Collections.singleton(depot.id));
+				return;
+			}
+			final Set<Long> depotIds = new TreeSet<>();
+			linesByMode.computeIfAbsent(depot.transportMode, transportMode -> new Lines(transportMode, dataCache, null)).reach(depot, new TreeSet<>(), depotIds);
+			final Set<Long> fixed = Collections.unmodifiableSet(depotIds);
+			depotIds.forEach(depotId -> units.put(depotId, fixed));
+		});
+		return units;
+	}
+
+	/**
+	 * @return the operating lines a depot runs ({@link #getLineKey}), in order
+	 */
+	public static Set<String> linesOf(Depot depot, DataCache dataCache) {
+		final Set<String> lines = new TreeSet<>();
+		depot.getRoutes(dataCache).forEach(route -> lines.add(getLineKey(route)));
+		return lines;
+	}
+
+	/**
 	 * The lines of one transport mode and the depots planning by line, joined by the routes they list and the through
 	 * links between services.
 	 */
@@ -263,6 +297,13 @@ public final class LineDuties {
 					});
 				}
 			});
+			// Lines joined into another's running diagram (2026-11-16, NetworkSettings.diagramJoins), the same way
+			dataCache.networkSettings.diagramJoins.forEach((joined, host) -> {
+				if (lineRoutes.containsKey(joined) && lineRoutes.containsKey(host)) {
+					linkedLines.computeIfAbsent(joined, key -> new TreeSet<>()).add(host);
+					linkedLines.computeIfAbsent(host, key -> new TreeSet<>()).add(joined);
+				}
+			});
 		}
 
 		/**
@@ -271,6 +312,14 @@ public final class LineDuties {
 		private Unit unitOf(Depot depot, DataCache dataCache, Collection<Siding> sidings, long draftDepotId) {
 			final Set<String> lines = new TreeSet<>();
 			final Set<Long> depotIds = new TreeSet<>();
+			reach(depot, lines, depotIds);
+			return new Unit(lines, lineRoutes, depotIds, dataCache, sidings, draftDepotId);
+		}
+
+		/**
+		 * Fills in the lines and depots reached from the depot through the lines it runs.
+		 */
+		private void reach(Depot depot, Set<String> lines, Set<Long> depotIds) {
 			final ArrayDeque<Object> queue = new ArrayDeque<>();
 			depotIds.add(depot.id);
 			queue.add(depot);
@@ -296,7 +345,6 @@ public final class LineDuties {
 					});
 				}
 			}
-			return new Unit(lines, lineRoutes, depotIds, dataCache, sidings, draftDepotId);
 		}
 	}
 

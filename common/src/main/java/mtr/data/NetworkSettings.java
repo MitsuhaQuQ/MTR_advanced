@@ -83,6 +83,14 @@ public final class NetworkSettings extends SerializedDataBase {
 	public final Map<String, Integer> runningSides = new java.util.TreeMap<>();
 	public static final String SIDE_NETWORK = "";
 	public static final int MAX_RUNNING_SIDES = 4096;
+	/**
+	 * Operating lines joined into another's running diagram (user, 2026-11-16: every area of track shared by systems planned
+	 * apart has to be one running diagram, the player choosing which joins which): the joined line's key
+	 * ({@link LineDuties#getLineKey}) to the key of the line it joins. Joined lines are planned with the line they join, as
+	 * through links join them. A line joined into another has none joined into it, and none is joined into itself.
+	 */
+	public final Map<String, String> diagramJoins = new java.util.TreeMap<>();
+	public static final int MAX_DIAGRAM_JOINS = 1024;
 
 	/**
 	 * The fare rules (票务规则, 0.73.0), by ID, in the order shown; the first is the default, which a line not put in
@@ -197,6 +205,7 @@ public final class NetworkSettings extends SerializedDataBase {
 	private static final String KEY_FARE_STATION_GROUPS = "fare_station_groups";
 	private static final String KEY_FARE_RULES = "fare_rules";
 	private static final String KEY_RUNNING_SIDES = "running_sides";
+	private static final String KEY_DIAGRAM_JOINS = "diagram_joins";
 
 	public NetworkSettings() {
 	}
@@ -283,6 +292,11 @@ public final class NetworkSettings extends SerializedDataBase {
 				if (side == 1 || side == -1) {
 					runningSides.put(entry.getKey().asStringValue().asString(), side);
 				}
+			}
+		});
+		messagePackHelper.iterateMapValue(KEY_DIAGRAM_JOINS, entry -> {
+			if (diagramJoins.size() < MAX_DIAGRAM_JOINS && entry.getValue().isStringValue()) {
+				putDiagramJoin(entry.getKey().asStringValue().asString(), entry.getValue().asStringValue().asString());
 			}
 		});
 		if (map.containsKey(KEY_FARE_RULES)) {
@@ -491,6 +505,26 @@ public final class NetworkSettings extends SerializedDataBase {
 				runningSides.put(key, side);
 			}
 		}
+		diagramJoins.clear();
+		final int joinCount = readCount(packet, MAX_DIAGRAM_JOINS);
+		for (int i = 0; i < joinCount; i++) {
+			final String joined = packet.readUtf(MAX_LINE_KEY_LENGTH);
+			putDiagramJoin(joined, packet.readUtf(MAX_LINE_KEY_LENGTH));
+		}
+	}
+
+	/**
+	 * Joins a line into another's running diagram ({@link #diagramJoins}), unless that would join a line into itself, into
+	 * a line joined into another, or one other lines are joined into.
+	 *
+	 * @return whether it was joined
+	 */
+	public boolean putDiagramJoin(String joined, String host) {
+		if (joined.isEmpty() || host.isEmpty() || joined.equals(host) || diagramJoins.containsKey(host) || diagramJoins.containsValue(joined)) {
+			return false;
+		}
+		diagramJoins.put(joined, host);
+		return true;
 	}
 
 	private static int readCount(FriendlyByteBuf packet, int max) {
@@ -523,6 +557,8 @@ public final class NetworkSettings extends SerializedDataBase {
 		other.fareStationGroups.forEach((stationId, groups) -> fareStationGroups.put(stationId, new ArrayList<>(groups)));
 		runningSides.clear();
 		runningSides.putAll(other.runningSides);
+		diagramJoins.clear();
+		diagramJoins.putAll(other.diagramJoins);
 		fareRules.clear();
 		fareRules.putAll(other.fareRules);
 	}
@@ -599,6 +635,10 @@ public final class NetworkSettings extends SerializedDataBase {
 		for (final Map.Entry<String, Integer> entry : runningSides.entrySet()) {
 			messagePacker.packString(entry.getKey()).packInt(entry.getValue());
 		}
+		messagePacker.packString(KEY_DIAGRAM_JOINS).packMapHeader(diagramJoins.size());
+		for (final Map.Entry<String, String> entry : diagramJoins.entrySet()) {
+			messagePacker.packString(entry.getKey()).packString(entry.getValue());
+		}
 		messagePacker.packString(KEY_FARE_RULES).packMapHeader(fareRules.size());
 		for (final Map.Entry<String, FareRule> entry : fareRules.entrySet()) {
 			messagePacker.packString(entry.getKey()).packMapHeader(2);
@@ -609,7 +649,7 @@ public final class NetworkSettings extends SerializedDataBase {
 
 	@Override
 	public int messagePackLength() {
-		return 13;
+		return 14;
 	}
 
 	@Override
@@ -694,16 +734,21 @@ public final class NetworkSettings extends SerializedDataBase {
 			packet.writeUtf(key, MAX_LINE_KEY_LENGTH + 1);
 			packet.writeByte(side);
 		});
+		packet.writeVarInt(diagramJoins.size());
+		diagramJoins.forEach((joined, host) -> {
+			packet.writeUtf(joined, MAX_LINE_KEY_LENGTH);
+			packet.writeUtf(host, MAX_LINE_KEY_LENGTH);
+		});
 	}
 
 	@Override
 	public boolean equals(Object object) {
-		return object instanceof NetworkSettings && ((NetworkSettings) object).minReverseMillis == minReverseMillis && ((NetworkSettings) object).earlyThresholdMillis == earlyThresholdMillis && ((NetworkSettings) object).waitThresholdMillis == waitThresholdMillis && ((NetworkSettings) object).stationWaitThresholds.equals(stationWaitThresholds) && ((NetworkSettings) object).ownerOverrides.equals(ownerOverrides) && ((NetworkSettings) object).logicalLines.equals(logicalLines) && ((NetworkSettings) object).railLines.equals(railLines) && ((NetworkSettings) object).lineTracks.equals(lineTracks) && ((NetworkSettings) object).fareLevels.equals(fareLevels) && ((NetworkSettings) object).fareRouteGroups.equals(fareRouteGroups) && ((NetworkSettings) object).fareStationGroups.equals(fareStationGroups) && ((NetworkSettings) object).runningSides.equals(runningSides) && new ArrayList<>(((NetworkSettings) object).fareRules.entrySet()).equals(new ArrayList<>(fareRules.entrySet()));
+		return object instanceof NetworkSettings && ((NetworkSettings) object).minReverseMillis == minReverseMillis && ((NetworkSettings) object).earlyThresholdMillis == earlyThresholdMillis && ((NetworkSettings) object).waitThresholdMillis == waitThresholdMillis && ((NetworkSettings) object).stationWaitThresholds.equals(stationWaitThresholds) && ((NetworkSettings) object).ownerOverrides.equals(ownerOverrides) && ((NetworkSettings) object).logicalLines.equals(logicalLines) && ((NetworkSettings) object).railLines.equals(railLines) && ((NetworkSettings) object).lineTracks.equals(lineTracks) && ((NetworkSettings) object).fareLevels.equals(fareLevels) && ((NetworkSettings) object).fareRouteGroups.equals(fareRouteGroups) && ((NetworkSettings) object).fareStationGroups.equals(fareStationGroups) && ((NetworkSettings) object).runningSides.equals(runningSides) && ((NetworkSettings) object).diagramJoins.equals(diagramJoins) && new ArrayList<>(((NetworkSettings) object).fareRules.entrySet()).equals(new ArrayList<>(fareRules.entrySet()));
 	}
 
 	@Override
 	public int hashCode() {
-		return ((Long.hashCode(minReverseMillis) * 31 + Long.hashCode(earlyThresholdMillis)) * 31 + Long.hashCode(waitThresholdMillis)) * 31 + stationWaitThresholds.hashCode() + 17 * ownerOverrides.hashCode() + 19 * logicalLines.hashCode() + 23 * railLines.hashCode() + 29 * lineTracks.hashCode() + 37 * fareLevels.hashCode() + 41 * fareRouteGroups.hashCode() + 43 * fareStationGroups.hashCode() + 47 * runningSides.hashCode() + 53 * fareRules.hashCode();
+		return ((Long.hashCode(minReverseMillis) * 31 + Long.hashCode(earlyThresholdMillis)) * 31 + Long.hashCode(waitThresholdMillis)) * 31 + stationWaitThresholds.hashCode() + 17 * ownerOverrides.hashCode() + 19 * logicalLines.hashCode() + 23 * railLines.hashCode() + 29 * lineTracks.hashCode() + 37 * fareLevels.hashCode() + 41 * fareRouteGroups.hashCode() + 43 * fareStationGroups.hashCode() + 47 * runningSides.hashCode() + 59 * diagramJoins.hashCode() + 53 * fareRules.hashCode();
 	}
 
 	/**

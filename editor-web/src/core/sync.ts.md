@@ -20,3 +20,4 @@
   - 返回 `SyncProblem[]`。调用者：`shell/Sync.tsx:17`。
 - 草稿线路的冲突（0.80.2）：被拒的写“和 X 的修改冲突”（`conflictBy`）；没被拒但 `changedSince` 为真时警告“游戏里在你的草稿之后改过（X 正在编辑它），现在写入会冲突”；有人正在游戏里编辑（线路 `editors`）时给一条提示。
 - 追踪间隔（B，0.82.0）：线路数据带 `headways`（游戏上次时刻表检查里比前一班跟得比列车能跑的还近的班次）时，每条线一条警告：几班、差得最多的那一段只隔几秒、至少要几秒，建议拉开间隔或把这段分成更短的闭塞分区。
+- `sharedTrackProblems(model)`（导出，0.85.0）：分开排班的车厂共用轨道的提醒（数据 `sharedAreas`，服务端算好经 `SharedTrackPackets` 送来）：每个区域一条 warn，写车厂、线路、经过的车站（无站台写起点）和长度，按钮“X 并入 Y 的运行图”（每对单位两个方向、各取前两条线路、最多 8 个；游戏会拒绝的——并入自己、并入已被并入的、把已有别人并入的再并出去——不给），操作 `{type:"networkSettings", diagramJoins:{X:Y}}` 立即发送；已有并入关系每条一个 hint，按钮“撤销并入”（值 null）。`lineName(model, key)` 由线路键找线路名。调用者：本文件 `syncProblems`；测试 `test/sharedTrack.test.ts`。

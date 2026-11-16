@@ -1477,6 +1477,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 回库车不收走等出库的车（0.84.10）：规则在组件 `FleetRules.givesUpEarlierStanding` 和 `TrainService.isLeavingForDuty`；组件 `TickRunner.SidingRun.tick`/`HeadlessTrain.canDeploy` 与游戏 `Siding.simulateTrain`/`TrainServer.canDeploy` 调同一函数（`ShedDutyTest`）。
 
+共用轨道并入（0.85.0）：游戏 `NetworkSettings.diagramJoins`、`LineDuties`（并入当直通连接、`unitDepotIdsOf`）、`advanced.SharedTrack`、`SharedTrackPackets`；网页 `core/sync.ts sharedTrackProblems`。组件数据集尚不带并入关系。
+
 共用轨道提醒（0.84.16）：组件 `network.SharedAreas`（找共用区域）、`PlanCheck.unitsByDepot`、`SimDataset.getSharedAreas`；游戏 `RailwayData.updateSharedAreas` 用同一个类，单位来自 `LineDuties.unitsOf`。
 
 出库逆向进首站折返（0.84.15）：组件 `PathTimes.isTurnedAt`（首站判定）、`StopTimes.add`（leadingPasses 只收不停的站台）；游戏 `PathTiming` 调同一函数。

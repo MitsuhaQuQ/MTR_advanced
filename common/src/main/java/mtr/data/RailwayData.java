@@ -149,17 +149,14 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 
 	/**
 	 * Works out again the track run on by depots planned apart (user, 2026-11-16: every area shared must be one running
-	 * diagram), when the paths or the planning units change, and says so in the log when it changes. A depot planning by
-	 * line is in its unit ({@link LineDuties#unitsOf}); any other depot is a unit of its own.
+	 * diagram, {@link mtr.advanced.SharedTrack}), when the paths, the planning units or the lines joined change, and says
+	 * so in the log when it changes.
 	 */
-	private void updateSharedAreas(Map<Long, LineDuties.Unit> units) {
-		final Map<Long, String> unitOfDepot = new HashMap<>();
-		long signature = 17;
+	private void updateSharedAreas() {
+		final Map<Long, Set<Long>> units = LineDuties.unitDepotIdsOf(depots, dataCache);
+		long signature = 17 + dataCache.networkSettings.diagramJoins.hashCode() * 0x632BE59BD9B4E019L;
 		for (final Depot depot : depots) {
-			final LineDuties.Unit unit = units.get(depot.id);
-			final String key = unit == null ? "[" + depot.id + "]" : unit.depotIds.toString();
-			unitOfDepot.put(depot.id, key);
-			signature += depot.id * 0x9E3779B97F4A7C15L ^ key.hashCode() * 0xBF58476D1CE4E5B9L;
+			signature += depot.id * 0x9E3779B97F4A7C15L ^ String.valueOf(units.get(depot.id)).hashCode() * 0xBF58476D1CE4E5B9L;
 		}
 		for (final Siding siding : sidings) {
 			final Depot depot = dataCache.sidingIdToDepot.get(siding.id);
@@ -171,70 +168,37 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			return;
 		}
 		sharedAreasSignature = signature;
-		final transitsim.network.SharedAreas finder = new transitsim.network.SharedAreas();
-		sidings.forEach(siding -> {
-			final Depot depot = dataCache.sidingIdToDepot.get(siding.id);
-			if (depot != null && !depot.transportMode.continuousMovement) {
-				siding.forEachPathNodes(nodes -> finder.addPath(unitOfDepot.get(depot.id), nodes));
-			}
-		});
-		final List<transitsim.network.SharedAreas.Area> found = finder.result();
-		final String state = found.stream().map(transitsim.network.SharedAreas.Area::describe).collect(Collectors.joining(";"));
-		sharedAreas = found;
+		final List<mtr.advanced.SharedTrack.Area> found = mtr.advanced.SharedTrack.find(depots, sidings, platforms, dataCache, rails);
+		final String state = found.stream().map(area -> area.key + area.units.stream().map(unit -> String.valueOf(unit.lines)).collect(Collectors.joining())).collect(Collectors.joining(";"));
+		sharedTrackAreas = found;
 		if (!state.equals(sharedAreasState)) {
+			mtr.packet.SharedTrackPackets.sendAll(world, found);
 			if (found.isEmpty()) {
 				if (sharedAreasState != null) {
 					System.out.println("Minecraft Transit Railway: no track is shared by depots planned apart any more");
 				}
 			} else {
-				found.forEach(area -> System.out.println("Minecraft Transit Railway: depots planned apart share track, " + describeSharedArea(area) + "; every area shared has to be one running diagram: join one into the other's as through running, or keep them apart with path boundaries"));
+				found.forEach(area -> System.out.println("Minecraft Transit Railway: depots planned apart share track, " + describeSharedArea(area) + "; every area shared has to be one running diagram: join one line into the other's in the web editor's check list, or keep them apart with path boundaries"));
 			}
 			sharedAreasState = state;
 		}
 	}
 
 	/**
-	 * @return the units of a shared area by their depots' names, how long it is, and the stations with platforms on it, or
-	 * where it starts if there are none
+	 * @return the units of a shared area by their depots' names and lines, how long it is, and the stations with platforms
+	 * on it, or where it starts if there are none
 	 */
-	private String describeSharedArea(transitsim.network.SharedAreas.Area area) {
+	private String describeSharedArea(mtr.advanced.SharedTrack.Area area) {
 		final List<String> unitNames = new ArrayList<>();
-		area.units.forEach(unit -> unitNames.add("(" + depotNames(parseDepotIds(unit)) + ")"));
-		final Map<UUID, Platform> platformsByRail = new HashMap<>();
-		platforms.forEach(platform -> platformsByRail.put(getSavedRailKey(platform), platform));
-		final Set<String> stationNames = new TreeSet<>();
-		double length = 0;
-		for (final transitsim.network.SharedAreas.Rail rail : area.rails) {
-			final Map<BlockPos, Rail> from = rails.get(BlockPos.of(rail.node1));
-			final Rail track = from == null ? null : from.get(BlockPos.of(rail.node2));
-			if (track != null) {
-				length += track.getLength();
-			}
-			final Platform platform = platformsByRail.get(mtr.advanced.PathBoundaries.segmentKey(rail.node1, rail.node2));
-			final Station station = platform == null ? null : dataCache.platformIdToStation.get(platform.id);
+		area.units.forEach(unit -> unitNames.add("(" + depotNames(unit.depotIds) + (unit.lines.isEmpty() ? "" : ": " + unit.lines.stream().map(line -> line.substring(line.indexOf('|') + 1)).map(IGui::formatStationName).collect(Collectors.joining(", "))) + ")"));
+		final List<String> stationNames = new ArrayList<>();
+		area.stationIds.forEach(stationId -> {
+			final Station station = dataCache.stationIdMap.get(stationId);
 			if (station != null) {
 				stationNames.add(IGui.formatStationName(station.name));
 			}
-		}
-		final BlockPos start = BlockPos.of(area.rails.get(0).node1);
-		return String.join(" and ", unitNames) + ", " + Math.round(length) + " blocks " + (stationNames.isEmpty() ? "from " + start.toShortString() : "through " + String.join(", ", stationNames));
-	}
-
-	private static Set<Long> parseDepotIds(String unit) {
-		final Set<Long> depotIds = new TreeSet<>();
-		for (final String part : unit.replace("[", "").replace("]", "").split(",")) {
-			if (!part.trim().isEmpty()) {
-				depotIds.add(Long.parseLong(part.trim()));
-			}
-		}
-		return depotIds;
-	}
-
-	/**
-	 * @return the track run on by depots planned apart, as last worked out
-	 */
-	public List<transitsim.network.SharedAreas.Area> getSharedAreas() {
-		return sharedAreas;
+		});
+		return String.join(" and ", unitNames) + ", " + Math.round(area.length) + " blocks " + (stationNames.isEmpty() ? "from " + area.start.toShortString() : "through " + String.join(", ", stationNames));
 	}
 
 	private String depotNames(Set<Long> depotIds) {
@@ -255,11 +219,14 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	private Set<Long> throatLocksOffDepots = Collections.emptySet();
 	private String lockNetworksState = null;
 	/**
-	 * The track run on by depots planned apart ({@link #updateSharedAreas}), what it was last worked out from, and what was
-	 * last said of it.
+	 * What the track run on by depots planned apart ({@link #updateSharedAreas}) was last worked out from, and what was last
+	 * said of it.
 	 */
-	private List<transitsim.network.SharedAreas.Area> sharedAreas = Collections.emptyList();
 	private Long sharedAreasSignature;
+	/**
+	 * The track run on by depots planned apart, as last worked out, which players are sent.
+	 */
+	private List<mtr.advanced.SharedTrack.Area> sharedTrackAreas = Collections.emptyList();
 	private String sharedAreasState = null;
 	/**
 	 * What the lock networks were last worked out from ({@link #updateLockNetworks}).
@@ -887,7 +854,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		// step 3)
 		if (world.getGameTime() % AUTO_DUTIES_CHECK_TICKS == 0 && world.getServer() != null && graphRecords.getLegs() != null && routePaths.isOwnersReady()) {
 			final Map<Long, LineDuties.Unit> units = LineDuties.unitsOf(depots, dataCache, sidings);
-			updateSharedAreas(units);
+			updateSharedAreas();
 			for (final Depot depot : depots) {
 				if (depot.takeAutoDutiesChange(units.get(depot.id))) {
 					railwayDataPathGenerationModule.queue(depot.id);
@@ -1102,6 +1069,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		}
 		lastMapRailsRequestMillis.put(player.getUUID(), millis);
 		mtr.packet.TrackOwnersPackets.send(player, this);
+		mtr.packet.SharedTrackPackets.send(player, sharedTrackAreas);
 
 		final Map<Long, List<Long>> regions = new HashMap<>();
 		final Map<Long, List<Long>> shapeRegions = new HashMap<>();

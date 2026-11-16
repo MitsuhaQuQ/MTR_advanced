@@ -85,6 +85,15 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.85.0 共用轨道：网页检查清单 + 选谁并入谁（用户 2026-11-16：提醒 + 时刻表拆分辅助，玩家选谁并入谁；共用段之后转成直通、运行图上显示接入/接出）：
+- 存档/数据包：`NetworkSettings.diagramJoins`（被并入线路键 → 主线路键，`LineDuties.getLineKey` 格式），msgpack 键 `diagram_joins`、数据包、`copyFrom`、equals/hashCode；`putDiagramJoin` 拒绝并入自己、并入已被并入别处的线路、把已有别人并入的线路再并出去（不成链）。旧存档没有此键为空。测试 `NetworkSettingsTest.linesJoinedIntoAnothersDiagramAreSavedSentAndCopiedWithoutChains`。
+- 排班：`LineDuties.Lines` 把并入关系和直通连接一样加进 `linkedLines`，两边成一个排班单位；单位的 `lines` 变了，`Unit.key` 随之变，运用自动重排。新 `LineDuties.unitDepotIdsOf`（只算分组，不构造 Unit）、`linesOf(depot)`。
+- 共用区域：`mtr.advanced.SharedTrack.find`（服务端用，客户端没有车次路径算不出）：`SharedAreas` + 各单位在该区域上跑的线路、站台所在车站、长度、起点。`RailwayData.updateSharedAreas` 改用它，签名含并入关系；变化时写日志并 `SharedTrackPackets.sendAll`，玩家请求地图时 `send`。
+- 新数据包 `PACKET_SHARED_TRACK`（`SharedTrackPackets`，客户端 `MTRClient` 注册，收下存 `areas`）；测试 `SharedTrackPacketsTest`。
+- 网页：`EditorData` 输出 `sharedAreas` 和 `networkSettings.diagramJoins`；`EditorActions` 的 networkSettings 操作接受 `diagramJoins`（值 null 为撤销，不合规则拒绝）。`editor-web/src/core/sync.ts` `sharedTrackProblems`：每个共用区域一条提醒（车厂、线路、经过车站或起点、长度），按钮“X 并入 Y 的运行图”（两个方向，各单位前两条线路，最多 8 个，游戏会拒绝的不给），立即发送不进草稿；已并入的每条一个说明带“撤销并入”。测试 `editor-web/test/sharedTrack.test.ts`；英文在 `i18n.js`。
+- 组件端 `PlanCheck.unitsByDepot` / `SimDataset` 还不带并入关系（下一步拆直通时一起加进数据集）。
+协议变化，升第二位：0.85.0，客户端和服务端都要换。
+
 0.84.16 共用轨道提醒（用户 2026-11-16：两个分开排班的系统不应共用轨道，所有共用区域必须成为一张运行图；Q 世界两个车厂共用单线和折返区，晚点 +82 s / +102 s）：
 - 组件 `transitsim.network.SharedAreas`：按排班单位收路径节点（存车线路径、车次路径、折返另一条路），同一条轨道（两节点无方向）被两个以上单位走过即为共用；相连的共用轨道合成一个区域，列出区域上所有单位。与输入顺序无关。测试 `SharedAreasTest`。
 - 组件端单位：`PlanCheck.unitsByDepot`（按线排班的车厂按线路名和直通连接成单位，设了运用的车厂（diagramMode）自成单位，同游戏 `LineDuties.plansByLine`）；`SimDataset.getSharedAreas`；`SimulateDay --shared` 列出各区域的单位、轨道数、长度、站台。`SimulateDay --late` 的晚点明细改为每条线各列前 5 条（原来全天只列前 40 条，一条线全天晚点会把别的线挤掉）。

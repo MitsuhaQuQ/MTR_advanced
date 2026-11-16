@@ -126,6 +126,10 @@ public interface IPacket {
 	ResourceLocation PACKET_SET_FARES = new ResourceLocation(MTR.MOD_ID, "packet_set_fares");
 	ResourceLocation PACKET_TRACK_OWNERS = new ResourceLocation(MTR.MOD_ID, "packet_track_owners");
 	/**
+	 * The track run on by depots planned apart (2026-11-16, {@link SharedTrackPackets}).
+	 */
+	ResourceLocation PACKET_SHARED_TRACK = new ResourceLocation(MTR.MOD_ID, "packet_shared_track");
+	/**
 	 * The dispatcher's console (D6): asked for and sent back, and a command for a train.
 	 */
 	ResourceLocation PACKET_CONSOLE = new ResourceLocation(MTR.MOD_ID, "packet_console");
