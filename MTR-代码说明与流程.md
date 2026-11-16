@@ -87,6 +87,8 @@
 
 0.89.0 精确站台边跟随站台样式（用户 2026-11-16 选“放下时记住旁边站台的样式”）：`BlockPlatformEdge.TileEntityPlatformEdge` 改为 `BlockEntityClientSerializableMapper`，存 `source`（方块状态，`NbtUtils`），随方块数据发给玩家。`BlockPlatformEdge.sourceFor`：点击的方块是站台或站台边（取其 source）就用它，否则四周的站台/站台边，否则四周任一整格方块；都没有为 null（画默认港式站台）。`ItemPlatformEdge` 单放和铺边都设置，铺边整条用同一个来源。`RenderPlatformEdge` 从来源方块的模型取贴图（`getQuads` 向上的第一个面为顶面，其余向上的面为顶层标线，北面为侧面），按模型缓存（`WeakHashMap`，资源重载后换新），用方块图集画；顶层标线沿切口铺：横向从切口处 v=1 到一格内 v=0，纵向沿切口居中，超出一格的部分裁掉。组件 `PlatformEdges.CUT_CENTRE` 改为 28（±1.75 格），`MARKING_REACH` 1：离边一格内的整格方块也保留切线方向，好画标线，再往里才 `FULL`。方块实体存档多了内容，升第二位。
 
+0.89.1 网页不拖选文字（用户 2026-11-16 “默认直接把非输入框的文字拖选全停用”）：`editor-web/src/styles.css` 的 base 层给 `body` 设 `user-select: none`（带 `-webkit-` 前缀），`input`、`textarea` 和可编辑的 `[contenteditable]` 设回 `text`。只改网页（构建结果在逻辑 jar 的 `assets/mtr/editor/`，不在资源包），升第三位。
+
 0.88.0 斜线、曲线站台（用户 2026-11-16 选一、二档一起做）：
 - 几何在组件 `transitsim.geometry.PlatformEdges`：车身是两转向架间的弦，弯道上车中部向弯内凸出矢高 `车长²/(8R)`。`signedSagitta`（以站台一侧为正）、`edgeOffset`（半车宽 + 0.5 + 弯内矢高）、`largestGap`（0.5 + |矢高|）、`smallestRadius`（矢高 0.5 时的半径）；`cutOf` 把一格方块按站台边切成状态（64 个方向 × 25 个距离，`FULL`/`EMPTY`），`mask` 给 16×16 柱，`outline` 给多边形（最后两点是切口）。测试 `PlatformEdgesTest`。
 - 游戏 `mtr.data.PlatformCurves`（两端共用）：`carsAt`（停这个站台的线路所属车厂各存车线车型中最长的车距和最宽车宽，没有时 25/2）、`railOf`、`largestSagitta`、`nearest`（轨道上最近点、方向、所在一侧、该处带符号矢高）。
