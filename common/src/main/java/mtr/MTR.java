@@ -262,6 +262,9 @@ public class MTR implements IPacket {
 			registerBlockItem.accept("pids_pole", Blocks.PIDS_POLE, CreativeModeTabs.RAILWAY_FACILITIES);
 			registerBlockItem.accept("platform", Blocks.PLATFORM, CreativeModeTabs.STATION_BUILDING_BLOCKS);
 			registerBlockItem.accept("platform_indented", Blocks.PLATFORM_INDENTED, CreativeModeTabs.STATION_BUILDING_BLOCKS);
+			// Cut along a curved or diagonal track, put down by its own item (0.88.0)
+			registerBlock.accept("platform_edge", Blocks.PLATFORM_EDGE);
+			registerItem.accept("platform_edge", Items.PLATFORM_EDGE);
 			registerBlockItem.accept("platform_na_1", Blocks.PLATFORM_NA_1, CreativeModeTabs.STATION_BUILDING_BLOCKS);
 			registerBlockItem.accept("platform_na_1_indented", Blocks.PLATFORM_NA_1_INDENTED, CreativeModeTabs.STATION_BUILDING_BLOCKS);
 			registerBlockItem.accept("platform_na_2", Blocks.PLATFORM_NA_2, CreativeModeTabs.STATION_BUILDING_BLOCKS);
@@ -407,6 +410,7 @@ public class MTR implements IPacket {
 			registerBlockEntityType.accept("boat_node", BlockEntityTypes.BOAT_NODE_TILE_ENTITY);
 			registerBlockEntityType.accept("rail_node", BlockEntityTypes.RAIL_NODE_TILE_ENTITY);
 			registerBlockEntityType.accept("clock", BlockEntityTypes.CLOCK_TILE_ENTITY);
+			registerBlockEntityType.accept("platform_edge", BlockEntityTypes.PLATFORM_EDGE_TILE_ENTITY);
 			registerBlockEntityType.accept("psd_door_1", BlockEntityTypes.PSD_DOOR_1_TILE_ENTITY);
 			registerBlockEntityType.accept("psd_door_2", BlockEntityTypes.PSD_DOOR_2_TILE_ENTITY);
 			registerBlockEntityType.accept("psd_top", BlockEntityTypes.PSD_TOP_TILE_ENTITY);

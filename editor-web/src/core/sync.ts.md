@@ -22,3 +22,4 @@
 - 追踪间隔（B，0.82.0）：线路数据带 `headways`（游戏上次时刻表检查里比前一班跟得比列车能跑的还近的班次）时，每条线一条警告：几班、差得最多的那一段只隔几秒、至少要几秒，建议拉开间隔或把这段分成更短的闭塞分区。
 - `sharedTrackProblems(model)`（导出，0.85.0）：分开排班的车厂共用轨道的提醒（数据 `sharedAreas`，服务端算好经 `SharedTrackPackets` 送来）：每个区域一条 warn，写车厂、线路、经过的车站（无站台写起点）和长度，按钮“X 并入 Y 的运行图”（每对单位两个方向、各取前两条线路、最多 8 个；游戏会拒绝的——并入自己、并入已被并入的、把已有别人并入的再并出去——不给），操作 `{type:"networkSettings", diagramJoins:{X:Y}}` 立即发送；已有并入关系每条一个 hint，按钮“撤销并入”（值 null）。`lineName(model, key)` 由线路键找线路名。调用者：本文件 `syncProblems`；测试 `test/sharedTrack.test.ts`。
 - 0.86.0：`syncProblems` 对每条有 `sharedConflicts` 的线路加一条 warn（共用轨道上与别的线路同时占用同一闭塞分区的班数和一例，时刻用 `serviceClock`）。共用区域提醒措辞改为“不在同一张运行图上”。
+- 0.88.0：`syncProblems` 对拓扑里 `curve.wide` 的站台各加一条 warn（弯道上停的最长车、车门处最宽缝、建议最小半径，最多 20 条）。测试 `platformCurve.test.ts`。

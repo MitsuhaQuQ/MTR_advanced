@@ -630,5 +630,11 @@
   "gui.mtr.node_grade_preview_hint": "側視圖：節點方向朝右，高度放大 %s 倍。灰線為現狀，黃線為設定後（半徑放不下時為紅色）。拖動可設坡度",
   "gui.mtr.node_grade_forward": "節點方向 →",
   "gui.mtr.node_grade_text": "坡度 %s‰",
-  "gui.mtr.node_grade_text_auto": "坡度 %s‰（自動）"
+  "gui.mtr.node_grade_text_auto": "坡度 %s‰（自動）",
+  "block.mtr.platform_edge": "精確月台邊",
+  "item.mtr.platform_edge": "精確月台邊",
+  "tooltip.mtr.platform_edge": "沿最近月台的軌道切齊，切在停靠列車需要的月台邊位置。潛行右鍵沿這一側鋪滿整條月台邊。",
+  "gui.mtr.platform_edge_laid": "鋪了 %s 塊月台邊",
+  "gui.mtr.platform_edge_no_platform": "4 格內沒有月台軌道",
+  "gui.mtr.platform_edge_in_the_way": "這一格會擋住列車"
 }

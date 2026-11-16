@@ -614,6 +614,7 @@ const I18N = (() => {
 			"和": " and ",
 			"经过 {0} 的一段 {1} 格轨道": " {1} blocks of track through {0}",
 			"从 {0} 起的一段 {1} 格轨道": " {1} blocks of track from {0}",
+			"{0} 在弯道上，{1} 格长的车停在这里，车门处和站台边最宽有 {2} 格的缝；半径至少 {3} 格时缝不超过一格。站台边用“精确站台边”方块沿轨道切齐，开门时有渡板接住乘客": "{0} is on a curve: with cars of {1} blocks stopping there, the gap between the doors and the platform edge is up to {2} blocks; a radius of at least {3} blocks keeps it within a block. Cut the edge along the track with the platform edge block; open doors have a boarding bridge for passengers",
 			"{0} 不在同一张运行图上，却共用{1}。共用的区域必须成为一张运行图：选一条线路并入另一条的运行图（之后两条线的运行图互相画出对方在共用段的班次和接入接出点，时刻表检查也一起查共用段），或者用寻路边界把它们分开": "{0} are on different running diagrams but share{1}. Every shared area has to be one running diagram: join one line into the other's (each diagram then draws the other's services on the shared part with where they run in and out, and the timetable check covers the shared part), or keep them apart with path boundaries",
 			"{0} 已并入 {1} 的运行图，和它一起排班": "{0} is joined into the running diagram of {1} and planned with it",
 			"撤销并入": "Take it out again",

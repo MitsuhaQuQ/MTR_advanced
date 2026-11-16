@@ -85,6 +85,15 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.88.0 斜线、曲线站台（用户 2026-11-16 选一、二档一起做）：
+- 几何在组件 `transitsim.geometry.PlatformEdges`：车身是两转向架间的弦，弯道上车中部向弯内凸出矢高 `车长²/(8R)`。`signedSagitta`（以站台一侧为正）、`edgeOffset`（半车宽 + 0.5 + 弯内矢高）、`largestGap`（0.5 + |矢高|）、`smallestRadius`（矢高 0.5 时的半径）；`cutOf` 把一格方块按站台边切成状态（64 个方向 × 25 个距离，`FULL`/`EMPTY`），`mask` 给 16×16 柱，`outline` 给多边形（最后两点是切口）。测试 `PlatformEdgesTest`。
+- 游戏 `mtr.data.PlatformCurves`（两端共用）：`carsAt`（停这个站台的线路所属车厂各存车线车型中最长的车距和最宽车宽，没有时 25/2）、`railOf`、`largestSagitta`、`nearest`（轨道上最近点、方向、所在一侧、该处带符号矢高）。
+- 新方块 `BlockPlatformEdge`（`mtr:platform_edge`，状态 `angle`、`cut`，形状由 `mask` 按行合并并缓存，`ENTITYBLOCK_ANIMATED`，由 `RenderPlatformEdge` 画顶、底、各侧面和切面，视距 256），物品 `ItemPlatformEdge`：右键放一格（服务端 `BlockPlatformEdge.stateAt` 找 4.5 格内最近站台轨道切好；整格在车里则不放并提示），潜行右键沿该站台这一侧在点击高度铺一条带（边线内 0.5 到外 2 格的空格）。资源在 `resources/common/normal`（方块状态、模型、掉落、配方：1 站台 → 2 站台边），四种语言。
+- 渡板：`VehicleRidingServer.mountRider` 新增两侧 bridge 参数，`TrainServer.simulateCar` 开门一侧给 `PlatformEdges.MAX_BRIDGE`（1.5）。脚下悬空（`isOverGap`，按碰撞形状看脚下那一点）且在车宽 + 0.5 + bridge 内的玩家被接上车；开门侧下车时脚下悬空，沿车横向往外找第一个能站的位置（`stepOverGap`）。
+- 实测：`mtr.data.PlatformGaps.measure`（`TrainServer.simulateCar` 开门时调用），每个站台、每列车每节车厢量一次：沿车每 0.5 格、从车侧内 0.5 到外 3 格每 1/16 格，在车底所在格和上一格 0.9 高处找碰撞面。缝比常规宽 0.5 以上或有方块伸进车里，日志一行（站台、车型、位置、最小半径）。
+- 网页：`EditorData` 拓扑里每个站台有 `curve`（gap、car、smallestRadius、wide），`sync.ts` 对 wide 的站台出一条 warn；测试 `platformCurve.test.ts`。
+- 加方块即注册表变化，客户端服务端必须一起换：协议升到 0.88.0；资源升到 1.0.10，两个 jar 都要换。屏蔽门、安全门沿曲线（第三档）没做；旧站台不会自动改，要用工具重铺。
+
 0.87.0 斜向直线和纵曲线（用户 2026-11-16：“下一步先提前斜向线路的直线、纵曲线的实现”；竖曲线半径可调，在节点界面加纵向选项卡）：
 - 斜向直线：`Rail` 构造时，两端朝向平行、两点连线的角度按 0.1° 取整后也与朝向平行，就沿连线的精确方向建一段直线（新的 0 号分支），两端正好在节点上。以前只有终点正好在起点朝向轴上（偏差 < 1e-4）才算直线，斜向整数坐标几乎都做成两段半径极大的反向圆弧，两端各留一点弯。已有轨道不重建。测试 `RailStraightAndGradesTest`。
 - 纵断面：纯计算在组件 `transitsim.geometry.VerticalProfile`（竖曲线 + 直坡 + 竖曲线，抛物线竖曲线，放不下时两端半径同比缩小；节点自动坡度 `autoNodeGrade`），测试 `VerticalProfileTest`。`Rail` 加 `grade_start/grade_end/vertical_radius_start/vertical_radius_end`（存档只在有坡度时写，包里先写一个布尔），`getPositionY` 有坡度时用 `VerticalProfile`。长度仍是水平长度，组件、闭塞、时刻都不受影响。

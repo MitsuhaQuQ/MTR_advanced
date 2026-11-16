@@ -534,5 +534,11 @@
   "gui.mtr.node_grade_preview_hint": "Side view, the way the node faces to the right, heights stretched %s times. Grey: as now; yellow: as set (red if the radius doesn't fit). Drag to set the grade",
   "gui.mtr.node_grade_forward": "facing →",
   "gui.mtr.node_grade_text": "Grade %s‰",
-  "gui.mtr.node_grade_text_auto": "Grade %s‰ (auto)"
+  "gui.mtr.node_grade_text_auto": "Grade %s‰ (auto)",
+  "block.mtr.platform_edge": "Platform Edge",
+  "item.mtr.platform_edge": "Platform Edge",
+  "tooltip.mtr.platform_edge": "Cut along the track of the nearest platform, where the cars stopping there need the edge. Sneak and right-click to lay the whole edge of that side of the platform.",
+  "gui.mtr.platform_edge_laid": "Laid %s platform edge blocks",
+  "gui.mtr.platform_edge_no_platform": "No platform track within 4 blocks",
+  "gui.mtr.platform_edge_in_the_way": "This block would be in the cars' way"
 }

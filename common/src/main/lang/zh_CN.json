@@ -629,5 +629,11 @@
   "gui.mtr.node_grade_preview_hint": "侧视图：节点方向朝右，高度放大 %s 倍。灰线为现状，黄线为设定后（半径放不下时为红色）。拖动可设坡度",
   "gui.mtr.node_grade_forward": "节点方向 →",
   "gui.mtr.node_grade_text": "坡度 %s‰",
-  "gui.mtr.node_grade_text_auto": "坡度 %s‰（自动）"
+  "gui.mtr.node_grade_text_auto": "坡度 %s‰（自动）",
+  "block.mtr.platform_edge": "精确站台边",
+  "item.mtr.platform_edge": "精确站台边",
+  "tooltip.mtr.platform_edge": "沿最近站台的轨道切齐，切在停靠列车需要的站台边位置。潜行右键沿这一侧铺满整条站台边。",
+  "gui.mtr.platform_edge_laid": "铺了 %s 块站台边",
+  "gui.mtr.platform_edge_no_platform": "4 格内没有站台轨道",
+  "gui.mtr.platform_edge_in_the_way": "这一格会挡住列车"
 }

@@ -786,6 +786,21 @@ public final class EditorData {
 				line.add(ends.get(1).getX() + 0.5);
 				line.add(ends.get(1).getZ() + 0.5);
 				platformObject.add("line", line);
+				// On a curve (0.88.0): the widest gap beside the longest car stopping there with the edge set right, and the
+				// smallest radius that keeps it within half a block of the usual one, for the check list
+				final mtr.data.Rail rail = mtr.data.PlatformCurves.railOf(platform, ClientData.RAILS);
+				if (rail != null) {
+					final int[] cars = mtr.data.PlatformCurves.carsAt(platformId, ClientData.ROUTES, ClientData.SIDINGS, ClientData.DATA_CACHE.sidingIdToDepot);
+					final double sagitta = mtr.data.PlatformCurves.largestSagitta(rail, cars[0]);
+					if (sagitta > 0.05) {
+						final JsonObject curveObject = new JsonObject();
+						curveObject.addProperty("gap", Math.round(transitsim.geometry.PlatformEdges.largestGap(sagitta) * 100) / 100.0);
+						curveObject.addProperty("car", cars[0]);
+						curveObject.addProperty("smallestRadius", Math.round(transitsim.geometry.PlatformEdges.smallestRadius(cars[0])));
+						curveObject.addProperty("wide", sagitta > transitsim.geometry.PlatformEdges.WARN_EXTRA_GAP);
+						platformObject.add("curve", curveObject);
+					}
+				}
 			}
 			final JsonArray waysArray = new JsonArray();
 			for (int direction = 0; direction < 2; direction++) {

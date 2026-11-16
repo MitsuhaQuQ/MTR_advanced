@@ -377,7 +377,11 @@ public class TrainServer extends Train {
 			if (isHoldingKey(player)) {
 				manualCoolDown = 0;
 			}
-		});
+		}, doorLeftOpen ? transitsim.geometry.PlatformEdges.MAX_BRIDGE : 0, doorRightOpen ? transitsim.geometry.PlatformEdges.MAX_BRIDGE : 0);
+		// What the gap to the platform is where the doors open, measured once per platform and train (0.88.0)
+		if (doorLeftOpen || doorRightOpen) {
+			PlatformGaps.measure(world, this, ridingCar, carX, carY, carZ, carYaw, carPitch, realSpacing, width, doorLeftOpen, doorRightOpen);
+		}
 	}
 
 	@Override

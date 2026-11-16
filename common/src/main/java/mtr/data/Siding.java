@@ -808,6 +808,13 @@ public class Siding extends SavedRailBase implements IPacket, IReducedSaveData {
 	}
 
 	/**
+	 * @return the kind of train, as "train_length_width" ({@link TrainType#getSpacing}, {@link TrainType#getWidth})
+	 */
+	public String getBaseTrainType() {
+		return baseTrainType;
+	}
+
+	/**
 	 * @return the routes this siding's trains run, of its depot's; empty for all of them
 	 */
 	public Set<Long> getRouteIds() {

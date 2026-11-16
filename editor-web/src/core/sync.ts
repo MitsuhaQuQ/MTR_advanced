@@ -207,6 +207,9 @@ export function syncProblems(connection: Connection, model: Model | null, draft:
   // Track run on by depots planned apart (2026-11-16): every area shared has to be one running diagram, the player choosing
   // which line joins which; sent to the game at once. Lines joined already are told too, with a way to take them out again
   sharedTrackProblems(data).forEach(problem => problems.push(problem))
+  // Platforms on curves too tight for the cars stopping there (0.88.0): even with the edge set out right, the gap at the
+  // doors grows by more than half a block over the usual one
+  ;((data.topology && data.topology.platforms) || []).filter((platform: any) => platform.curve && platform.curve.wide).slice(0, 20).forEach((platform: any) => problems.push({ level: "warn", text: tr("{0} 在弯道上，{1} 格长的车停在这里，车门处和站台边最宽有 {2} 格的缝；半径至少 {3} 格时缝不超过一格。站台边用“精确站台边”方块沿轨道切齐，开门时有渡板接住乘客", platformText(data, platform.id), platform.curve.car, platform.curve.gap, platform.curve.smallestRadius) }))
   // Platforms in more than one station's area with none set for them, and where they went
   ;((data.topology && data.topology.overlapping) || []).slice(0, 20).forEach((overlap: any) => problems.push({ level: "hint", text: overlap.byIdAlone
     ? tr("{0} 在几个车站的范围里，这些车站都还没有别的站台可参照，暂时归到 {1}；右键时刻表里这一站可以指定", platformText(data, overlap.platform), stationNameOf(data, overlap.station))

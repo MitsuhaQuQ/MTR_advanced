@@ -1,0 +1,12 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"ingredients": [
+		{
+			"item": "mtr:platform"
+		}
+	],
+	"result": {
+		"item": "mtr:platform_edge",
+		"count": 2
+	}
+}

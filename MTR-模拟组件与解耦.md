@@ -1477,6 +1477,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 回库车不收走等出库的车（0.84.10）：规则在组件 `FleetRules.givesUpEarlierStanding` 和 `TrainService.isLeavingForDuty`；组件 `TickRunner.SidingRun.tick`/`HeadlessTrain.canDeploy` 与游戏 `Siding.simulateTrain`/`TrainServer.canDeploy` 调同一函数（`ShedDutyTest`）。
 
+斜线、曲线站台（0.88.0）：几何在组件 `transitsim.geometry.PlatformEdges`（矢高、站台边偏移、方块切法、16×16 柱和轮廓，纯计算，测试先行）；游戏 `PlatformCurves`（取轨道和车型）、`BlockPlatformEdge`/`ItemPlatformEdge`/`RenderPlatformEdge`、`PlatformGaps`（实测）、`VehicleRidingServer` 渡板。不是运行规则，两个宿主中只有游戏用。
+
 斜向直线和纵曲线（0.87.0）：纵断面的计算放在组件 `transitsim.geometry.VerticalProfile`（新包，纯几何，`VerticalProfileTest`），游戏 `Rail`、`RailGrades`、刷子界面调用它。组件的运行规则只用轨道长度（水平长度），纵断面不改长度，所以 `RailGraph`、`TrainMotion`、`SimDataset.DataTrack` 都不变；斜向直线只影响新铺轨道的长度，经 `SimExport` 照常导出。
 
 卡死日志（0.86.1）：游戏 `RailwayData.describeClaim`，用组件 `RunReservations.getHeldClaims/getBlockers` 写出卡死圈里每列车占着和等着的资源。
