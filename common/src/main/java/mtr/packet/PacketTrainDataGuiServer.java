@@ -826,13 +826,18 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 				stationIds.add(station.id);
 			}
 		});
+		final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
+		// Routes running on the same rails between stations too (0.86.0: every area shared is one running diagram, its
+		// services checked together), from the paths found for them
+		final RoutePaths.RoutePath ownPath = RoutePaths.timesByPath(route) ? railwayData.routePaths.getFound(route, railwayData.dataCache, rails) : null;
+		final Set<UUID> ownRails = ownPath == null ? Collections.emptySet() : ownPath.getRailKeys(route.platformIds);
 		final List<Route> routes = new ArrayList<>();
 		routes.add(route);
 		railwayData.routes.forEach(testRoute -> {
 			if (testRoute != route && testRoute.timetable.isActive() && (turnBackRouteIds.contains(testRoute.id) || testRoute.platformIds.stream().anyMatch(routePlatform -> {
 				final Station station = railwayData.dataCache.platformIdToStation.get(routePlatform.platformId);
 				return platformIds.contains(routePlatform.platformId) || station != null && stationIds.contains(station.id);
-			}))) {
+			}) || sharesRails(railwayData, testRoute, route, ownRails, rails))) {
 				routes.add(testRoute);
 			}
 		});
@@ -849,7 +854,6 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			}
 		});
 		final Map<Long, Map<Integer, long[]>> fixedNext = transitsim.plan.TerminalPairs.fixedNext(timetables, dutyDays);
-		final Map<BlockPos, Map<BlockPos, Rail>> rails = railwayData.getRails();
 		// The turnouts of each route's throats, from its own path where it has been found
 		final Map<Long, List<transitsim.network.ThroatRoutes.StopThroat>> throats = new HashMap<>();
 		final Map<UUID, Long> zones = railwayData.getSignalBlocks().getZones(SecurityConfig.interlockColor);
@@ -940,6 +944,12 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 						final RoutePaths.RoutePath routePath = testRoute.id == routeId ? routePaths.get(testRoute.id) : null;
 						if (routePath != null) {
 							newRouteTimes.setHeadways(routePath.getHeadways(testRoute.platformIds, routePools.getOrDefault(testRoute.id, Collections.emptyMap()), rails, directions, blockSections, testRoute.transportMode), servicePools.getOrDefault(testRoute.id, Collections.emptyMap()));
+						}
+						// Its track, for other routes' services on the same block sections (0.86.0), its longest train long
+						final RoutePaths.RoutePath trackPath = routePaths.get(testRoute.id);
+						if (trackPath != null) {
+							final double trainLength = routePools.getOrDefault(testRoute.id, Collections.emptyMap()).values().stream().mapToDouble(vehicle -> vehicle.trainCars * vehicle.spacing).max().orElse(0);
+							trackPath.setTrack(newRouteTimes, testRoute.platformIds, rails, directions, blockSections, trainLength);
 						}
 						turnBacks.getOrDefault(testRoute.id, Collections.emptySet()).forEach(newRouteTimes::addTurnBack);
 						routeTimes.add(newRouteTimes);
@@ -1132,6 +1142,17 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		};
 	}
 
+	/**
+	 * @return whether a route's found path runs on any of the rails given, those of another route of the same transport mode
+	 */
+	private static boolean sharesRails(RailwayData railwayData, Route testRoute, Route route, Set<UUID> ownRails, Map<BlockPos, Map<BlockPos, Rail>> rails) {
+		if (ownRails.isEmpty() || testRoute.transportMode != route.transportMode || !RoutePaths.timesByPath(testRoute)) {
+			return false;
+		}
+		final RoutePaths.RoutePath testPath = railwayData.routePaths.getFound(testRoute, railwayData.dataCache, rails);
+		return testPath != null && testPath.getRailKeys(testRoute.platformIds).stream().anyMatch(ownRails::contains);
+	}
+
 	private static void sendTimetableConflicts(ServerPlayer player, long routeId, List<TimetableConflicts.Conflict> conflicts, int uncheckedRoutes) {
 		final FriendlyByteBuf response = new FriendlyByteBuf(Unpooled.buffer());
 		response.writeLong(routeId);
@@ -1147,6 +1168,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			response.writeLong(conflict.turnoutNode);
 			response.writeLong(conflict.headwayMillis);
 			response.writeLong(conflict.neededMillis);
+			response.writeBoolean(conflict.sharedTrack);
 		});
 		Registry.sendToPlayer(player, PACKET_TIMETABLE_CONFLICTS, response);
 	}

@@ -555,6 +555,7 @@ public final class EditorData {
 		// Others editing it in the game, which the page shows before its draft is applied (multiplayer edit conflicts)
 		routeObject.addProperty("editors", String.join(", ", ClientEditing.getEditors(route)));
 		routeObject.add("headways", getHeadways(route));
+		routeObject.add("sharedConflicts", getSharedConflicts(route));
 		// The revision of each part, which a draft keeps so the game checks only the parts it changes
 		final JsonObject parts = new JsonObject();
 		ClientEditing.getRevisions(route).forEach(parts::addProperty);
@@ -879,6 +880,26 @@ public final class EditorData {
 			headways.add(headway);
 		});
 		return headways;
+	}
+
+	/**
+	 * Of the route's last timetable check, its services on a block section of shared track at the same time as another
+	 * route's (0.86.0): after which stop, the service, the other route and its service. Checked along with the headways.
+	 */
+	private static JsonArray getSharedConflicts(Route route) {
+		final JsonArray shared = new JsonArray();
+		final transitsim.plan.TimetableConflicts.Result result = ClientData.TIMETABLE_CONFLICTS.get(route.id);
+		if (result != null) {
+			result.conflicts.stream().filter(conflict -> conflict.sharedTrack).forEach(conflict -> {
+				final JsonObject item = new JsonObject();
+				item.addProperty("after", stopName(route, conflict.stopIndex));
+				item.addProperty("service", conflict.service);
+				item.addProperty("otherRoute", String.valueOf(conflict.otherRouteId));
+				item.addProperty("otherService", conflict.otherService);
+				shared.add(item);
+			});
+		}
+		return shared;
 	}
 
 	private static String stopName(Route route, int stopIndex) {

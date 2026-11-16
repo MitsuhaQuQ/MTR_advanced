@@ -86,6 +86,19 @@ public final class SimulateDay {
 			dataset.earlyThresholdMillis = Long.parseLong(earlyThreshold);
 			data = dataset.toBytes();
 		}
+		// -Dmtr.diagramJoins=joined=>host;... joins lines into another's running diagram (0.85.0), as the web editor's check list
+		// does, to see what is still shared after; a line by its key or by the ID of one of its routes (a command line on
+		// Windows mangles line names that aren't ASCII)
+		final String joins = System.getProperty("mtr.diagramJoins", "");
+		if (!joins.isEmpty()) {
+			for (final String join : joins.split(";")) {
+				final String[] parts = join.split("=>");
+				if (parts.length == 2) {
+					dataset.diagramJoins.put(lineKeyOf(dataset, parts[0].trim()), lineKeyOf(dataset, parts[1].trim()));
+				}
+			}
+			data = dataset.toBytes();
+		}
 		System.out.printf("Early threshold %d ms%n", dataset.earlyThresholdMillis);
 		// --shared: the track run on by more than one planning unit (2026-11-16), each with its length, the platforms on it and
 		// the routes of each unit running there
@@ -769,6 +782,18 @@ public final class SimulateDay {
 			private long allowed() {
 				return planned <= 0 ? 0 : planned - left;
 			}
+		}
+	}
+
+	/**
+	 * @return the line key of the route with this ID, or the text itself if it isn't one
+	 */
+	private static String lineKeyOf(SimDataset dataset, String text) {
+		try {
+			final long routeId = Long.parseLong(text);
+			return dataset.routes.stream().filter(route -> route.id == routeId).map(route -> route.lineKey).findFirst().orElse(text);
+		} catch (NumberFormatException e) {
+			return text;
 		}
 	}
 }

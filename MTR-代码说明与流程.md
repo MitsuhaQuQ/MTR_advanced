@@ -85,6 +85,15 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.86.0 共用轨道：按运行图分组、共用段冲突检查、运行图接入接出（用户 2026-11-16：直接做完再测，界面问题回头看）：
+- 分组改按运行图：Q 世界所有车厂都是运行图模式（运用已写入），按排班单位每个车厂各成一组，同一线路（s1）的两个车厂也被报出。网页运行图本按线路分组，所以“一张运行图”= 线路，经车厂所跑线路、直通连接、并入关系连通。游戏 `LineDuties.diagramGroupsOf`（`Lines(..., everyDepot=true)`，不看模式；取代 0.85.0 的 `unitDepotIdsOf`），`SharedTrack.find`、`RailwayData.updateSharedAreas` 改用它；组件 `PlanCheck.diagramGroupsByDepot`，`SimDataset.getSharedAreas` 改用它。Q 世界由 11 处变为 2 处（环线 2801… 与明珠线 -6793…）。日志与网页措辞改为“不在同一张运行图上”。
+- 共用段冲突：组件 `TimetableConflicts.checkSharedTrack`：宿主经 `RouteTimes.setTrack(各轨道的闭塞分区, 各轨道终点距离, 各站位置, 车长)` 给出交路轨道；每班车按计划从各站发车到下站到达匀速行驶，车头到达分区起点至车尾离开分区终点为占用；不同交路的两班同时占用同一分区即冲突（同向追近、单线对开都算），每对班次一条，`Conflict.sharedTrack=true`，stopIndex 为分区前的本交路车站。`getHeldBySection` 先按分区算好各班占用区间再比较。测试 `TimetableConflictsTest.anotherRoutesServiceOnTheSharedTrackAtOnceConflicts`、`theSharedTrackAtOtherTimesOrNotGivenIsNoConflict`。
+- 游戏：`PacketTrainDataGuiServer.checkTimetableConflicts` 选交路时加上路径与被查交路共用轨道的（`sharesRails`，`RoutePath.getRailKeys`），每条交路 `RoutePath.setTrack`（闭塞分区：涂色信号闭塞区为一个分区，其余每条轨道自成分区；车长取该交路各车池最长者）。`Conflict` 多一个 `sharedTrack` 字段写进数据包（协议变化）。时刻表界面 `gui.mtr.timetable_conflicts_found_shared_track`（四种语言）。
+- 网页：`EditorData` 每条线路输出 `sharedConflicts`（after、service、otherRoute、otherService），`sync.ts` 每条线路一条提醒；运行图 `RunningDiagram.tsx` 接入段对并入关系的两条线路（被并入者与主线互相）总是画出（不看“显示接入”），线更实，首尾标“接入”“接出”。
+- 组件数据集 VERSION 22 带 `diagramJoins`（`SimExport` 写入），`PlanCheck.unitOf` 同游戏把并入当直通连接；`SimulateDay -Dmtr.diagramJoins=被并入=>主线`（线路键或其中一条交路的 ID）。
+- 注意：Q 世界存档里的运用是写死的，并入不会重排，冲突要靠调时刻表消除；并入的作用是两条线互相可见、一起检查。运行图模式的车厂（手排/已写入运用）不和线路一起自动排班，这一点不变。
+协议变化，升第二位：0.86.0。
+
 0.85.0 共用轨道：网页检查清单 + 选谁并入谁（用户 2026-11-16：提醒 + 时刻表拆分辅助，玩家选谁并入谁；共用段之后转成直通、运行图上显示接入/接出）：
 - 存档/数据包：`NetworkSettings.diagramJoins`（被并入线路键 → 主线路键，`LineDuties.getLineKey` 格式），msgpack 键 `diagram_joins`、数据包、`copyFrom`、equals/hashCode；`putDiagramJoin` 拒绝并入自己、并入已被并入别处的线路、把已有别人并入的线路再并出去（不成链）。旧存档没有此键为空。测试 `NetworkSettingsTest.linesJoinedIntoAnothersDiagramAreSavedSentAndCopiedWithoutChains`。
 - 排班：`LineDuties.Lines` 把并入关系和直通连接一样加进 `linkedLines`，两边成一个排班单位；单位的 `lines` 变了，`Unit.key` 随之变，运用自动重排。新 `LineDuties.unitDepotIdsOf`（只算分组，不构造 Unit）、`linesOf(depot)`。

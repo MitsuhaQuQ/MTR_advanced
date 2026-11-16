@@ -215,28 +215,28 @@ public final class LineDuties {
 	}
 
 	/**
-	 * Only which depots are planned together, as {@link #unitsOf} has them, without making the units: for telling the track
-	 * shared by depots planned apart (2026-11-16, {@link transitsim.network.SharedAreas}), on the server and on the client.
+	 * The running diagrams the depots run on (2026-11-16, for the track shared by depots on different diagrams,
+	 * {@link transitsim.network.SharedAreas}): every depot, whatever its duties, with the operating lines of the routes it
+	 * lists, joined by the through links between services and the lines joined into another's running diagram
+	 * ({@link NetworkSettings#diagramJoins}). Unlike a planning unit ({@link #unitsOf}), a depot with duties set is on the
+	 * diagram of its lines too: the web editor draws a line's diagram with every route of the line, whichever depot runs
+	 * it. Worked out on the server and the client alike.
 	 *
-	 * @return each depot's planning unit as its depots in order; a depot not planning by line is a unit of its own
+	 * @return each depot's diagram group as its depots in order, the same set for every depot of a group
 	 */
-	public static Map<Long, Set<Long>> unitDepotIdsOf(Collection<Depot> depots, DataCache dataCache) {
-		final Map<Long, Set<Long>> units = new HashMap<>();
+	public static Map<Long, Set<Long>> diagramGroupsOf(Collection<Depot> depots, DataCache dataCache) {
+		final Map<Long, Set<Long>> groups = new HashMap<>();
 		final Map<TransportMode, Lines> linesByMode = new EnumMap<>(TransportMode.class);
 		depots.forEach(depot -> {
-			if (units.containsKey(depot.id)) {
-				return;
-			}
-			if (!plansByLine(depot, dataCache)) {
-				units.put(depot.id, Collections.singleton(depot.id));
+			if (groups.containsKey(depot.id)) {
 				return;
 			}
 			final Set<Long> depotIds = new TreeSet<>();
-			linesByMode.computeIfAbsent(depot.transportMode, transportMode -> new Lines(transportMode, dataCache, null)).reach(depot, new TreeSet<>(), depotIds);
+			linesByMode.computeIfAbsent(depot.transportMode, transportMode -> new Lines(transportMode, dataCache, null, true)).reach(depot, new TreeSet<>(), depotIds);
 			final Set<Long> fixed = Collections.unmodifiableSet(depotIds);
-			depotIds.forEach(depotId -> units.put(depotId, fixed));
+			depotIds.forEach(depotId -> groups.put(depotId, fixed));
 		});
-		return units;
+		return groups;
 	}
 
 	/**
@@ -260,10 +260,16 @@ public final class LineDuties {
 		private final Map<Long, Set<String>> depotLines = new HashMap<>();
 		private final Map<String, Set<String>> linkedLines = new HashMap<>();
 
+		private Lines(TransportMode transportMode, DataCache dataCache, Depot draftDepot) {
+			this(transportMode, dataCache, draftDepot, false);
+		}
+
 		/**
 		 * @param draftDepot the depot drafting its duties, counted as planning by line though it has duties set, or null
+		 * @param everyDepot every depot of the transport mode, whatever its duties, for the running diagrams
+		 *                   ({@link #diagramGroupsOf})
 		 */
-		private Lines(TransportMode transportMode, DataCache dataCache, Depot draftDepot) {
+		private Lines(TransportMode transportMode, DataCache dataCache, Depot draftDepot, boolean everyDepot) {
 			// The routes of each line, and the depots planning by line, by the lines they run
 			dataCache.routeIdMap.values().forEach(route -> {
 				if (route.transportMode == transportMode) {
@@ -271,7 +277,7 @@ public final class LineDuties {
 				}
 			});
 			dataCache.depotIdMap.values().forEach(other -> {
-				if (other.transportMode == transportMode && (plansByLine(other, dataCache) || other == draftDepot)) {
+				if (other.transportMode == transportMode && (everyDepot || plansByLine(other, dataCache) || other == draftDepot)) {
 					other.getRoutes(dataCache).forEach(route -> {
 						final String lineKey = getLineKey(route);
 						depotLines.computeIfAbsent(other.id, key -> new TreeSet<>()).add(lineKey);

@@ -45,9 +45,10 @@ public final class SimDataset {
 	 * an operating line, version 8 the routes' operating lines; version 13 the sidings' ways for turning back early (D4);
 	 * version 14 their ways out to where segments of their duties start (D5); version 15 the
 	 * highest speed of their vehicles; version 20 the depots' adopted buffers; version 21 the sidings' other ways round the turn back points of
-	 * their duties (0.84.0); older data is read without them.
+	 * their duties (0.84.0); version 22 the lines joined into another's running diagram (0.85.0); older data is read
+	 * without them.
 	 */
-	public static final int VERSION = 21;
+	public static final int VERSION = 22;
 	/**
 	 * How many trains a siding with no limit has out at most, as in the game.
 	 */
@@ -78,6 +79,11 @@ public final class SimDataset {
 	 * The network's early threshold (round 4, step 5, {@link TrainRules#getCruiseCap}); the default in data from before.
 	 */
 	public long earlyThresholdMillis = TrainRules.DEFAULT_EARLY_THRESHOLD_MILLIS;
+	/**
+	 * Operating lines joined into another's running diagram (0.85.0, the game's NetworkSettings.diagramJoins): the joined
+	 * line's key to the key of the line it joins; planned together as through links join them. None in data from before.
+	 */
+	public final Map<String, String> diagramJoins = new TreeMap<>();
 
 	/**
 	 * @return whether the signal block with this index is an interlocking zone
@@ -166,6 +172,11 @@ public final class SimDataset {
 			siding.turnBackWays.forEach(way -> writeTracks(writer, way));
 			writer.writeVarInt(siding.turnBackWayPoints.size());
 			siding.turnBackWayPoints.forEach(values -> writeLongs(writer, values));
+		});
+		writer.writeVarInt(diagramJoins.size());
+		diagramJoins.forEach((joined, host) -> {
+			BinaryKeyed.writeString(writer, joined);
+			BinaryKeyed.writeString(writer, host);
 		});
 		return writer.toBytes();
 	}
@@ -314,6 +325,16 @@ public final class SimDataset {
 				for (int i = reader.readVarInt(); i > 0; i--) {
 					siding.turnBackWayPoints.add(readLongs(reader));
 				}
+			}
+		}
+		if (version >= 22) {
+			final int size = reader.readVarInt();
+			if (size < 0 || size > 1 << 16) {
+				throw new IllegalArgumentException("Invalid join count " + size);
+			}
+			for (int i = 0; i < size; i++) {
+				final String joined = BinaryKeyed.readString(reader);
+				dataset.diagramJoins.put(joined, BinaryKeyed.readString(reader));
 			}
 		}
 		return dataset;
@@ -531,10 +552,11 @@ public final class SimDataset {
 	}
 
 	/**
-	 * @return the track run on by more than one planning unit (2026-11-16), each unit by its depots, as the game finds it
+	 * @return the track run on by more than one running diagram group (2026-11-16, 0.85.0), each group by its depots, as the
+	 * game finds it
 	 */
 	public transitsim.network.SharedAreas getSharedAreas() {
-		final Map<Long, Set<Long>> units = transitsim.planning.PlanCheck.unitsByDepot(this);
+		final Map<Long, Set<Long>> units = transitsim.planning.PlanCheck.diagramGroupsByDepot(this);
 		final transitsim.network.SharedAreas sharedAreas = new transitsim.network.SharedAreas();
 		sidings.forEach(siding -> {
 			final Set<Long> unit = units.get(siding.depotId);

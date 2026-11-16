@@ -8,11 +8,11 @@ import transitsim.network.SharedAreas;
 import java.util.*;
 
 /**
- * The track run on by depots planned apart (user, 2026-11-16: every area shared must be one running diagram, the player
- * choosing which line joins which), worked out the same way on the server, for its log, and on the client, for the web
- * editor's check list: {@link SharedAreas} over the depots' paths, the depots grouped as they are planned
- * ({@link LineDuties#unitDepotIdsOf}, with the lines joined in {@link NetworkSettings#diagramJoins}), each area with the
- * lines each of its units runs there, its length and the stations with platforms on it.
+ * The track run on by depots of different running diagrams (user, 2026-11-16: every area shared must be one running
+ * diagram, the player choosing which line joins which), worked out on the server for its log and, sent on, for the web
+ * editor's check list: {@link SharedAreas} over the depots' paths, the depots grouped by the diagrams of their lines
+ * ({@link LineDuties#diagramGroupsOf}, with through links and the lines joined in {@link NetworkSettings#diagramJoins}),
+ * each area with the lines each group runs there, its length and the stations with platforms on it.
  */
 public final class SharedTrack {
 
@@ -24,7 +24,7 @@ public final class SharedTrack {
 	 * @return the shared areas, in a fixed order
 	 */
 	public static List<Area> find(Collection<Depot> depots, Collection<Siding> sidings, Collection<Platform> platforms, DataCache dataCache, Map<BlockPos, Map<BlockPos, Rail>> rails) {
-		final Map<Long, Set<Long>> units = LineDuties.unitDepotIdsOf(depots, dataCache);
+		final Map<Long, Set<Long>> units = LineDuties.diagramGroupsOf(depots, dataCache);
 		final SharedAreas finder = new SharedAreas();
 		sidings.forEach(siding -> {
 			final Depot depot = dataCache.sidingIdToDepot.get(siding.id);

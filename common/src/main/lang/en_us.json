@@ -305,6 +305,7 @@
   "gui.mtr.timetable_conflicts_other_services": "%1$s conflicts on the services marked red, none on this one.",
   "gui.mtr.timetable_conflicts_found": "%1$s conflicts. This service: %2$s %3$s with %4$s at %5$s",
   "gui.mtr.timetable_conflicts_found_turn_back": "%1$s conflicts. This service: turn back rail with %2$s at %3$s",
+  "gui.mtr.timetable_conflicts_found_shared_track": "%1$s conflicts. This service: after %2$s, on the same block section of the shared track as the %4$s service of %3$s at once. Every area of shared track is one running diagram: move one of them",
   "gui.mtr.timetable_pass": "Pass",
   "gui.mtr.map_pick_route": "Click a coloured line to find that line. Click again where lines overlap for the next one.",
   "gui.mtr.map_pick_station": "Click a station area to find it in the list. Click again where areas overlap for the next one.",

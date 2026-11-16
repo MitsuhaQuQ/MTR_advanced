@@ -45,3 +45,4 @@
 - `drawTerminalLinks(g, line, pairs, xOf, yOf, c, w, numFont, polyline, movingIds)`（旧 `drawTerminalLinks`）：终点折返和接续到下一路线的连线，标注折返地点（"折返线"或 `fn.platformText(站台)`）。
 - `drawDepotLegs(g, line, xOf, yOf, c, w, unit, numFont, dragging)`（旧 `drawDepotLegs`）：车厂行与每份运用的出库/回库回送（`fn.deadheadTimes(siding, day)`，拖动中的出库按偏移预览），返回 `Leg[]` 供命中。
 - `drawSimulated(g, line, xOf, yOf, c, w)`（旧 `drawSimulated`）：模拟开着且有结果时，在计划之上画每个行程的虚线，晚点超过 `v.SIM_LATE_MILLIS`（`fn.simLate`）的部分为红色。
+- 0.86.0：接入段（`fn.accessLegs`）中与本线有并入关系的线路（`networkSettings.diagramJoins` 中被并入本线的，或本线所并入的主线）总是画出，线宽 1.6、虚线 [4,3]、不透明度 0.85，每段首尾以 `markInOut` 画点并标“接入”“接出”；其余线路仍只在“显示接入”时画。

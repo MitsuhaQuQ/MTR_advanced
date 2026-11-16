@@ -791,6 +791,11 @@ public class TimetableScreen extends ScreenBase implements IGui, IPacket {
 			final Station to = conflict.stopIndex + 1 < route.platformIds.size() ? ClientData.DATA_CACHE.platformIdToStation.get(route.platformIds.get(conflict.stopIndex + 1).platformId) : null;
 			return Text.translatable("gui.mtr.timetable_conflicts_found_headway", count, IGui.textOrUntitled(from == null ? "" : IGui.formatStationName(from.name)), IGui.textOrUntitled(to == null ? "" : IGui.formatStationName(to.name)), EditDepotScreen.formatTime(otherService), Math.round(conflict.headwayMillis / 1000.0), Math.round(Math.ceil(conflict.neededMillis / 1000.0)));
 		}
+		if (conflict.sharedTrack) {
+			// The other route's service on the same block section of the shared track at once (0.86.0)
+			final Station station = conflict.otherRouteId == route.id && conflict.otherService == baseMillis ? null : conflict.stopIndex < route.platformIds.size() ? ClientData.DATA_CACHE.platformIdToStation.get(route.platformIds.get(conflict.stopIndex).platformId) : null;
+			return Text.translatable("gui.mtr.timetable_conflicts_found_shared_track", count, IGui.textOrUntitled(station == null ? "" : IGui.formatStationName(station.name)), IGui.textOrUntitled(otherRoute == null ? "" : IGui.formatStationName(otherRoute.name)), EditDepotScreen.formatTime(otherService));
+		}
 		if (conflict.turnoutNode != 0) {
 			// Both trains through a turnout of the throat by different ways at once (L2)
 			final Station station = conflict.stopIndex < route.platformIds.size() ? ClientData.DATA_CACHE.platformIdToStation.get(route.platformIds.get(conflict.stopIndex).platformId) : null;

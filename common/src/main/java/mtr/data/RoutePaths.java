@@ -1716,6 +1716,53 @@ public final class RoutePaths {
 			return headways;
 		}
 
+		/**
+		 * @return the keys of the rails of the path, whichever way they are run, or none if it isn't found (0.86.0, for the
+		 * routes sharing track with another, {@code PacketTrainDataGuiServer.checkTimetableConflicts})
+		 */
+		public Set<UUID> getRailKeys(List<Route.RoutePlatform> stopSettings) {
+			final Set<UUID> keys = new HashSet<>();
+			if (isFound()) {
+				getPath(stopSettings).forEach(pathData -> keys.add(transitsim.network.RailKeys.of(pathData.startingPos.asLong(), pathData.getLastPos().asLong())));
+			}
+			return keys;
+		}
+
+		/**
+		 * Gives the route's times its track, for checking other routes' services on the same block sections (0.86.0,
+		 * {@link transitsim.plan.TimetableConflicts.RouteTimes#setTrack}): the block section of each rail of the path (a painted
+		 * signal block as one, any other rail by itself), where each rail ends and where each stop is, the end of its platform.
+		 *
+		 * @param sections the painted signal blocks, or null for none
+		 */
+		public void setTrack(transitsim.plan.TimetableConflicts.RouteTimes routeTimes, List<Route.RoutePlatform> stopSettings, Map<BlockPos, Map<BlockPos, Rail>> rails, Map<UUID, Integer> directions, transitsim.network.BlockSections sections, double trainLength) {
+			final List<PathData> path = isFound() ? getPath(stopSettings) : Collections.emptyList();
+			if (path.isEmpty()) {
+				return;
+			}
+			final List<transitsim.sim.SimDataset.DataTrack> tracks = mtr.advanced.SimExport.toTracks(path, rails, directions);
+			final List<UUID> sectionKeys = new ArrayList<>();
+			final double[] ends = new double[Math.min(path.size(), tracks.size())];
+			final double[] stopPositions = new double[stopSettings.size()];
+			double distance = 0;
+			int stop = 0;
+			for (int i = 0; i < ends.length; i++) {
+				distance += tracks.get(i).getTrackLength();
+				ends[i] = distance;
+				final PathData pathData = path.get(i);
+				final UUID railKey = transitsim.network.RailKeys.of(pathData.startingPos.asLong(), pathData.getLastPos().asLong());
+				final List<UUID> section = sections == null ? null : sections.getSection(railKey);
+				sectionKeys.add(section == null || section.isEmpty() ? railKey : Collections.min(section));
+				if (stop < stopSettings.size() && pathData.savedRailBaseId == stopSettings.get(stop).platformId) {
+					stopPositions[stop++] = distance;
+				}
+			}
+			// Every stop found along the path, or the times can't be put on it
+			if (stop == stopSettings.size()) {
+				routeTimes.setTrack(sectionKeys, ends, stopPositions, trainLength);
+			}
+		}
+
 		private StopTimes getStopTimes(PathTiming.Vehicle vehicle, List<Route.RoutePlatform> stopSettings) {
 			final List<Object> key = new ArrayList<>();
 			key.add(vehicle);

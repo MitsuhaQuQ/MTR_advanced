@@ -107,3 +107,8 @@
 - `Occupation`：一次占用 `[start, end]`、涉及的 `stops`、多折返轨时的 `candidates`、多站台时的 `platforms`；`getStop(routeId)` 取属于该路线的停站。
 - `ThroatUse`：一次咽喉使用 `[start, end]`、`item`、`stop`。
 - `ServiceStop`：(路线, 表, 班次, 站序)，`equals`/`hashCode` 按四个字段。
+
+## 共用段冲突（0.86.0）
+- `RouteTimes.setTrack(sections, ends, stopPositions, trainLength)`：宿主给出交路路径各轨道的闭塞分区、终点距离、各站位置和车长；不给则不参与。
+- `checkSharedTrack(route, routes, weekday, conflicts)`：被查交路与其他给了轨道的交路在共同分区上，按 `getHeldBySection`（各班匀速行驶下车头进入分区到车尾离开的区间，按开始排序）比较，重叠即 `Conflict(..., sharedTrack=true)`，每对班次一条。`check` 每天调用。
+- `Conflict.sharedTrack`：新字段，构造函数多一个十参版本；equals/hashCode 计入。

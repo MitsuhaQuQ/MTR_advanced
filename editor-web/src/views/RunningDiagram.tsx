@@ -382,20 +382,30 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
   g.beginPath()
   g.rect(D.LABEL_W, D.AXIS_H, w - D.LABEL_W, h - D.AXIS_H)
   g.clip()
-  // Other lines' services on this line's track, under its own, dotted and read only
-  if (v.showAccess) {
+  // Other lines' services on this line's track, under its own, dotted and read only. Lines joined into this one's
+  // running diagram, or this one's host (0.86.0: every area of shared track is one running diagram), are drawn whether
+  // or not the others are shown, firmer, with where each service runs in (接入) and out (接出) marked
+  const joins: Record<string, string> = (data.networkSettings && data.networkSettings.diagramJoins) || {}
+  const joinedWith = (key: string) => joins[key] === line.key || joins[line.key] === key
+  {
     fn.accessLegs(line).forEach(({ r, legs }: any) => {
+      const joined = joinedWith(r.lineKey)
+      if (!v.showAccess && !joined) return
       g.strokeStyle = colorOf(r.color)
-      g.lineWidth = 1.2
-      g.setLineDash([1, 3])
+      g.lineWidth = joined ? 1.6 : 1.2
+      g.setLineDash(joined ? [4, 3] : [1, 3])
       g.lineCap = "round"
-      g.globalAlpha = state.route ? 0.2 : 0.6
+      g.globalAlpha = state.route ? 0.2 : joined ? 0.85 : 0.6
       r.services.forEach((s: any) => {
         if (s.suspended) return
         const times = timesOf(s)
         let points: D.Point[] = []
         const flush = () => {
-          if (points.length > 1 && points.some(([x]) => x >= D.LABEL_W - 40 && x <= w + 40)) { out.access.push({ s, points }); polyline(points) }
+          if (points.length > 1 && points.some(([x]) => x >= D.LABEL_W - 40 && x <= w + 40)) {
+            out.access.push({ s, points })
+            polyline(points)
+            if (joined) markInOut(points)
+          }
           points = []
         }
         legs.forEach((leg: any, k: number) => {
@@ -412,6 +422,19 @@ export function draw(g: CanvasRenderingContext2D, w: number, h: number, moving: 
       g.lineCap = "butt"
       g.globalAlpha = 1
     })
+  }
+  /** Where a joined line's service runs in and out of this diagram: 接入 at the first point, 接出 at the last */
+  function markInOut(points: D.Point[]) {
+    const dash = g.getLineDash()
+    g.setLineDash([])
+    g.font = `10px ${uiFont}`
+    g.fillStyle = g.strokeStyle as string
+    const [x1, y1] = points[0], [x2, y2] = points[points.length - 1]
+    g.beginPath(); g.arc(x1, y1, 2.5, 0, Math.PI * 2); g.fill()
+    g.fillText(tr("接入"), x1 + 3, y1 - 3)
+    g.beginPath(); g.arc(x2, y2, 2.5, 0, Math.PI * 2); g.fill()
+    g.fillText(tr("接出"), x2 + 3, y2 - 3)
+    g.setLineDash(dash)
   }
 
   // The services, the selected one last so it's on top

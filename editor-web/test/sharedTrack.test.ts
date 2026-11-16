@@ -5,7 +5,8 @@
 import { describe, expect, it } from "vitest"
 import { testData } from "./fixtures"
 import { buildModel } from "../src/core/model"
-import { sharedTrackProblems } from "../src/core/sync"
+import { sharedTrackProblems, syncProblems } from "../src/core/sync"
+import { emptyDraft } from "../src/core/draft"
 
 const LINE1 = "TRAIN|1号线|Line 1"
 const LINE2 = "TRAIN|2号线|Line 2"
@@ -35,6 +36,16 @@ describe("shared track", () => {
     expect(problems[0].actions).toEqual([])
     expect(problems[1].level).toBe("hint")
     expect(problems[1].actions![0].op).toEqual({ type: "networkSettings", diagramJoins: { [LINE2]: null } })
+  })
+
+  it("tells a route's services on shared track at once with another line's (0.86.0)", () => {
+    const data = testData()
+    data.routes[0].sharedConflicts = [{ after: "北湖|North Lake", service: 0, otherRoute: "201", otherService: 0 }, { after: "港湾", service: 0, otherRoute: "202", otherService: 0 }]
+    const problems = syncProblems("ok", buildModel(data), emptyDraft())
+    const shared = problems.filter(problem => problem.text.includes("共用轨道上"))
+    expect(shared).toHaveLength(1)
+    expect(shared[0].route).toBe(String(data.routes[0].id))
+    expect(shared[0].text).toContain("有 2 班")
   })
 
   it("is nothing with no shared track", () => {

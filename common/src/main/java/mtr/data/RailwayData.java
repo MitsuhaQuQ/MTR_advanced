@@ -153,7 +153,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	 * so in the log when it changes.
 	 */
 	private void updateSharedAreas() {
-		final Map<Long, Set<Long>> units = LineDuties.unitDepotIdsOf(depots, dataCache);
+		final Map<Long, Set<Long>> units = LineDuties.diagramGroupsOf(depots, dataCache);
 		long signature = 17 + dataCache.networkSettings.diagramJoins.hashCode() * 0x632BE59BD9B4E019L;
 		for (final Depot depot : depots) {
 			signature += depot.id * 0x9E3779B97F4A7C15L ^ String.valueOf(units.get(depot.id)).hashCode() * 0xBF58476D1CE4E5B9L;
@@ -175,10 +175,10 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			mtr.packet.SharedTrackPackets.sendAll(world, found);
 			if (found.isEmpty()) {
 				if (sharedAreasState != null) {
-					System.out.println("Minecraft Transit Railway: no track is shared by depots planned apart any more");
+					System.out.println("Minecraft Transit Railway: no track is shared by depots of different running diagrams any more");
 				}
 			} else {
-				found.forEach(area -> System.out.println("Minecraft Transit Railway: depots planned apart share track, " + describeSharedArea(area) + "; every area shared has to be one running diagram: join one line into the other's in the web editor's check list, or keep them apart with path boundaries"));
+				found.forEach(area -> System.out.println("Minecraft Transit Railway: depots of different running diagrams share track, " + describeSharedArea(area) + "; every area shared has to be one running diagram: join one line into the other's in the web editor's check list, or keep them apart with path boundaries"));
 			}
 			sharedAreasState = state;
 		}

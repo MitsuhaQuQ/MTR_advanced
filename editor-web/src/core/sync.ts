@@ -7,7 +7,7 @@ import type { Connection } from "../api/client"
 import { tr } from "../i18n"
 import { alarmReasonText, depotLines, dutiesOf, replanText, shortfallText, stopLabel, turnPairsOf } from "./depots"
 import { changedSince, type Draft, platformText, stationNameOf } from "./draft"
-import { type Model, routeTitle, shortName } from "./model"
+import { type Model, routeTitle, serviceClock, shortName } from "./model"
 import { clock, durationText } from "./format"
 
 export type SyncProblem = {
@@ -73,6 +73,13 @@ export function syncProblems(connection: Connection, model: Model | null, draft:
     if (!headways.length) return
     const worst = headways.reduce((a: any, b: any) => (b.needed - b.gap > a.needed - a.gap ? b : a))
     problems.push({ level: "warn", text: tr("{0}：有 {1} 班和前一班隔得比列车能跑的还近，比如 {2} 到 {3} 只隔 {4} 秒，按闭塞分区和车长至少要隔 {5} 秒，会越跑越晚。拉开间隔，或者把这段线路分成更短的闭塞分区", routeTitle(r), headways.length, shortName(worst.from), shortName(worst.to), worst.gap, worst.needed), route: String(r.id) })
+  })
+  // Services on the same block section of shared track as another route's at once (0.86.0), from the same check
+  data.routes.forEach((r: any) => {
+    const shared = r.sharedConflicts || []
+    if (!shared.length) return
+    const first = shared[0]
+    problems.push({ level: "warn", text: tr("{0}：有 {1} 班在共用轨道上和别的线路同时占用同一闭塞分区，比如 {2} 那班在 {3} 之后和 {4} 的 {5} 那班。共用区域是一张运行图，错开其中一班", routeTitle(r), shared.length, serviceClock(data, first.service), shortName(first.after), routeName(first.otherRoute), serviceClock(data, first.otherService)), route: String(r.id) })
   })
   Object.entries(draft.routes).forEach(([id, entry]) => {
     const r: any = data.routeById.get(id)
@@ -251,7 +258,7 @@ export function sharedTrackProblems(model: Model): SyncProblem[] {
         }))
       }
     }
-    problems.push({ level: "warn", text: tr("{0} 分开排班，却共用{1}。共用的区域必须成为一张运行图：选一条线路并入另一条的运行图（之后一起排班；共用段转成直通、运行图上显示接入接出的部分还在做），或者用寻路边界把它们分开", units.map(unitText).join(tr("和")), where), actions })
+    problems.push({ level: "warn", text: tr("{0} 不在同一张运行图上，却共用{1}。共用的区域必须成为一张运行图：选一条线路并入另一条的运行图（之后两条线的运行图互相画出对方在共用段的班次和接入接出点，时刻表检查也一起查共用段），或者用寻路边界把它们分开", units.map(unitText).join(tr("和")), where), actions })
   })
   Object.entries(joins).forEach(([joined, host]) => problems.push({ level: "hint", text: tr("{0} 已并入 {1} 的运行图，和它一起排班", lineName(model, joined), lineName(model, host)), actions: [{ label: tr("撤销并入"), op: { type: "networkSettings", diagramJoins: { [joined]: null } } }] }))
   return problems

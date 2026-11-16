@@ -203,13 +203,25 @@ public final class PlanCheck {
 	 * isn't in any other unit (2026-11-16, for the track shared by units, transitsim.network.SharedAreas)
 	 */
 	public static Map<Long, Set<Long>> unitsByDepot(SimDataset dataset) {
+		return groupsByDepot(dataset, false);
+	}
+
+	/**
+	 * @return each depot's running diagram group (0.85.0, the game's LineDuties.diagramGroupsOf): every depot, duties set or
+	 * not, with the lines it runs, joined by through links and the lines joined into another's diagram
+	 */
+	public static Map<Long, Set<Long>> diagramGroupsByDepot(SimDataset dataset) {
+		return groupsByDepot(dataset, true);
+	}
+
+	private static Map<Long, Set<Long>> groupsByDepot(SimDataset dataset, boolean everyDepot) {
 		final Set<Long> byLine = new java.util.TreeSet<>();
 		dataset.depots.forEach(depot -> {
 			final DepotDuties duties = new DepotDuties();
 			if (depot.duties.length > 0) {
 				duties.fromBytes(depot.duties);
 			}
-			if (!duties.diagramMode) {
+			if (everyDepot || !duties.diagramMode) {
 				byLine.add(depot.id);
 			}
 		});
@@ -261,6 +273,13 @@ public final class PlanCheck {
 				linkedLines.computeIfAbsent(to, key -> new HashSet<>()).add(from);
 			}
 		})));
+		// Lines joined into another's running diagram, the same way (0.85.0, as the game's LineDuties)
+		dataset.diagramJoins.forEach((joined, host) -> {
+			if (lineRoutes.containsKey(joined) && lineRoutes.containsKey(host)) {
+				linkedLines.computeIfAbsent(joined, key -> new HashSet<>()).add(host);
+				linkedLines.computeIfAbsent(host, key -> new HashSet<>()).add(joined);
+			}
+		});
 		final Set<String> lines = new java.util.TreeSet<>();
 		final Set<Long> depotIds = new java.util.TreeSet<>();
 		final java.util.ArrayDeque<Object> queue = new java.util.ArrayDeque<>();

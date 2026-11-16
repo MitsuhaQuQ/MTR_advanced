@@ -73,6 +73,40 @@ class TimetableConflictsTest {
 		return check(a, b);
 	}
 
+	/**
+	 * Route A from platform 1 to 2 and route B from platform 3 to 4, each 600 blocks with their stops at 100 and 600, both
+	 * running through block sections S and T between; 50 block trains. A leaves at 11 and arrives at 13.
+	 */
+	private static List<TimetableConflicts.Conflict> sharedTrackCheck(int bServiceMinute, boolean bTrack) {
+		final UUID s = new UUID(0, 21);
+		final UUID t = new UUID(0, 22);
+		final TimetableConflicts.RouteTimes a = route(ROUTE_A, new long[]{PLATFORM_1, PLATFORM_2}, times(), 10);
+		a.setTrack(Arrays.asList(new UUID(0, 1), s, t, new UUID(0, 2)), new double[]{100, 300, 500, 600}, new double[]{100, 600}, 50);
+		final TimetableConflicts.RouteTimes b = route(ROUTE_B, new long[]{PLATFORM_3, 14}, times(), bServiceMinute);
+		if (bTrack) {
+			b.setTrack(Arrays.asList(new UUID(0, 3), s, t, new UUID(0, 4)), new double[]{100, 300, 500, 600}, new double[]{100, 600}, 50);
+		}
+		return check(a, b);
+	}
+
+	@Test
+	void anotherRoutesServiceOnTheSharedTrackAtOnceConflicts() {
+		// 0.86.0: A holds S from 10:00 (standing at platform 1 with its tail in it) to 12:00; B from 11:00 to 13:00
+		final List<TimetableConflicts.Conflict> conflicts = sharedTrackCheck(11, true);
+		assertEquals(1, conflicts.size());
+		assertTrue(conflicts.get(0).sharedTrack);
+		assertEquals(ROUTE_B, conflicts.get(0).otherRouteId);
+		assertEquals(11 * MINUTE, conflicts.get(0).otherService);
+		assertEquals(0, conflicts.get(0).stopIndex);
+		assertFalse(conflicts.get(0).isHeadway());
+	}
+
+	@Test
+	void theSharedTrackAtOtherTimesOrNotGivenIsNoConflict() {
+		assertTrue(sharedTrackCheck(20, true).isEmpty());
+		assertTrue(sharedTrackCheck(11, false).isEmpty());
+	}
+
 	@Test
 	void crossingTheThroatWithinHalfAMinuteConflicts() {
 		// A uses the turnout from 12:30 to 13:00, B from 12:45 to 13:15

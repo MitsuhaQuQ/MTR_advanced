@@ -90,6 +90,8 @@ public final class SimExport {
 		dataset.applyStopPositions();
 		// How early trains may run at full speed before cruising slower (round 4, step 5)
 		dataset.earlyThresholdMillis = railwayData.dataCache.networkSettings.earlyThresholdMillis;
+		// Lines joined into another's running diagram, planned together (0.85.0)
+		dataset.diagramJoins.putAll(railwayData.dataCache.networkSettings.diagramJoins);
 		dataset.trains = trains;
 		dataset.signalBlocks.addAll(railwayData.getSignalBlocks().getBlockRails());
 		dataset.interlockBlocks.addAll(railwayData.getSignalBlocks().getInterlockFlags(mtr.SecurityConfig.interlockColor));

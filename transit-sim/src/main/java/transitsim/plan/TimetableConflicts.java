@@ -70,12 +70,64 @@ public final class TimetableConflicts {
 				checkTurnBacks(routeId, routes, routeMap, turnBackRails, day, conflicts);
 				checkThroats(routeId, routes, day, conflicts);
 				checkHeadways(routeMap.get(routeId), day, conflicts);
+				checkSharedTrack(routeMap.get(routeId), routes, day, conflicts);
 			}
 		}
 
 		final List<Conflict> sortedConflicts = new ArrayList<>(conflicts);
 		sortedConflicts.sort(Comparator.<Conflict>comparingInt(conflict -> conflict.table).thenComparingInt(conflict -> conflict.service).thenComparingInt(conflict -> conflict.stopIndex));
 		return sortedConflicts;
+	}
+
+	/**
+	 * Services of other routes on the same block sections as the route's at the same time (0.86.0, user 2026-11-16: every
+	 * area of track shared must be one running diagram, so the services of the lines on it are checked together, not only
+	 * where they share platforms). Each train is taken to run at an even speed from each stop to the next, from its planned
+	 * departure to its planned arrival, and to hold a section from its head reaching it until its tail has left it; two
+	 * services of different routes holding one section at once conflict, whichever way they run. One conflict for each
+	 * pair of services, at the stop of the checked route the first such section comes after. Only routes the host gave
+	 * their track ({@link RouteTimes#setTrack}) are compared.
+	 */
+	private static void checkSharedTrack(RouteTimes route, List<RouteTimes> routes, int weekday, Set<Conflict> conflicts) {
+		if (route == null || route.trackSections.isEmpty()) {
+			return;
+		}
+		final Set<UUID> own = new HashSet<>(route.trackSections);
+		final Set<String> found = new HashSet<>();
+		Map<UUID, List<long[]>> ownHeld = null;
+		for (final RouteTimes other : routes) {
+			if (other.routeId == route.routeId || other.trackSections.isEmpty()) {
+				continue;
+			}
+			final Set<UUID> shared = new HashSet<>();
+			other.trackSections.forEach(section -> {
+				if (own.contains(section)) {
+					shared.add(section);
+				}
+			});
+			if (shared.isEmpty()) {
+				continue;
+			}
+			if (ownHeld == null) {
+				ownHeld = route.getHeldBySection(weekday, own);
+			}
+			final Map<UUID, List<long[]>> otherHeld = other.getHeldBySection(weekday, shared);
+			for (final UUID section : shared) {
+				final List<long[]> ownTimes = ownHeld.getOrDefault(section, Collections.emptyList());
+				final List<long[]> otherTimes = otherHeld.getOrDefault(section, Collections.emptyList());
+				// Each {start, end, service, table, stop}, by start: only those starting before one ends can overlap it
+				for (final long[] held : ownTimes) {
+					for (final long[] otherHeldTimes : otherTimes) {
+						if (otherHeldTimes[0] >= held[1]) {
+							break;
+						}
+						if (held[0] < otherHeldTimes[1] && found.add(held[2] + "/" + other.routeId + "/" + otherHeldTimes[2])) {
+							conflicts.add(new Conflict((int) held[3], (int) held[4], (int) held[2], other.routeId, (int) otherHeldTimes[2], 0, 0, 0, 0, true));
+						}
+					}
+				}
+			}
+		}
 	}
 
 	/**
@@ -543,6 +595,103 @@ public final class TimetableConflicts {
 			servicePools.putAll(pools);
 		}
 
+		/**
+		 * The route's path as the block sections of its rails in order, where each ends along the path, where each stop is
+		 * along it and how long its trains are (0.86.0, {@link #checkSharedTrack}); empty if not given.
+		 */
+		private List<UUID> trackSections = Collections.emptyList();
+		private double[] trackEnds = new double[0];
+		private double[] stopPositions = new double[0];
+		private double trainLength;
+
+		/**
+		 * @param sections      the block section of each rail of the route's path, from its first stop to its last
+		 * @param ends          where each rail ends along the path
+		 * @param stopPositions where the head of a train stands at each stop, along the path
+		 * @param trainLength   how long the longest train running it is
+		 */
+		public void setTrack(List<UUID> sections, double[] ends, double[] stopPositions, double trainLength) {
+			if (sections.size() != ends.length || stopPositions.length != stops.size()) {
+				return;
+			}
+			trackSections = new ArrayList<>(sections);
+			trackEnds = ends.clone();
+			this.stopPositions = stopPositions.clone();
+			this.trainLength = Math.max(0, trainLength);
+		}
+
+		/**
+		 * @return the last stop at or before where the rail starts
+		 */
+		private int getStopBefore(int element) {
+			final double start = element == 0 ? 0 : trackEnds[element - 1];
+			int stop = 0;
+			for (int i = 0; i < stopPositions.length; i++) {
+				if (stopPositions[i] <= start + 1E-6) {
+					stop = i;
+				}
+			}
+			return stop;
+		}
+
+		/**
+		 * @return for each of the sections asked for, from when to when each service's train holds it, as {start, end,
+		 * service, table, stop before}, by start: from its head reaching a rail of the section until its tail leaving it,
+		 * running at an even speed from each stop to the next; a section the path passes more than once is held each time
+		 */
+		private Map<UUID, List<long[]>> getHeldBySection(int weekday, Set<UUID> sections) {
+			final Map<UUID, List<long[]>> held = new HashMap<>();
+			for (final ServiceTimes serviceTimes : getServices(weekday)) {
+				final List<double[]> points = new ArrayList<>();
+				for (int i = 0; i < stopPositions.length; i++) {
+					if (serviceTimes.arrivals[i] >= 0) {
+						points.add(new double[]{serviceTimes.service + serviceTimes.arrivals[i], stopPositions[i]});
+					}
+					if (serviceTimes.departures[i] >= 0) {
+						points.add(new double[]{serviceTimes.service + serviceTimes.departures[i], stopPositions[i]});
+					}
+				}
+				if (points.size() < 2) {
+					continue;
+				}
+				final double first = points.get(0)[1];
+				final double last = points.get(points.size() - 1)[1];
+				for (int element = 0; element < trackSections.size(); element++) {
+					final UUID section = trackSections.get(element);
+					if (!sections.contains(section)) {
+						continue;
+					}
+					final double start = element == 0 ? 0 : trackEnds[element - 1];
+					final double end = trackEnds[element];
+					// Not reached: wholly behind the train where it starts, or ahead of where it ends
+					if (end + trainLength <= first || start >= last) {
+						continue;
+					}
+					held.computeIfAbsent(section, key -> new ArrayList<>()).add(new long[]{(long) timeAt(points, start), (long) timeAt(points, end + trainLength), serviceTimes.service, serviceTimes.table, getStopBefore(element)});
+				}
+			}
+			held.values().forEach(times -> times.sort(Comparator.comparingLong(times1 -> times1[0])));
+			return held;
+		}
+
+		/**
+		 * @return when the head first gets beyond a place along the path: the first time if it starts there or beyond, the
+		 * last if it never gets there
+		 */
+		private static double timeAt(List<double[]> points, double position) {
+			if (position <= points.get(0)[1]) {
+				return points.get(0)[0];
+			}
+			for (int i = 1; i < points.size(); i++) {
+				final double[] from = points.get(i - 1);
+				final double[] to = points.get(i);
+				if (to[1] >= position && to[1] > from[1]) {
+					return from[0] + (position - from[1]) / (to[1] - from[1]) * (to[0] - from[0]);
+				}
+			}
+			return points.get(points.size() - 1)[0];
+		}
+
 		private long[] getHeadways(int aheadService, int behindService) {
 			final String ahead = servicePools.getOrDefault(aheadService, "");
 			final String behind = servicePools.getOrDefault(behindService, "");
@@ -683,6 +832,11 @@ public final class TimetableConflicts {
 		 */
 		public final long headwayMillis;
 		public final long neededMillis;
+		/**
+		 * Whether this is the other route's service on a block section of the route's shared track at the same time (0.86.0,
+		 * {@link #checkSharedTrack}).
+		 */
+		public final boolean sharedTrack;
 
 		public Conflict(int table, int stopIndex, int service, long otherRouteId, int otherService, long platformId) {
 			this(table, stopIndex, service, otherRouteId, otherService, platformId, 0);
@@ -693,6 +847,11 @@ public final class TimetableConflicts {
 		}
 
 		public Conflict(int table, int stopIndex, int service, long otherRouteId, int otherService, long platformId, long turnoutNode, long headwayMillis, long neededMillis) {
+			this(table, stopIndex, service, otherRouteId, otherService, platformId, turnoutNode, headwayMillis, neededMillis, false);
+		}
+
+		public Conflict(int table, int stopIndex, int service, long otherRouteId, int otherService, long platformId, long turnoutNode, long headwayMillis, long neededMillis, boolean sharedTrack) {
+			this.sharedTrack = sharedTrack;
 			this.table = table;
 			this.stopIndex = stopIndex;
 			this.service = service;
@@ -717,12 +876,12 @@ public final class TimetableConflicts {
 				return false;
 			}
 			final Conflict conflict = (Conflict) object;
-			return table == conflict.table && stopIndex == conflict.stopIndex && service == conflict.service && otherRouteId == conflict.otherRouteId && otherService == conflict.otherService && platformId == conflict.platformId && turnoutNode == conflict.turnoutNode && headwayMillis == conflict.headwayMillis && neededMillis == conflict.neededMillis;
+			return table == conflict.table && stopIndex == conflict.stopIndex && service == conflict.service && otherRouteId == conflict.otherRouteId && otherService == conflict.otherService && platformId == conflict.platformId && turnoutNode == conflict.turnoutNode && headwayMillis == conflict.headwayMillis && neededMillis == conflict.neededMillis && sharedTrack == conflict.sharedTrack;
 		}
 
 		@Override
 		public int hashCode() {
-			return Objects.hash(table, stopIndex, service, otherRouteId, otherService, platformId, turnoutNode, headwayMillis, neededMillis);
+			return Objects.hash(table, stopIndex, service, otherRouteId, otherService, platformId, turnoutNode, headwayMillis, neededMillis, sharedTrack);
 		}
 	}
 
