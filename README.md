@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.84.16 (server only): the server log names the track run on by depots planned apart (their own timetables and duties), with the depots, the stations on it and its length: every area shared has to be one running diagram, one joined into the other's as through running. This is the first step; the web check list and the joining aid follow. The day tool lists them with --shared.
+
 0.84.15 (server only): a depot track that comes onto a line's first platform from the far side, so trains stop there, turn round and stop again before their first service, no longer counts the first of those stops as the start of the service: trains leave the siding in time for the stop and the turn instead of half a minute late every morning, and that stop no longer shows a planned time a whole lap early (the day check of the Q: test world reported +191 s for it). The day tool lists the problems other than lateness with --late.
 
 0.84.14 (server only): the simulator no longer rebuilds every throat lock along a train's whole-day path each tick; three hours of the Q: test world simulate in 10 s instead of 89 s with the same result, which also lightens the server and the depot rehearsals that ran out of time. The day tool prints check times in the operating day's time zone and the average number of trains moving in a tick.

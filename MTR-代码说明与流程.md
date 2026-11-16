@@ -85,6 +85,14 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.84.16 共用轨道提醒（用户 2026-11-16：两个分开排班的系统不应共用轨道，所有共用区域必须成为一张运行图；Q 世界两个车厂共用单线和折返区，晚点 +82 s / +102 s）：
+- 组件 `transitsim.network.SharedAreas`：按排班单位收路径节点（存车线路径、车次路径、折返另一条路），同一条轨道（两节点无方向）被两个以上单位走过即为共用；相连的共用轨道合成一个区域，列出区域上所有单位。与输入顺序无关。测试 `SharedAreasTest`。
+- 组件端单位：`PlanCheck.unitsByDepot`（按线排班的车厂按线路名和直通连接成单位，设了运用的车厂（diagramMode）自成单位，同游戏 `LineDuties.plansByLine`）；`SimDataset.getSharedAreas`；`SimulateDay --shared` 列出各区域的单位、轨道数、长度、站台。`SimulateDay --late` 的晚点明细改为每条线各列前 5 条（原来全天只列前 40 条，一条线全天晚点会把别的线挤掉）。
+- 游戏：`RailwayData.updateSharedAreas`，在每 100 tick 算 `LineDuties.unitsOf` 之后调用（不另算单位）；路径或单位变化才重算（签名），区域变化时日志 “depots planned apart share track, (车厂) and (车厂), N blocks through 车站…”，没有站台时写起点坐标；结果存 `getSharedAreas()` 供下一步网页用。
+- Q 世界：11 处，车厂 467903433353505649 与 8476629838290091521 共 9 处（最长 2.7 km，含 4 个站台），-6793236680864022615 与 2801415719501262516 共 2 处。
+- 下一步：网页检查清单 + 并入关系（玩家选谁并入谁，存档/数据包，0.85.0），再把共用段拆为直通、运行图上显示接入/接出。断点 `pre-shared-diagram`，基线 jar `baseline-shared-diagram`（0.84.15）。
+只改服务端，升第三位。
+
 0.84.15 出库逆向进首站折返（Q 世界全天检查，2026-11-16：route 8475733165983565732 首班报 +191 s）：
 - 现象：车厂 -3097960018819202009 的出库路径从环线首站台的另一端进站，在同一站台停一次（到达方向）、折返、再停一次（运行方向）后开首班。`PathTimes.curveTimes`（游戏 `PathTiming.generateTimeSegments` 同一行）把凡是有停站时间的站台都当“可开始运营的首站”，首站落在第一次停站：出库提前量只算到那里（17.3 s），漏了停站和折返，车每天晚约 30 s 发首班；第一次停站又被 `StopTimes.getPlan` 当成环线一圈的首站，计划时刻早一整圈（`--late` 报 +191 s）。
 - 改法：`PathTimes.isTurnedAt(path, i)`：停站后下一条轨是同一站台反向且也停站。这种站台不作首站（`PathTimes`、`PathTiming` 都用它），首站落在折返后的那次停站；`StopTimes.add` 的 leadingPasses 只收不停的站台。首站后移后 `getLeadMillis` 包含第一次停站和折返，`DepotDispatcher.outLeadMillis` 取存档提前量和它的较大者，车自动提前出库；第一次停站不再有计划时刻。测试 `TurnedAtFirstPlatformTest`。

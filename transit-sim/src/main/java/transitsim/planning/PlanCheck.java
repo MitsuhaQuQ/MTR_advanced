@@ -198,6 +198,44 @@ public final class PlanCheck {
 	}
 
 	/**
+	 * @return each depot's planning unit, as the depots in it in order, the same set for every depot of a unit: a depot with
+	 * duties set (diagram mode) is a unit of its own, as it doesn't plan by line (the game's LineDuties.plansByLine), and so
+	 * isn't in any other unit (2026-11-16, for the track shared by units, transitsim.network.SharedAreas)
+	 */
+	public static Map<Long, Set<Long>> unitsByDepot(SimDataset dataset) {
+		final Set<Long> byLine = new java.util.TreeSet<>();
+		dataset.depots.forEach(depot -> {
+			final DepotDuties duties = new DepotDuties();
+			if (depot.duties.length > 0) {
+				duties.fromBytes(depot.duties);
+			}
+			if (!duties.diagramMode) {
+				byLine.add(depot.id);
+			}
+		});
+		final Map<Long, Set<Long>> units = new java.util.TreeMap<>();
+		dataset.depots.forEach(depot -> {
+			if (units.containsKey(depot.id)) {
+				return;
+			}
+			if (!byLine.contains(depot.id)) {
+				units.put(depot.id, Collections.singleton(depot.id));
+				return;
+			}
+			final Set<Long> unit = new java.util.TreeSet<>();
+			unitOf(dataset, depot.id).depots.forEach(other -> {
+				if (byLine.contains(other.id)) {
+					unit.add(other.id);
+				}
+			});
+			unit.add(depot.id);
+			final Set<Long> fixed = Collections.unmodifiableSet(unit);
+			unit.forEach(depotId -> units.putIfAbsent(depotId, fixed));
+		});
+		return units;
+	}
+
+	/**
 	 * The depots and routes planned together with a depot: everything reached through the operating lines of the routes
 	 * they list and the routes their services run through to. A route with no line is a line of its own.
 	 */

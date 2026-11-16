@@ -530,6 +530,25 @@ public final class SimDataset {
 		return lockNetworks;
 	}
 
+	/**
+	 * @return the track run on by more than one planning unit (2026-11-16), each unit by its depots, as the game finds it
+	 */
+	public transitsim.network.SharedAreas getSharedAreas() {
+		final Map<Long, Set<Long>> units = transitsim.planning.PlanCheck.unitsByDepot(this);
+		final transitsim.network.SharedAreas sharedAreas = new transitsim.network.SharedAreas();
+		sidings.forEach(siding -> {
+			final Set<Long> unit = units.get(siding.depotId);
+			if (unit == null) {
+				return;
+			}
+			final String key = unit.toString();
+			sharedAreas.addPath(key, nodesOf(siding.path));
+			siding.tripPaths.forEach(tripPath -> sharedAreas.addPath(key, nodesOf(tripPath.path)));
+			siding.turnBackWays.forEach(way -> sharedAreas.addPath(key, nodesOf(way)));
+		});
+		return sharedAreas;
+	}
+
 	private static long[] nodesOf(List<DataTrack> path) {
 		if (path.isEmpty()) {
 			return new long[0];

@@ -87,6 +87,37 @@ public final class SimulateDay {
 			data = dataset.toBytes();
 		}
 		System.out.printf("Early threshold %d ms%n", dataset.earlyThresholdMillis);
+		// --shared: the track run on by more than one planning unit (2026-11-16), each with its length, the platforms on it and
+		// the routes of each unit running there
+		if (flags.contains("--shared")) {
+			final Map<transitsim.network.SharedAreas.Rail, SimDataset.DataTrack> tracks = new java.util.HashMap<>();
+			final Map<transitsim.network.SharedAreas.Rail, Set<Long>> railRoutes = new java.util.HashMap<>();
+			dataset.sidings.forEach(siding -> siding.tripPaths.forEach(tripPath -> tripPath.path.forEach(track -> {
+				final transitsim.network.SharedAreas.Rail rail = new transitsim.network.SharedAreas.Rail(track.getStartNode(), track.getEndNode());
+				tracks.putIfAbsent(rail, track);
+				for (final long routeId : siding.routeIds) {
+					railRoutes.computeIfAbsent(rail, key -> new java.util.TreeSet<>()).add(routeId);
+				}
+			})));
+			final List<transitsim.network.SharedAreas.Area> areas = dataset.getSharedAreas().result();
+			System.out.printf("SHARED %d areas%n", areas.size());
+			areas.forEach(area -> {
+				double length = 0;
+				final Set<Long> platforms = new java.util.TreeSet<>();
+				final Set<Long> routes = new java.util.TreeSet<>();
+				for (final transitsim.network.SharedAreas.Rail rail : area.rails) {
+					final SimDataset.DataTrack track = tracks.get(rail);
+					if (track != null) {
+						length += track.getTrackLength();
+						if (track.isPlatformTrack() && track.getStopId() != 0) {
+							platforms.add(track.getStopId());
+						}
+					}
+					routes.addAll(railRoutes.getOrDefault(rail, java.util.Collections.emptySet()));
+				}
+				System.out.printf("SHARED units %s, %d rails, %.0f m, platforms %s, routes of the sidings on it %s%n", area.units, area.rails.size(), length, platforms, routes);
+			});
+		}
 		// -Dmtr.buffersFile=path: the ways out adopted as a depot does on its own (2026-11-13), read from the file before the
 		// day and, with --outs, written back with what was measured longer, so running again is the next day after adopting
 		final String buffersFile = System.getProperty("mtr.buffersFile", "");
@@ -397,7 +428,9 @@ public final class SimulateDay {
 		}
 		if (flags.contains("--late")) {
 			latestByRoute.forEach((routeId, late) -> System.out.println("LATE route " + routeId + " at most +" + late / 1000 + " s"));
-			lateDepartures.stream().limit(40).forEach(line -> System.out.println("LATE " + line));
+			// The first five of each route, so one route late all day doesn't hide the others (2026-11-16)
+			final Map<String, Integer> shownByRoute = new java.util.HashMap<>();
+			lateDepartures.stream().filter(line -> shownByRoute.merge(line.replaceAll(".* route ([^ ]+) .*", "$1"), 1, Integer::sum) <= 5).forEach(line -> System.out.println("LATE " + line));
 		}
 
 		final List<SimEvent> events = simulator.events(0);
