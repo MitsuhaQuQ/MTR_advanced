@@ -168,7 +168,8 @@ public class StopTimes {
 			firstIndex = index;
 			firstArrival = arrival;
 		}
-		if (firstIndex < 0 && platformId != 0) {
+		// Platforms passed, not a stop to turn round at before the first one (PathTimes.isTurnedAt)
+		if (firstIndex < 0 && platformId != 0 && departure <= arrival) {
 			leadingPasses.add(new Stop(index, platformId, null, (long) (arrival * MILLIS_PER_TICK), (long) (departure * MILLIS_PER_TICK)));
 		}
 		if (firstIndex >= 0) {

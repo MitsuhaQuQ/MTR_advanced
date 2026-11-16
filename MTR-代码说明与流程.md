@@ -85,6 +85,13 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.84.15 出库逆向进首站折返（Q 世界全天检查，2026-11-16：route 8475733165983565732 首班报 +191 s）：
+- 现象：车厂 -3097960018819202009 的出库路径从环线首站台的另一端进站，在同一站台停一次（到达方向）、折返、再停一次（运行方向）后开首班。`PathTimes.curveTimes`（游戏 `PathTiming.generateTimeSegments` 同一行）把凡是有停站时间的站台都当“可开始运营的首站”，首站落在第一次停站：出库提前量只算到那里（17.3 s），漏了停站和折返，车每天晚约 30 s 发首班；第一次停站又被 `StopTimes.getPlan` 当成环线一圈的首站，计划时刻早一整圈（`--late` 报 +191 s）。
+- 改法：`PathTimes.isTurnedAt(path, i)`：停站后下一条轨是同一站台反向且也停站。这种站台不作首站（`PathTimes`、`PathTiming` 都用它），首站落在折返后的那次停站；`StopTimes.add` 的 leadingPasses 只收不停的站台。首站后移后 `getLeadMillis` 包含第一次停站和折返，`DepotDispatcher.outLeadMillis` 取存档提前量和它的较大者，车自动提前出库；第一次停站不再有计划时刻。测试 `TurnedAtFirstPlatformTest`。
+- `SimulateDay --late` 同时列出 LATE 以外的问题（`PROBLEM …` 行）。
+- Q 世界全天：该线最大晚点 +191 s → +40 s，NOT_RUN 2 → 0（3347 → 3349 班），0 违例/卡住/死锁；多出 1 条 LONG_DWELL：同一存车线两列车收车先后回库，后一列在终点站台等约 45 s（以前它晚 30 s 到所以没报），不改。
+只改服务端，升第三位。
+
 0.84.14 运行层每 tick 的咽喉锁开销（Q 世界全天检查，2026-11-16：全天模拟 45 分钟，jstack 主线程几乎都在 `runLayerTick` → `ThroatLocks.getItems`）：
 - `TickRunner` 的 `HeadlessTrain.getThroatClaims` 按锁对象和路径距离（对象、长度、末值）缓存咽喉项的位置和占用，不再每 tick 每车新建；
 - `PathClaims.attach` 先只留起点在最后一组终点之前的项，原来每组都要看整天路径上几千个项。结果不变（Q 世界 3 小时 89 s → 10 s，报告逐行相同）。

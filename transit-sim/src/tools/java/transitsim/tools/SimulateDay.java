@@ -571,6 +571,10 @@ public final class SimulateDay {
 			final Map<DayRun.ProblemKind, Integer> problems = new TreeMap<>();
 			dayRun.problems.forEach(problem -> problems.merge(problem.kind, 1, Integer::sum));
 			System.out.printf("DAY %d trips, problems %s%n", dayRun.trips.size(), problems);
+			// --late also lists the problems other than lateness, which are few (2026-11-16)
+			if (flags.contains("--late")) {
+				dayRun.problems.stream().filter(problem -> problem.kind != DayRun.ProblemKind.LATE).forEach(problem -> System.out.println("PROBLEM " + problem.kind + " " + clock(problem.time) + " train " + problem.trainId + " route " + problem.routeId + " stop " + problem.stopIndex + " platform " + problem.platformId + " " + problem.durationMillis / 1000 + " s"));
+			}
 			if (!invariants.getViolations().isEmpty() || deadlocks > 0) {
 				System.exit(1);
 			}

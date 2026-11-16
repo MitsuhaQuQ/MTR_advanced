@@ -26,6 +26,22 @@ public final class PathTimes {
 	}
 
 	/**
+	 * @return true if a train stops at this platform only to turn round onto the same platform and stop there again, as a
+	 * way out of a siding coming onto the first platform against the route does: a service starts from the second stop,
+	 * the way the route runs, never from this one (2026-11-16, the user's world: such a train was planned to reach the
+	 * platform the first time, so it left the siding without the time for that stop and the turn, and was late every
+	 * morning, and its first stop was planned at the time of the route's first stop a whole lap before)
+	 */
+	public static boolean isTurnedAt(List<? extends PlanTrack> path, int index) {
+		if (index + 1 >= path.size()) {
+			return false;
+		}
+		final PlanTrack track = path.get(index);
+		final PlanTrack next = path.get(index + 1);
+		return track.getStopId() != 0 && track.isOppositeOf(next) && next.getStopId() == track.getStopId() && next.getDwellTime() > 0;
+	}
+
+	/**
 	 * Times a path with speed curves (design document section 8), so the times are the ones trains on the curves run to.
 	 * Gives the same kinds of results as the step by step timing: a time segment for each part with one acceleration,
 	 * ending at each stop and each platform passed, the time of each stop, and the times between platforms.
@@ -90,7 +106,7 @@ public final class PathTimes {
 			final boolean isPlatformStop = pathData.isPlatformTrack() && pathData.getStopId() != 0;
 			if (pathData.getDwellTime() > 0 || isPassingPlatform(path, i)) {
 				final boolean isTurnBack = !isPlatformStop && i + 1 < path.size() && pathData.isOppositeOf(path.get(i + 1));
-				stopTimes.add(i, isPlatformStop ? pathData.getStopId() : 0, isTurnBack ? pathData.getTrackKey() : null, time, time + pathData.getDwellTime() * 10, isPlatformStop && pathData.getDwellTime() > 0);
+				stopTimes.add(i, isPlatformStop ? pathData.getStopId() : 0, isTurnBack ? pathData.getTrackKey() : null, time, time + pathData.getDwellTime() * 10, isPlatformStop && pathData.getDwellTime() > 0 && !isTurnedAt(path, i));
 			}
 			if (pathData.getStopId() != 0) {
 				final float middle = time + pathData.getDwellTime() * 5;

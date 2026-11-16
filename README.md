@@ -40,6 +40,8 @@
 
 0.65.29 lines platform end gates up with the screen door and gate glass beside them: placed next to a panel the gate takes its facing and stands in the same row, and which way it swings is its own (chosen by the side the player stands on, or changed by sneaking and using it empty-handed). Assets 1.0.6.
 
+0.84.15 (server only): a depot track that comes onto a line's first platform from the far side, so trains stop there, turn round and stop again before their first service, no longer counts the first of those stops as the start of the service: trains leave the siding in time for the stop and the turn instead of half a minute late every morning, and that stop no longer shows a planned time a whole lap early (the day check of the Q: test world reported +191 s for it). The day tool lists the problems other than lateness with --late.
+
 0.84.14 (server only): the simulator no longer rebuilds every throat lock along a train's whole-day path each tick; three hours of the Q: test world simulate in 10 s instead of 89 s with the same result, which also lightens the server and the depot rehearsals that ran out of time. The day tool prints check times in the operating day's time zone and the average number of trains moving in a tick.
 
 0.84.13 (server only): a train that stayed on the line overnight sets off from its first stop as it should, instead of jumping hundreds of blocks to the end of its authority in one tick; at every server start, trains out on a service keep their next stop (it was put back to the start of their path, so they ran late or stood); a train left out at load as its service path is gone is now logged; the log line for the simulator starting again over a changed siding says which part of it changed.

@@ -117,7 +117,7 @@ public final class PathTiming {
 			final boolean isPlatformStop = pathData.rail.railType == RailType.PLATFORM && pathData.savedRailBaseId != 0;
 			if (pathData.dwellTime > 0 || PathTimes.isPassingPlatform(path, i)) {
 				final boolean isTurnBack = !isPlatformStop && i + 1 < path.size() && pathData.isOppositeRail(path.get(i + 1));
-				stopTimes.add(i, isPlatformStop ? pathData.savedRailBaseId : 0, isTurnBack ? pathData.getRailProduct() : null, time, time + pathData.dwellTime * 10, isPlatformStop && pathData.dwellTime > 0);
+				stopTimes.add(i, isPlatformStop ? pathData.savedRailBaseId : 0, isTurnBack ? pathData.getRailProduct() : null, time, time + pathData.dwellTime * 10, isPlatformStop && pathData.dwellTime > 0 && !PathTimes.isTurnedAt(path, i));
 			}
 
 			time += pathData.dwellTime * 5;
