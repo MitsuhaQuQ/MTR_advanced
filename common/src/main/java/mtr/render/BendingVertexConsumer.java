@@ -2,19 +2,22 @@ package mtr.render;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.world.phys.Vec3;
+import org.joml.Matrix3f;
+import org.joml.Matrix4f;
+import org.joml.Vector3f;
+import org.joml.Vector4f;
 import transitsim.geometry.PlatformEdges;
 
 import java.util.function.BiConsumer;
 
 /**
  * Bends what is drawn for a curved screen door's block onto its piece of the edge line (0.91.0, {@link
- * mtr.block.CurvedPSD}): the straight block's renderer draws as usual, in coordinates from the camera, and each vertex is
- * moved as {@link PlatformEdges.Bend#point} says, its normal turned with it. While a curved block is drawn, {@link #current}
+ * mtr.block.CurvedPSD}): the straight block's renderer draws as usual, and each vertex, which reaches the consumer already
+ * turned to the view (the render matrices hold the camera's rotation in 1.20.1), is taken back to the block's own
+ * coordinates with the inverse of the block's render matrix, moved as {@link PlatformEdges.Bend#point} says and taken
+ * forward again; its normal likewise. While a curved block is drawn, {@link #current}
  * is set, and {@link RenderTrains#scheduleRender} wraps what is queued then, so the queued drawing is bent too.
  */
 public class BendingVertexConsumer implements VertexConsumer {
@@ -26,12 +29,10 @@ public class BendingVertexConsumer implements VertexConsumer {
 
 	private final VertexConsumer inner;
 	private final Context context;
-	private final Vec3 camera;
 
 	public BendingVertexConsumer(VertexConsumer inner, Context context) {
 		this.inner = inner;
 		this.context = context;
-		camera = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
 	}
 
 	/**
@@ -64,11 +65,11 @@ public class BendingVertexConsumer implements VertexConsumer {
 
 	@Override
 	public VertexConsumer vertex(double x, double y, double z) {
-		// From the camera to the block's own coordinates and back
-		final double localX = x + camera.x - context.pos.getX();
-		final double localZ = z + camera.z - context.pos.getZ();
-		final double[] bent = context.bend.point(context.facingX, context.facingZ, localX, localZ);
-		inner.vertex(bent[0] + context.pos.getX() - camera.x, y, bent[1] + context.pos.getZ() - camera.z);
+		// From the view to the block's own coordinates, bent, and back
+		final Vector4f local = context.toBlock.transform(new Vector4f((float) x, (float) y, (float) z, 1));
+		final double[] bent = context.bend.point(context.facingX, context.facingZ, local.x, local.z);
+		final Vector4f view = context.toView.transform(new Vector4f((float) bent[0], local.y, (float) bent[1], 1));
+		inner.vertex(view.x, view.y, view.z);
 		return this;
 	}
 
@@ -98,12 +99,14 @@ public class BendingVertexConsumer implements VertexConsumer {
 
 	@Override
 	public VertexConsumer normal(float x, float y, float z) {
-		final double[] bent = context.bend.direction(context.facingX, context.facingZ, x, z);
-		final double length = Math.sqrt(bent[0] * bent[0] + y * y + bent[1] * bent[1]);
-		if (length < 1E-6) {
+		final Vector3f local = context.normalToBlock.transform(new Vector3f(x, y, z));
+		final double[] bent = context.bend.direction(context.facingX, context.facingZ, local.x, local.z);
+		final Vector3f view = context.normalToView.transform(new Vector3f((float) bent[0], local.y, (float) bent[1]));
+		if (view.lengthSquared() < 1E-12) {
 			inner.normal(x, y, z);
 		} else {
-			inner.normal((float) (bent[0] / length), (float) (y / length), (float) (bent[1] / length));
+			view.normalize();
+			inner.normal(view.x, view.y, view.z);
 		}
 		return this;
 	}
@@ -124,20 +127,27 @@ public class BendingVertexConsumer implements VertexConsumer {
 	}
 
 	/**
-	 * A curved block being drawn: its position, its bend and the facing of the straight block it is drawn as
+	 * A curved block being drawn: its bend, the facing of the straight block it is drawn as, and the render matrices at the
+	 * block's corner this frame (to the view and back)
 	 */
 	public static final class Context {
 
-		private final BlockPos pos;
 		private final PlatformEdges.Bend bend;
 		private final int facingX;
 		private final int facingZ;
+		private final Matrix4f toView;
+		private final Matrix4f toBlock;
+		private final Matrix3f normalToView;
+		private final Matrix3f normalToBlock;
 
-		public Context(BlockPos pos, PlatformEdges.Bend bend, Direction facing) {
-			this.pos = pos;
+		public Context(PlatformEdges.Bend bend, Direction facing, PoseStack.Pose blockPose) {
 			this.bend = bend;
 			facingX = facing.getStepX();
 			facingZ = facing.getStepZ();
+			toView = new Matrix4f(blockPose.pose());
+			toBlock = new Matrix4f(blockPose.pose()).invert();
+			normalToView = new Matrix3f(blockPose.normal());
+			normalToBlock = new Matrix3f(blockPose.normal()).invert();
 		}
 	}
 }

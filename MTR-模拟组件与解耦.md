@@ -1479,6 +1479,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 站台边样式（0.89.0）：组件 `PlatformEdges` 的切距范围扩到 ±1.75 格（`MARKING_REACH`），游戏 `BlockPlatformEdge.sourceFor`、`RenderPlatformEdge` 按来源方块模型画。
 
+曲线屏蔽门画歪（0.91.1）：只改游戏客户端 `BendingVertexConsumer`，组件不变。
+
 曲线屏蔽门与安全门（0.91.0）：组件 `PlatformEdges` 加 `Bend`（`bend(angle, cut)`：`point` 把直线门方块里的点映射到边线段上、`direction` 转方向、`beyond` 找沿线下一格、`nearestFacing`）和 `wallMask(angle, cut, 起深, 止深)`，测试在 `PlatformEdgesTest`；游戏 `CurvedPSD`、`BlockCurvedPSD`、`ItemCurvedPSD`、`RenderCurvedPSD`、`BendingVertexConsumer`，原版 `RenderRouteBase`、`RenderTrains.scheduleRender`、`BlockPSDAPGDoorBase` 加了钩子。
 
 曲线屏蔽门（0.90.0）：组件 `PlatformEdges` 加 `wallSegment`（边线在方块内的一段）、`wallMask`（墙的柱）、`alongX/alongZ`、`WALL_THICKNESS`、`WALL_COLLISION_CELLS`、`SHORTEST_WALL`，测试在 `PlatformEdgesTest`；游戏 `BlockEdgeScreenDoor`、`ItemEdgeScreenDoor`、`RenderEdgeScreenDoor`，开门走 `Train.isDoorScanned`、`TrainServer.openDoors`。
