@@ -1481,6 +1481,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 单放站台边样式（0.89.2）：只改游戏 `BlockPlatformEdge.sourceOf`，组件不变。
 
+屏蔽门触发退后一格（0.89.3）：只改游戏开门扫描 `Train.isDoorScanned`（MTR、ANTE mixin、脚本三处共用），组件不变。
+
 网页不拖选文字（0.89.1）：只改编辑器页面样式，组件和游戏端不变。
 
 斜线、曲线站台（0.88.0）：几何在组件 `transitsim.geometry.PlatformEdges`（矢高、站台边偏移、方块切法、16×16 柱和轮廓，纯计算，测试先行）；游戏 `PlatformCurves`（取轨道和车型）、`BlockPlatformEdge`/`ItemPlatformEdge`/`RenderPlatformEdge`、`PlatformGaps`（实测）、`VehicleRidingServer` 渡板。不是运行规则，两个宿主中只有游戏用。

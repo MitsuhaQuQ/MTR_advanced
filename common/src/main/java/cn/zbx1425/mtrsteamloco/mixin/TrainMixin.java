@@ -203,16 +203,17 @@ public abstract class TrainMixin implements TrainExtraSupplier{
 		final Vec3 offsetVec = new Vec3(1, 0, 0).yRot(checkYaw).xRot(pitch);
 		final Vec3 traverseVec = new Vec3(0, 0, 1).yRot(checkYaw).xRot(pitch);
 		Set<BlockPos> OKPos = new HashSet<>();
-		for (int checkX = 1; checkX <= 3; checkX++) {
+		for (int checkX = 1; checkX <= mtr.data.Train.DOOR_SCAN_REACH; checkX++) {
 			for (int checkY = -2; checkY <= 3; checkY++) {
 				for (double checkZ = -halfSpacing; checkZ <= halfSpacing; checkZ++) {
 					final BlockPos checkPos = RailwayData.newBlockPos(trainX + offsetVec.x * checkX + traverseVec.x * checkZ, trainY + checkY, trainZ + offsetVec.z * checkX + traverseVec.z * checkZ);
-					final Block block = world.getBlockState(checkPos).getBlock();
+					final BlockState checkState = world.getBlockState(checkPos);
+					final Block block = checkState.getBlock();
 
-					if (block instanceof BlockPlatform || block instanceof BlockPSDAPGBase || IBlockPlatformClass.isInstance(block)) {
+					if (mtr.data.Train.isDoorScanned(checkState, checkX, offsetVec) || checkX <= 3 && IBlockPlatformClass != null && IBlockPlatformClass.isInstance(block)) {
 						openDoors(world, block, checkPos, dwellTicks);
 						hasPlatform = true;
-					}else if (block instanceof BlockEyeCandy) {
+					}else if (checkX <= 3 && block instanceof BlockEyeCandy) {
 						if (OKPos.contains(checkPos)) continue;
 						int[] dir = new int[]{1, -1};
 						int[] f = new int[]{1, 0, 0, 1, 0, 0};

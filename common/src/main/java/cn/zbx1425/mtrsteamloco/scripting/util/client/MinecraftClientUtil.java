@@ -205,15 +205,16 @@ public class MinecraftClientUtil {
     static boolean scanDoors(Level world, double trainX, double trainY, double trainZ, float checkYaw, float pitch, double halfSpacing) {
 		final Vec3 offsetVec = new Vec3(1, 0, 0).yRot(checkYaw).xRot(pitch);
 		final Vec3 traverseVec = new Vec3(0, 0, 1).yRot(checkYaw).xRot(pitch);
-        for (int checkX = 1; checkX <= 3; checkX++) {
+        for (int checkX = 1; checkX <= mtr.data.Train.DOOR_SCAN_REACH; checkX++) {
 			for (int checkY = -2; checkY <= 3; checkY++) {
 				for (double checkZ = -halfSpacing; checkZ <= halfSpacing; checkZ++) {
                     final BlockPos checkPos = RailwayData.newBlockPos(trainX + offsetVec.x * checkX + traverseVec.x * checkZ, trainY + checkY, trainZ + offsetVec.z * checkX + traverseVec.z * checkZ);
-					final Block block = world.getBlockState(checkPos).getBlock();
-                    if (block instanceof BlockPlatform || block instanceof BlockPSDAPGBase) {
+					final BlockState checkState = world.getBlockState(checkPos);
+					final Block block = checkState.getBlock();
+                    if (mtr.data.Train.isDoorScanned(checkState, checkX, offsetVec)) {
 						return true;
 					}
-                    if (block instanceof BlockEyeCandy) {
+                    if (checkX <= 3 && block instanceof BlockEyeCandy) {
                         final BlockEntity entity = world.getBlockEntity(checkPos);
                         if (entity instanceof BlockEyeCandy.BlockEntityEyeCandy) {
                             BlockEyeCandy.BlockEntityEyeCandy e = (BlockEyeCandy.BlockEntityEyeCandy) entity;

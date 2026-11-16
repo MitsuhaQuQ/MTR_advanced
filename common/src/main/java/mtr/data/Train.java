@@ -6,6 +6,8 @@ import mtr.advanced.TrackViews;
 import mtr.client.ClientClock;
 import mtr.block.BlockPSDAPGBase;
 import mtr.block.BlockPlatform;
+import mtr.block.BlockPlatformEdge;
+import mtr.block.IBlock;
 import mtr.packet.IPacket;
 import mtr.path.PathData;
 import net.minecraft.core.BlockPos;
@@ -20,6 +22,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
@@ -1269,13 +1272,14 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		final Vec3 offsetVec = new Vec3(1, 0, 0).yRot(checkYaw).xRot(pitch);
 		final Vec3 traverseVec = new Vec3(0, 0, 1).yRot(checkYaw).xRot(pitch);
 
-		for (int checkX = 1; checkX <= 3; checkX++) {
+		for (int checkX = 1; checkX <= DOOR_SCAN_REACH; checkX++) {
 			for (int checkY = -2; checkY <= 3; checkY++) {
 				for (double checkZ = -halfSpacing; checkZ <= halfSpacing; checkZ++) {
 					final BlockPos checkPos = RailwayData.newBlockPos(trainX + offsetVec.x * checkX + traverseVec.x * checkZ, trainY + checkY, trainZ + offsetVec.z * checkX + traverseVec.z * checkZ);
-					final Block block = world.getBlockState(checkPos).getBlock();
+					final BlockState state = world.getBlockState(checkPos);
+					final Block block = state.getBlock();
 
-					if (block instanceof BlockPlatform || block instanceof BlockPSDAPGBase) {
+					if (isDoorScanned(state, checkX, offsetVec)) {
 						if (openDoors(world, block, checkPos, dwellTicks)) {
 							return true;
 						}
@@ -1286,6 +1290,33 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		}
 
 		return hasPlatform;
+	}
+
+	/**
+	 * How many blocks out from a car's centre line its door scan looks: MTR's three, and a fourth (0.89.3) where only screen
+	 * doors and gates facing this track count, so a row of them set back a block (behind cut platform edge blocks on a
+	 * curved or diagonal platform) still opens, and the other side's row of a narrow island platform does not.
+	 */
+	public static final int DOOR_SCAN_REACH = 4;
+	private static final int DOOR_SCAN_ORDINARY = 3;
+
+	/**
+	 * @param checkX    how many blocks out from the car's centre line the block is, from 1
+	 * @param offsetVec the horizontal direction from the car out to that side
+	 * @return whether the door scan takes the block as the platform or as a door to open: within three blocks a platform, a
+	 * platform edge block (0.89.3) or a screen door or gate; a block further a screen door or gate facing the car
+	 */
+	public static boolean isDoorScanned(BlockState state, int checkX, Vec3 offsetVec) {
+		final Block block = state.getBlock();
+		if (checkX <= DOOR_SCAN_ORDINARY) {
+			return block instanceof BlockPlatform || block instanceof BlockPSDAPGBase || block instanceof BlockPlatformEdge;
+		}
+		if (!(block instanceof BlockPSDAPGBase) || checkX > DOOR_SCAN_REACH) {
+			return false;
+		}
+		// A door faces the track it serves (it is put down looking at the track)
+		final net.minecraft.core.Direction facing = IBlock.getStatePropertySafe(state, BlockPSDAPGBase.FACING);
+		return facing.getStepX() * offsetVec.x + facing.getStepZ() * offsetVec.z < -0.5;
 	}
 
 	public static boolean isHoldingKey(Player player) {

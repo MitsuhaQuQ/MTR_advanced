@@ -89,6 +89,8 @@
 
 0.89.2 单放站台边丢标线（用户 2026-11-17 截图：手动单放的那一格顶面只有灰色，没有黄白线）：`BlockPlatformEdge.sourceOf` 遇到默认样式的站台边（`source` 为空）时返回 null，`sourceFor` 便当作没找到，转去取四周任一整格方块（玩家脚下的灰色方块），于是那一格画成没有标线的灰块。改为默认样式的站台边返回默认站台方块状态（和 `RenderPlatformEdge` 画空来源时一致）。只改服务端放方块，升第三位。
 
+0.89.3 屏蔽门触发范围退后一格（用户 2026-11-17 “增加屏蔽门的触发范围到能退后一格”）：开门扫描原来从车中线往外 1–3 格找站台和门方块，现在到第 4 格（`Train.DOOR_SCAN_REACH`）；第 4 格只认屏蔽门、安全门（`BlockPSDAPGBase`），而且要朝着这条轨道（门方块放下时朝向轨道，`FACING` 与车往外的方向点积 < −0.5），窄岛式站台对面那排门不会被打开。判断放在 `Train.isDoorScanned`，三处扫描共用：`Train.scanDoors`、ANTE 的 `TrainMixin.onScanDoors`（`anteRunHooks` 开时；它额外认的 metropolis 站台和装饰方块站台仍只到第 3 格）、脚本用的 `MinecraftClientUtil.scanDoors`。另外精确站台边 `BlockPlatformEdge` 也算站台：只铺站台边的曲线站台以前扫不到站台，列车不开门。开门本身（`TrainServer.openDoors` 设门方块实体开度）不变。服务端客户端都改，但不改数据包和存档，升第三位。
+
 0.89.1 网页不拖选文字（用户 2026-11-16 “默认直接把非输入框的文字拖选全停用”）：`editor-web/src/styles.css` 的 base 层给 `body` 设 `user-select: none`（带 `-webkit-` 前缀），`input`、`textarea` 和可编辑的 `[contenteditable]` 设回 `text`。只改网页（构建结果在逻辑 jar 的 `assets/mtr/editor/`，不在资源包），升第三位。
 
 0.88.0 斜线、曲线站台（用户 2026-11-16 选一、二档一起做）：
