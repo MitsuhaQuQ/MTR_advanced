@@ -570,9 +570,14 @@
   "gui.mtr.curved_psd_joined": "Run joined on the right of this glass",
   "block.mtr.gap_filler": "Gap Filler",
   "item.mtr.gap_filler": "Gap Filler",
-  "tooltip.mtr.gap_filler": "Right-click a block to cut it along the nearest track, through the place clicked, keeping the part towards the track; sneak to keep the part away from it. The tunnel, bridge and tunnel wall creators put the same blocks down along diagonal and curved track.",
+  "tooltip.mtr.gap_filler": "Right-click the side of a block to cut it along the nearest track through the place clicked, shaving off the side clicked; right-click its top to slope it to the track over it, or to fill the place above up to the track. Sneak and right-click a block to make fillers of it, sneak at nothing to make them of the block cut again. The tunnel, bridge and round tunnel creators put the same blocks down along diagonal, curved and sloping track.",
   "gui.mtr.gap_filler_no_rail": "No track within 20 blocks",
   "gui.mtr.gap_filler_cannot_cut": "Only a whole block with no block entity can be cut",
   "gui.mtr.gap_filler_whole": "The whole block is on the side kept",
-  "gui.mtr.gap_filler_nothing_left": "Nothing of this block is on the side kept"
+  "gui.mtr.gap_filler_nothing_left": "Nothing of this block is on the side kept",
+  "gui.mtr.gap_filler_material": "Fillers are made of %s",
+  "gui.mtr.gap_filler_material_cleared": "Fillers are made of the block cut",
+  "gui.mtr.gap_filler_rail_not_here": "The track is not over this block",
+  "gui.mtr.gap_filler_rail_too_high": "The track is more than a block above this block",
+  "tooltip.mtr.gap_filler_material": "Material: %s"
 }

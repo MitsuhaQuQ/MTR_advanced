@@ -20,10 +20,15 @@ import net.minecraft.world.level.storage.loot.parameters.LootContextParams;
 import net.minecraft.world.phys.Vec3;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.VoxelShape;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.world.phys.shapes.Shapes;
 import transitsim.geometry.PlatformEdges;
+import transitsim.geometry.SlopedTops;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * A block cut along a line beside a rail (0.93.0), filling the gaps the tunnel, bridge and wall creators leave beside
@@ -33,6 +38,10 @@ import java.util.List;
  * BlockPlatformEdge#CUT}, from {@link PlatformEdges#fillerCutOf}) and the block entity keeps the block it was cut from,
  * whose look it has ({@link mtr.render.RenderPlatformEdge} draws it, without an edge marking) and which it drops. It is
  * no platform: trains don't open their doors to it.
+ * <p>
+ * Its top may slope (0.94.0, {@link SlopedTops}), following the height of the rail over it, so the ground, a bridge's
+ * deck or a tunnel's floor meets track going up or down; the top is kept in the block entity. A filler with no cut
+ * across ({@link #WHOLE_ACROSS}) is only sloped.
  */
 public class BlockGapFiller extends BlockMapper implements EntityBlockMapper {
 
@@ -41,6 +50,11 @@ public class BlockGapFiller extends BlockMapper implements EntityBlockMapper {
 	 */
 	private static final double COARSE_STEP = 0.25;
 	private static final double FINE_STEP = 0.02;
+	/**
+	 * The cut that keeps all of the block across: the farthest cut, which no column reaches
+	 */
+	public static final int WHOLE_ACROSS = PlatformEdges.pack(0, PlatformEdges.CUTS - 1);
+	private static final Map<Long, VoxelShape> SLOPED_SHAPES = new ConcurrentHashMap<>();
 
 	public BlockGapFiller(Properties settings) {
 		super(settings);
@@ -54,7 +68,47 @@ public class BlockGapFiller extends BlockMapper implements EntityBlockMapper {
 
 	@Override
 	public VoxelShape getShape(BlockState state, BlockGetter world, BlockPos pos, CollisionContext context) {
-		return BlockPlatformEdge.shapeOf(IBlock.getStatePropertySafe(state, BlockPlatformEdge.ANGLE), IBlock.getStatePropertySafe(state, BlockPlatformEdge.CUT));
+		final int angle = IBlock.getStatePropertySafe(state, BlockPlatformEdge.ANGLE);
+		final int cut = IBlock.getStatePropertySafe(state, BlockPlatformEdge.CUT);
+		final BlockEntity entity = world.getBlockEntity(pos);
+		final int top = entity instanceof TileEntityGapFiller ? ((TileEntityGapFiller) entity).getTop() : SlopedTops.FLAT;
+		return top == SlopedTops.FLAT ? BlockPlatformEdge.shapeOf(angle, cut) : slopedShapeOf(angle, cut, top);
+	}
+
+	/**
+	 * The shape depends on the sloped top in the block entity, not only the state
+	 */
+	@Override
+	public boolean hasDynamicShape() {
+		return true;
+	}
+
+	/**
+	 * @return the cut's columns, each as high as the sloped top over it, joined along each row where they are as high
+	 */
+	private static VoxelShape slopedShapeOf(int angle, int cut, int top) {
+		final long key = (long) PlatformEdges.pack(angle, cut) << 20 | top;
+		return SLOPED_SHAPES.computeIfAbsent(key, ignored -> {
+			final boolean[] mask = PlatformEdges.mask(angle, cut);
+			final int[] heights = SlopedTops.columnHeights(top);
+			VoxelShape shape = Shapes.empty();
+			for (int x = 0; x < PlatformEdges.CELLS; x++) {
+				int start = -1;
+				int startHeight = 0;
+				for (int z = 0; z <= PlatformEdges.CELLS; z++) {
+					final int height = z < PlatformEdges.CELLS && mask[x * PlatformEdges.CELLS + z] ? heights[x * PlatformEdges.CELLS + z] : 0;
+					if (start >= 0 && height != startHeight) {
+						shape = Shapes.or(shape, Block.box(x, 0, start, x + 1, startHeight, z));
+						start = -1;
+					}
+					if (start < 0 && height > 0) {
+						start = z;
+						startHeight = height;
+					}
+				}
+			}
+			return shape.optimize();
+		});
 	}
 
 	@Override
@@ -82,6 +136,9 @@ public class BlockGapFiller extends BlockMapper implements EntityBlockMapper {
 	 * packed as {@link PlatformEdges#fillerCutOf} gives them when the whole block or none of it is kept
 	 */
 	public static BlockState stateOf(int packed) {
+		if (packed == PlatformEdges.FULL) {
+			packed = WHOLE_ACROSS;
+		}
 		return Blocks.GAP_FILLER.get().defaultBlockState().setValue(BlockPlatformEdge.ANGLE, PlatformEdges.angleOf(packed)).setValue(BlockPlatformEdge.CUT, PlatformEdges.cutOfPacked(packed));
 	}
 
@@ -91,16 +148,42 @@ public class BlockGapFiller extends BlockMapper implements EntityBlockMapper {
 	 * @return whether it was put down
 	 */
 	public static boolean put(Level world, BlockPos pos, int packed, BlockState source) {
-		if (packed < 0 || source == null || source.isAir()) {
+		return put(world, pos, packed, SlopedTops.FLAT, source);
+	}
+
+	/**
+	 * Puts a filler cut across and with a sloped top (0.94.0), or changes one already there
+	 *
+	 * @param packed the cut across, {@link PlatformEdges#FULL} for none
+	 * @param top    the sloped top, {@link SlopedTops#FLAT} for none
+	 * @return whether it was put down; not when nothing of the block is left
+	 */
+	public static boolean put(Level world, BlockPos pos, int packed, int top, BlockState source) {
+		if (packed == PlatformEdges.EMPTY || top == SlopedTops.NONE || source == null || source.isAir()) {
 			return false;
 		}
 		world.setBlockAndUpdate(pos, stateOf(packed));
 		final BlockEntity entity = world.getBlockEntity(pos);
 		if (entity instanceof TileEntityGapFiller) {
-			((TileEntityGapFiller) entity).setSource(source);
+			((TileEntityGapFiller) entity).setSourceAndTop(source, top);
 			return true;
 		}
 		return false;
+	}
+
+	/**
+	 * @return the rail's height over each of a block column's corners, in the order of {@link SlopedTops}, the rail's
+	 * nearest points looked for between two distances along it
+	 */
+	public static double[] cornerHeights(Rail rail, int blockX, int blockZ, double from, double to) {
+		final double[] heights = new double[4];
+		final int[][] corners = {{0, 0}, {1, 0}, {1, 1}, {0, 1}};
+		for (int i = 0; i < 4; i++) {
+			final double x = blockX + corners[i][0];
+			final double z = blockZ + corners[i][1];
+			heights[i] = rail.getPosition(nearestAlong(rail, x, z, from, to)).y;
+		}
+		return heights;
 	}
 
 	/**
@@ -185,8 +268,40 @@ public class BlockGapFiller extends BlockMapper implements EntityBlockMapper {
 	 */
 	public static class TileEntityGapFiller extends BlockPlatformEdge.TileEntityPlatformEdge {
 
+		private static final String KEY_TOP = "top";
+		private int top = SlopedTops.FLAT;
+
 		public TileEntityGapFiller(BlockPos pos, BlockState state) {
 			super(BlockEntityTypes.GAP_FILLER_TILE_ENTITY.get(), pos, state);
+		}
+
+		/**
+		 * @return the sloped top (0.94.0), {@link SlopedTops#FLAT} for a whole block's
+		 */
+		public int getTop() {
+			return top;
+		}
+
+		public void setSourceAndTop(BlockState source, int top) {
+			this.top = top == SlopedTops.NONE ? SlopedTops.FLAT : top;
+			setSource(source);
+		}
+
+		@Override
+		public void readCompoundTag(CompoundTag compoundTag) {
+			super.readCompoundTag(compoundTag);
+			top = compoundTag.contains(KEY_TOP) ? compoundTag.getInt(KEY_TOP) : SlopedTops.FLAT;
+			if (top == SlopedTops.NONE) {
+				top = SlopedTops.FLAT;
+			}
+		}
+
+		@Override
+		public void writeCompoundTag(CompoundTag compoundTag) {
+			super.writeCompoundTag(compoundTag);
+			if (top != SlopedTops.FLAT) {
+				compoundTag.putInt(KEY_TOP, top);
+			}
 		}
 	}
 }

@@ -23,11 +23,14 @@ import net.minecraft.world.level.block.state.properties.SlabType;
 import mtr.compat.MaterialColor;
 import it.unimi.dsi.fastutil.longs.Long2IntMap;
 import it.unimi.dsi.fastutil.longs.Long2IntOpenHashMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.world.phys.Vec3;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
 import transitsim.geometry.PlatformEdges;
+import transitsim.geometry.SlopedTops;
 import transitsim.geometry.VerticalProfile;
 
 import java.io.IOException;
@@ -871,8 +874,9 @@ public class Rail extends SerializedDataBase {
 		private final BlockState state;
 		private final boolean isSlab;
 		private final Set<BlockPos> blacklistedPos = new HashSet<>();
-		// Highest priority already written to each position by the bridge creator: 1 bottom half, 2 top half, 3 air above
-		private final Long2IntMap bridgePlacedState = new Long2IntOpenHashMap();
+		// Bridge columns already built, and those whose space over the deck was already cleared
+		private final LongOpenHashSet bridgeColumns = new LongOpenHashSet();
+		private final LongOpenHashSet bridgeCleared = new LongOpenHashSet();
 		// Round tunnel and wall: sample index along the rail, positions already handled, and for the wall the blocks the tunnel of the same radius clears
 		private int roundStep;
 		private final LongOpenHashSet roundDonePos = new LongOpenHashSet();
@@ -881,6 +885,8 @@ public class Rail extends SerializedDataBase {
 		// Gap fillers (0.93.0): the cut of each block column by this creator's line, and the distance along the rail of the cross-section being worked on
 		private final Long2IntMap columnCuts = new Long2IntOpenHashMap();
 		private double sampleAlong;
+		// Sloped tops (0.94.0): the rail's height over the corners of each block column
+		private final Long2ObjectMap<double[]> columnRailHeights = new Long2ObjectOpenHashMap<>();
 
 		// Distance along the rail between cross-sections, and across the rail between samples of one cross-section
 		private static final double INCREMENT = 0.1;
@@ -949,7 +955,8 @@ public class Rail extends SerializedDataBase {
 		}
 
 		// The tunnel's side is the line half a block beyond its radius, where it is along the block grid (0.93.0): blocks wholly
-		// inside it are cleared, and a whole block the line crosses is cut, the part beyond the line kept as a gap filler of it
+		// inside it are cleared, and a whole block the line crosses is cut, the part beyond the line kept as a gap filler of it.
+		// Its floor follows the rail (0.94.0): a whole block the rail's height passes through keeps the part under the rail
 		private boolean createTunnel() {
 			final double line = radius + 0.5;
 			return create(true, FILLER_BEYOND, (editPos, top, middle, beyond) -> {
@@ -959,7 +966,16 @@ public class Rail extends SerializedDataBase {
 					return;
 				}
 				if (cut == PlatformEdges.EMPTY) {
-					setBlockIfChanged(pos, Blocks.AIR.defaultBlockState());
+					keepUnderRail(pos);
+					// The block under the lowest row may stand above the rail where the rail's height crosses a block boundary
+					final BlockPos below = pos.below();
+					if (!blacklistedPos.contains(below)) {
+						final int belowTop = slopedTop(below);
+						if (belowTop != SlopedTops.FLAT && belowTop != SlopedTops.NONE) {
+							blacklistedPos.add(below);
+							keepUnderRail(below);
+						}
+					}
 					return;
 				}
 				final BlockState oldState = world.getBlockState(pos);
@@ -994,49 +1010,55 @@ public class Rail extends SerializedDataBase {
 			});
 		}
 
-		// Slabs fill the half block the rail passes through; a full block or a double slab goes under it, and the space above is cleared.
-		// The deck's side is the line half a block beyond the radius, where it is along the block grid (0.93.0): a block the line
-		// crosses is a gap filler of the deck's block, the part towards the rail; a half slab is not cut
+		// The deck is the bridge's block (a double slab for slabs) under the rail, its top following the rail's height (0.94.0):
+		// whole blocks under it, and a gap filler sloped to the rail where the rail's height passes through a block; the space
+		// over the deck is cleared. The deck's side is the line half a block beyond the radius, where it is along the block
+		// grid (0.93.0): a block the line crosses is a gap filler of the deck's block, the part towards the rail
 		private boolean createBridge() {
 			final double line = radius + 0.5;
+			final BlockState deckState = isSlab ? state.setValue(SlabBlock.TYPE, SlabType.DOUBLE) : state;
 			return create(false, FILLER_BEYOND, (editPos, top, middle, beyond) -> {
 				if (middle && !top) {
 					return;
 				}
 				final BlockPos pos = RailwayData.newBlockPos(editPos);
 				final int cut = columnCut(pos, line, true);
-				final boolean isTopHalf = editPos.y - Math.floor(editPos.y) >= 0.5;
-				final boolean halfSlab = isSlab && isTopHalf;
-				if (cut == PlatformEdges.EMPTY || beyond && (cut < 0 || halfSlab)) {
+				if (cut == PlatformEdges.EMPTY || beyond && cut < 0) {
 					return;
 				}
-
-				final BlockPos placePos;
-				final BlockPos airPos;
-				final BlockState placeState;
-				if (halfSlab) {
-					placePos = pos;
-					airPos = pos.above();
-					placeState = state.setValue(SlabBlock.TYPE, SlabType.BOTTOM);
-				} else {
-					placePos = pos.below();
-					airPos = pos;
-					placeState = isSlab ? state.setValue(SlabBlock.TYPE, SlabType.DOUBLE) : state;
+				final long column = BlockPos.asLong(pos.getX(), 0, pos.getZ());
+				final double[] heights = railHeights(pos.getX(), pos.getZ());
+				double lowest = Double.MAX_VALUE;
+				double highest = -Double.MAX_VALUE;
+				for (final double height : heights) {
+					lowest = Math.min(lowest, height);
+					highest = Math.max(highest, height);
 				}
-
-				final int slabPriority = isTopHalf ? 2 : 1;
-				if (bridgePlacedState.get(placePos.asLong()) < slabPriority) {
-					if (cut >= 0 && !halfSlab) {
-						putFiller(placePos, cut, placeState);
-					} else {
-						setBlockIfChanged(placePos, placeState);
+				final int bottom = (int) Math.floor(lowest) - 1;
+				final int topBlock = (int) Math.floor(highest);
+				if (bridgeColumns.add(column)) {
+					for (int y = bottom; y <= topBlock; y++) {
+						final BlockPos place = RailwayData.newBlockPos(pos.getX(), y, pos.getZ());
+						final int blockTop = SlopedTops.of(heights, y);
+						if (blockTop == SlopedTops.NONE) {
+							continue;
+						}
+						if (blockTop == SlopedTops.FLAT && cut < 0) {
+							setBlockIfChanged(place, deckState);
+						} else {
+							putFiller(place, cut, blockTop, deckState);
+						}
 					}
-					bridgePlacedState.put(placePos.asLong(), slabPriority);
 				}
 				// Beyond the radius nothing was cleared before, and the deck's edge is no reason to start
-				if (!beyond && bridgePlacedState.get(airPos.asLong()) < 3) {
-					setBlockIfChanged(airPos, Blocks.AIR.defaultBlockState());
-					bridgePlacedState.put(airPos.asLong(), 3);
+				if (!beyond && bridgeCleared.add(column)) {
+					// The blocks over the deck up to the rail's height, and the one over the rail where the rail's height is in a block
+					final int clearTo = SlopedTops.of(heights, topBlock) == SlopedTops.NONE ? topBlock : topBlock + 1;
+					for (int y = bottom + 1; y <= clearTo; y++) {
+						if (SlopedTops.of(heights, y) == SlopedTops.NONE || y > topBlock) {
+							setBlockIfChanged(RailwayData.newBlockPos(pos.getX(), y, pos.getZ()), Blocks.AIR.defaultBlockState());
+						}
+					}
 				}
 			});
 		}
@@ -1116,14 +1138,55 @@ public class Rail extends SerializedDataBase {
 			return columnCuts.get(key);
 		}
 
-		// A gap filler goes where a block may be replaced, or over a gap filler this or an earlier creator put down
+		/**
+		 * @return the rail's height over the corners of a block column, worked out once, from the rail's points nearest them
+		 * near the cross-section that found it (0.94.0)
+		 */
+		private double[] railHeights(int blockX, int blockZ) {
+			final long key = BlockPos.asLong(blockX, 0, blockZ);
+			double[] heights = columnRailHeights.get(key);
+			if (heights == null) {
+				heights = BlockGapFiller.cornerHeights(rail, blockX, blockZ, sampleAlong - FILLER_SEARCH, sampleAlong + FILLER_SEARCH);
+				columnRailHeights.put(key, heights);
+			}
+			return heights;
+		}
+
+		/**
+		 * @return a block's top following the rail over it (0.94.0)
+		 */
+		private int slopedTop(BlockPos pos) {
+			return SlopedTops.of(railHeights(pos.getX(), pos.getZ()), pos.getY());
+		}
+
+		/**
+		 * Clears a block in a tunnel, but keeps a whole block wholly under the rail, and of one the rail's height passes
+		 * through the part under the rail, as a gap filler of it (0.94.0)
+		 */
+		private void keepUnderRail(BlockPos pos) {
+			final int top = slopedTop(pos);
+			final BlockState oldState = world.getBlockState(pos);
+			if (top != SlopedTops.NONE && BlockGapFiller.canBeCutFrom(world, pos, oldState) && !isProtected(oldState.getBlock())) {
+				if (top != SlopedTops.FLAT) {
+					BlockGapFiller.put(world, pos, PlatformEdges.FULL, top, oldState);
+				}
+				return;
+			}
+			setBlockIfChanged(pos, Blocks.AIR.defaultBlockState());
+		}
+
 		private void putFiller(BlockPos pos, int cut, BlockState source) {
+			putFiller(pos, cut, SlopedTops.FLAT, source);
+		}
+
+		// A gap filler goes where a block may be replaced, or over a gap filler this or an earlier creator put down
+		private void putFiller(BlockPos pos, int cut, int top, BlockState source) {
 			final BlockState oldState = world.getBlockState(pos);
 			final boolean filler = oldState.getBlock() instanceof BlockGapFiller;
 			if (!filler && (isProtected(oldState.getBlock()) || world.getBlockEntity(pos) != null)) {
 				return;
 			}
-			BlockGapFiller.put(world, pos, cut, source);
+			BlockGapFiller.put(world, pos, cut, top, source);
 		}
 
 		// The circle's centre is (radius - 1) blocks above the rail, so on level track the lowest cleared row is the rail's own row
@@ -1147,6 +1210,7 @@ public class Rail extends SerializedDataBase {
 				final boolean collecting = isWall && !roundTunnelCollected;
 				final int outerRadius = isWall && !collecting ? radius + 1 : radius;
 				final RoundSection section = new RoundSection(rail.getPosition(roundStep * ROUND_TUNNEL_INCREMENT), rail.getPosition((roundStep + 1) * ROUND_TUNNEL_INCREMENT), radius);
+				sampleAlong = roundStep * ROUND_TUNNEL_INCREMENT;
 				roundStep++;
 				final int minY = (int) Math.floor(section.centreY - outerRadius) - 1;
 				final int maxY = (int) Math.ceil(section.centreY + outerRadius) + 1;
@@ -1176,7 +1240,8 @@ public class Rail extends SerializedDataBase {
 								}
 							} else if (section.contains(blockX, blockY, blockZ)) {
 								roundDonePos.add(posLong);
-								setBlockIfChanged(RailwayData.newBlockPos(blockX, blockY, blockZ), Blocks.AIR.defaultBlockState());
+								// The floor follows the rail (0.94.0)
+								keepUnderRail(RailwayData.newBlockPos(blockX, blockY, blockZ));
 							}
 						}
 					}

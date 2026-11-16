@@ -1479,6 +1479,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 站台边样式（0.89.0）：组件 `PlatformEdges` 的切距范围扩到 ±1.75 格（`MARKING_REACH`），游戏 `BlockPlatformEdge.sourceFor`、`RenderPlatformEdge` 按来源方块模型画。
 
+填缝方块斜顶（0.94.0）：组件 `SlopedTops`（四角高度、双线性、小柱高度；测试 `SlopedTopsTest`：平地整块、沿 x 的坡、跨块边界上下两块）；游戏 `BlockGapFiller.cornerHeights`、`Rail.RailActions` 的 `railHeights`/`slopedTop`/`keepUnderRail`、桥梁按列铺桥面、`ItemGapFiller` 的材质和顶面、`RenderPlatformEdge.slopedFan`。
+
 填缝方块的切线（0.93.0）：组件 `PlatformEdges.fillerCutOf`、`FILLER_SNAP`（测试 `PlatformEdgesTest` 网格对齐取整块、斜线两侧互补）；游戏 `BlockGapFiller`（找轨道最近点、放置）、`Rail.RailActions` 的隧道、桥梁、隧道壁创建器、`ItemGapFiller`、`RenderPlatformEdge.GapFiller`。
 
 曲线屏蔽门沿连续曲线画（0.92.0）：组件 `PlatformEdges.Piece` 接口（`at`、`turn`、`point`、`direction`，`modelPoint` 把直线门方块里的点换成沿线位置和深度），`Bend` 实现它，`Bend.joined` 删去；游戏 `CurvedPSD.Curve`/`curveAt`、`mtr.render.CurvePiece`、`CurvedPSD.toggleCut`。

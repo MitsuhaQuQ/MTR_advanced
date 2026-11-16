@@ -666,9 +666,14 @@
   "gui.mtr.curved_psd_joined": "已和右側的玻璃接上",
   "block.mtr.gap_filler": "填縫方塊",
   "item.mtr.gap_filler": "填縫方塊",
-  "tooltip.mtr.gap_filler": "右鍵一塊方塊，沿最近的軌道、在點到的位置把它切開，留下靠軌道的一側；潛行右鍵留下遠離軌道的一側。隧道、橋樑、隧道壁建造器在斜線和彎道邊上也會放這種方塊。",
+  "tooltip.mtr.gap_filler": "右鍵方塊側面：沿最近的軌道、在點到的位置切開，削掉點的這一面；右鍵頂面：頂面順著上方軌道的坡度，軌道在上面一格裡時補一塊斜頂方塊到軌道下。潛行右鍵方塊選它做材質，潛行右鍵空氣改回用被切的方塊。隧道、橋樑、圓形隧道建造器在斜線、彎道和坡道上也會放這種方塊。",
   "gui.mtr.gap_filler_no_rail": "20 格內沒有軌道",
   "gui.mtr.gap_filler_cannot_cut": "只能切沒有方塊實體的整塊方塊",
   "gui.mtr.gap_filler_whole": "這一塊整塊都在留下的一側",
-  "gui.mtr.gap_filler_nothing_left": "這一塊沒有在留下一側的部分"
+  "gui.mtr.gap_filler_nothing_left": "這一塊沒有在留下一側的部分",
+  "gui.mtr.gap_filler_material": "填縫材質：%s",
+  "gui.mtr.gap_filler_material_cleared": "填縫材質改回被切的方塊",
+  "gui.mtr.gap_filler_rail_not_here": "軌道不在這一塊上方",
+  "gui.mtr.gap_filler_rail_too_high": "軌道比這一塊高出一格以上",
+  "tooltip.mtr.gap_filler_material": "材質：%s"
 }

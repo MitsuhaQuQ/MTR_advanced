@@ -26,6 +26,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import transitsim.geometry.PlatformEdges;
+import transitsim.geometry.SlopedTops;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -38,7 +39,7 @@ import java.util.WeakHashMap;
  * as a prism with that block's top and side textures, and the top's further layers (the edge marking of MTR's platforms)
  * laid along the cut, so the marking runs along the track whatever its direction, up to a block from the edge. Also draws
  * a gap filler (0.93.0, {@link mtr.block.BlockGapFiller}) as the block it was cut from: the same prism, with no marking
- * and no recess, and from nearer, as there may be many of them along a tunnel.
+ * and no recess, and from nearer, as there may be many of them along a tunnel; its top sloped when it has one (0.94.0).
  */
 public class RenderPlatformEdge<T extends BlockPlatformEdge.TileEntityPlatformEdge> extends BlockEntityRendererMapper<T> {
 
@@ -87,6 +88,20 @@ public class RenderPlatformEdge<T extends BlockPlatformEdge.TileEntityPlatformEd
 		final Matrix3f normal = matrices.last().normal();
 		final VertexConsumer consumer = vertexConsumers.getBuffer(RenderType.entityCutoutNoCull(TextureAtlas.LOCATION_BLOCKS));
 
+		// A gap filler's sloped top (0.94.0): the top and the sides' tops follow it
+		final int slopedTop = entity instanceof BlockGapFiller.TileEntityGapFiller ? ((BlockGapFiller.TileEntityGapFiller) entity).getTop() : SlopedTops.FLAT;
+		if (gapFiller && slopedTop != SlopedTops.FLAT) {
+			final Value topAt = (x, z) -> SlopedTops.heightAt(slopedTop, x, z);
+			if (textures.top != null) {
+				slopedFan(consumer, pose, normal, outline, slopedTop, textures.top, sideLight);
+			}
+			if (textures.side != null) {
+				fan(consumer, pose, normal, outline, 0, textures.side, sideLight, -1, null);
+				slopedSides(consumer, pose, normal, outline, topAt, textures.side, sideLight);
+			}
+			return;
+		}
+
 		// The top and the bottom, as fans of triangles drawn as quads with the last corner twice, the texture as on a whole block
 		if (textures.top != null) {
 			fan(consumer, pose, normal, outline, 1, textures.top, topLight, 1, null);
@@ -128,6 +143,53 @@ public class RenderPlatformEdge<T extends BlockPlatformEdge.TileEntityPlatformEd
 			if (recessHeight > 0) {
 				sides(consumer, pose, normal, lowerOutline, 0, recessHeight, textures.side, sideLight);
 			}
+		}
+	}
+
+	/**
+	 * A sloped top (0.94.0): the outline's fan with each corner at the top's height there, its normal square to the
+	 * top's average slope
+	 */
+	private static void slopedFan(VertexConsumer consumer, Matrix4f pose, Matrix3f normal, double[] polygon, int top, TextureAtlasSprite sprite, int light) {
+		final double h00 = SlopedTops.corner(top, 0), h10 = SlopedTops.corner(top, 1), h11 = SlopedTops.corner(top, 2), h01 = SlopedTops.corner(top, 3);
+		final double riseX = (h10 - h00 + h11 - h01) / 2 / SlopedTops.CELLS;
+		final double riseZ = (h01 - h00 + h11 - h10) / 2 / SlopedTops.CELLS;
+		final double normalLength = Math.sqrt(riseX * riseX + 1 + riseZ * riseZ);
+		final float normalX = (float) (-riseX / normalLength);
+		final float normalY = (float) (1 / normalLength);
+		final float normalZ = (float) (-riseZ / normalLength);
+		final int corners = polygon.length / 2;
+		for (int i = 1; i + 1 < corners; i++) {
+			for (final int corner : new int[]{0, i, i + 1, i + 1}) {
+				final double x = polygon[corner * 2];
+				final double z = polygon[corner * 2 + 1];
+				vertex(consumer, pose, normal, (float) x, (float) SlopedTops.heightAt(top, x, z), (float) z, sprite, (float) x, (float) z, normalX, normalY, normalZ, light);
+			}
+		}
+	}
+
+	/**
+	 * Each side of the outline from the bottom up to a sloped top (0.94.0), the texture cut off where the top is
+	 */
+	private static void slopedSides(VertexConsumer consumer, Matrix4f pose, Matrix3f normal, double[] outline, Value topAt, TextureAtlasSprite sprite, int light) {
+		final int corners = outline.length / 2;
+		for (int i = 0; i < corners; i++) {
+			final float x1 = (float) outline[i * 2], z1 = (float) outline[i * 2 + 1];
+			final float x2 = (float) outline[(i + 1) % corners * 2], z2 = (float) outline[(i + 1) % corners * 2 + 1];
+			final float length = (float) Math.hypot(x2 - x1, z2 - z1);
+			final float top1 = (float) topAt.at(x1, z1);
+			final float top2 = (float) topAt.at(x2, z2);
+			if (length < 1E-4 || top1 < 1E-4 && top2 < 1E-4) {
+				continue;
+			}
+			final float normalX = (z2 - z1) / length;
+			final float normalZ = -(x2 - x1) / length;
+			final float u1 = x1 * Math.abs(normalZ) + z1 * Math.abs(normalX);
+			final float u2 = x2 * Math.abs(normalZ) + z2 * Math.abs(normalX);
+			vertex(consumer, pose, normal, x1, 0, z1, sprite, u1, 1, normalX, 0, normalZ, light);
+			vertex(consumer, pose, normal, x2, 0, z2, sprite, u2, 1, normalX, 0, normalZ, light);
+			vertex(consumer, pose, normal, x2, top2, z2, sprite, u2, 1 - top2, normalX, 0, normalZ, light);
+			vertex(consumer, pose, normal, x1, top1, z1, sprite, u1, 1 - top1, normalX, 0, normalZ, light);
 		}
 	}
 
