@@ -338,31 +338,59 @@ public final class PlatformEdges {
 	}
 
 	/**
-	 * Bends what an ordinary screen door draws in its block onto a piece of the edge line (0.91.0). A point of the straight
-	 * door keeps its height and its depth back from the block side towards the track; its place across the block (along the
-	 * direction its facing turned a quarter clockwise) becomes its place along the piece. So a straight door on a straight
-	 * edge along the block side stays where it is.
+	 * What an ordinary screen door drawn in a block is bent onto (0.91.0): a piece of the edge line, with a place along it
+	 * from 0 at its start to 1 at its end and a depth back from it towards the platform. A point of the straight door keeps
+	 * its height and its depth back from the block side towards the track; its place across the block (along the direction
+	 * its facing turned a quarter clockwise) becomes its place along the piece ({@link #modelPoint}). The piece is the
+	 * straight chord of the block's cut ({@link Bend}), or, since 0.92.0, the edge curve itself drawn by the game, so that
+	 * the pieces of a run join into one smooth curve.
 	 * <p>
 	 * Block coordinates go from 0 to 1. The facing is the straight door direction towards the track.
 	 */
-	public static final class Bend {
+	public interface Piece {
 
 		/**
-		 * The ends of two pieces further apart than this aren't joined, in blocks
+		 * @return the point at a place along the piece and a depth back from it, in block coordinates, as {x, z}
 		 */
-		private static final double MOST_JOIN_GAP = 0.25;
+		double[] at(double along, double back);
+
 		/**
-		 * Pieces turning more than about 60 degrees at a joint aren't mitred
+		 * @return a horizontal direction given as parts along the piece and towards the track, turned as the piece runs
+		 * (where it is about halfway), as {x, z}
 		 */
-		private static final double MOST_MITRE_COS = 0.5;
+		double[] turn(double alongPart, double towardsTrackPart);
+
+		/**
+		 * @return where a point of the straight door goes, as {x, z}
+		 */
+		default double[] point(int facingX, int facingZ, double x, double z) {
+			final double[] model = modelPoint(facingX, facingZ, x, z);
+			return at(model[0], model[1]);
+		}
+
+		/**
+		 * @return where a horizontal direction of the straight door goes (not scaled to a unit), as {x, z}
+		 */
+		default double[] direction(int facingX, int facingZ, double x, double z) {
+			return turn(x * -facingZ + z * facingX, x * facingX + z * facingZ);
+		}
+	}
+
+	/**
+	 * @return a point of a straight door facing the track as given, as its place along its block and its depth back from
+	 * the block side towards the track, as {along, back}
+	 */
+	public static double[] modelPoint(int facingX, int facingZ, double x, double z) {
+		return new double[]{0.5 + (x - 0.5) * -facingZ + (z - 0.5) * facingX, 0.5 - ((x - 0.5) * facingX + (z - 0.5) * facingZ)};
+	}
+
+	/**
+	 * A block's piece of the edge line as the straight chord of its cut (0.91.0)
+	 */
+	public static final class Bend implements Piece {
 
 		public final double startX, startZ, endX, endZ;
 		public final double towardsTrackX, towardsTrackZ;
-		/**
-		 * Which way depth goes back from the line at each end, scaled so the depth square to the line keeps its size: the
-		 * direction towards the track at both ends on its own, mitred with the next piece's when joined ({@link #joined})
-		 */
-		private final double startMitreX, startMitreZ, endMitreX, endMitreZ;
 
 		private Bend(double[] segment, int angleIndex) {
 			startX = segment[0];
@@ -371,116 +399,19 @@ public final class PlatformEdges {
 			endZ = segment[3];
 			towardsTrackX = Math.cos(angleIndex * 2 * Math.PI / ANGLES);
 			towardsTrackZ = Math.sin(angleIndex * 2 * Math.PI / ANGLES);
-			startMitreX = endMitreX = towardsTrackX;
-			startMitreZ = endMitreZ = towardsTrackZ;
 		}
 
-		private Bend(double startX, double startZ, double endX, double endZ, double towardsTrackX, double towardsTrackZ, double startMitreX, double startMitreZ, double endMitreX, double endMitreZ) {
-			this.startX = startX;
-			this.startZ = startZ;
-			this.endX = endX;
-			this.endZ = endZ;
-			this.towardsTrackX = towardsTrackX;
-			this.towardsTrackZ = towardsTrackZ;
-			this.startMitreX = startMitreX;
-			this.startMitreZ = startMitreZ;
-			this.endMitreX = endMitreX;
-			this.endMitreZ = endMitreZ;
-		}
-
-		/**
-		 * @return where a point of the straight door goes, as {x, z}
-		 */
-		public double[] point(int facingX, int facingZ, double x, double z) {
-			final double back = 0.5 - ((x - 0.5) * facingX + (z - 0.5) * facingZ);
-			final double along = 0.5 + (x - 0.5) * -facingZ + (z - 0.5) * facingX;
-			return at(along, back);
-		}
-
-		/**
-		 * @param along where along the piece, 0 at its start and 1 at its end
-		 * @param back  how far back from the line towards the platform
-		 * @return the point there, in block coordinates, as {x, z}
-		 */
+		@Override
 		public double[] at(double along, double back) {
-			// Depth goes back along the mitre, turning from one end's to the other's across the piece
-			final double t = Math.max(0, Math.min(1, along));
-			final double mitreX = startMitreX + (endMitreX - startMitreX) * t;
-			final double mitreZ = startMitreZ + (endMitreZ - startMitreZ) * t;
-			return new double[]{startX + (endX - startX) * along - mitreX * back, startZ + (endZ - startZ) * along - mitreZ * back};
+			return new double[]{startX + (endX - startX) * along - towardsTrackX * back, startZ + (endZ - startZ) * along - towardsTrackZ * back};
 		}
 
-		/**
-		 * Smooths the corner with the pieces of the blocks beside, for drawing (0.91.3): where this piece and the next meet,
-		 * both end at the same point (halfway between their ends, which their rounding may part a little), and depth goes
-		 * back along the bisector there, so the two pieces of a door meet without a gap on the outside of the corner or an
-		 * overlap on the inside.
-		 *
-		 * @param left    the piece of the block beside on the left (against the line), or null
-		 * @param leftDx  where that block is from this one
-		 * @param right   the piece of the block beside on the right, or null
-		 * @return the joined piece; this one where nothing is beside or the pieces don't meet
-		 */
-		public Bend joined(Bend left, int leftDx, int leftDz, Bend right, int rightDx, int rightDz) {
-			double newStartX = startX, newStartZ = startZ, newEndX = endX, newEndZ = endZ;
-			double newStartMitreX = startMitreX, newStartMitreZ = startMitreZ, newEndMitreX = endMitreX, newEndMitreZ = endMitreZ;
-			final double[] start = join(startX, startZ, left, leftDx, leftDz);
-			if (start != null) {
-				newStartX = start[0];
-				newStartZ = start[1];
-				newStartMitreX = start[2];
-				newStartMitreZ = start[3];
-			}
-			final double[] end = join(endX, endZ, right, rightDx, rightDz);
-			if (end != null) {
-				newEndX = end[0];
-				newEndZ = end[1];
-				newEndMitreX = end[2];
-				newEndMitreZ = end[3];
-			}
-			return new Bend(newStartX, newStartZ, newEndX, newEndZ, towardsTrackX, towardsTrackZ, newStartMitreX, newStartMitreZ, newEndMitreX, newEndMitreZ);
-		}
-
-		/**
-		 * @return the joint of this piece's end with the nearer end of the other piece, and the mitre there, as {x, z,
-		 * mitreX, mitreZ}; null when there is no other piece, it doesn't come within a quarter block or turns too sharply
-		 */
-		private double[] join(double x, double z, Bend other, int dx, int dz) {
-			if (other == null) {
-				return null;
-			}
-			final double otherStartX = other.startX + dx, otherStartZ = other.startZ + dz;
-			final double otherEndX = other.endX + dx, otherEndZ = other.endZ + dz;
-			final boolean startNearer = Math.hypot(otherStartX - x, otherStartZ - z) <= Math.hypot(otherEndX - x, otherEndZ - z);
-			final double nearX = startNearer ? otherStartX : otherEndX;
-			final double nearZ = startNearer ? otherStartZ : otherEndZ;
-			if (Math.hypot(nearX - x, nearZ - z) > MOST_JOIN_GAP) {
-				return null;
-			}
-			final double sumX = towardsTrackX + other.towardsTrackX;
-			final double sumZ = towardsTrackZ + other.towardsTrackZ;
-			final double sumLength = Math.hypot(sumX, sumZ);
-			if (sumLength < 1E-6) {
-				return null;
-			}
-			// Scaled so that going back by a depth along it is that depth square to this piece's line
-			final double cos = (sumX * towardsTrackX + sumZ * towardsTrackZ) / sumLength;
-			if (cos < MOST_MITRE_COS) {
-				return null;
-			}
-			return new double[]{(x + nearX) / 2, (z + nearZ) / 2, sumX / sumLength / cos, sumZ / sumLength / cos};
-		}
-
-		/**
-		 * @return where a horizontal direction of the straight door goes (not scaled to a unit), as {x, z}
-		 */
-		public double[] direction(int facingX, int facingZ, double x, double z) {
-			final double towardsTrack = x * facingX + z * facingZ;
-			final double along = x * -facingZ + z * facingX;
+		@Override
+		public double[] turn(double alongPart, double towardsTrackPart) {
 			final double length = Math.hypot(endX - startX, endZ - startZ);
 			final double alongX = length == 0 ? 0 : (endX - startX) / length;
 			final double alongZ = length == 0 ? 0 : (endZ - startZ) / length;
-			return new double[]{alongX * along + towardsTrackX * towardsTrack, alongZ * along + towardsTrackZ * towardsTrack};
+			return new double[]{alongX * alongPart + towardsTrackX * towardsTrackPart, alongZ * alongPart + towardsTrackZ * towardsTrackPart};
 		}
 
 		/**

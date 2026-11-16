@@ -55,7 +55,9 @@ public class RenderCurvedPSD<T extends BlockEntityMapper> extends BlockEntityRen
 		if (ownBend == null || !state.hasProperty(BlockStateProperties.HORIZONTAL_FACING)) {
 			return;
 		}
-		final PlatformEdges.Bend bend = joined(world, entity.getBlockPos(), ownBend);
+		// Along the edge curve itself where the client knows the platform's rail (0.92.0), else along the block's chord
+		final CurvePiece curvePiece = CurvePiece.of(((CurvedPSD.Curved) entity).getBendHolder().getCurve(), entity.getBlockPos());
+		final PlatformEdges.Piece bend = curvePiece == null ? ownBend : curvePiece;
 		final BendingVertexConsumer.Context context = new BendingVertexConsumer.Context(bend, state.getValue(BlockStateProperties.HORIZONTAL_FACING), entity.getBlockPos(), matrices.last());
 		final BlockState straightState = CurvedPSD.straightState(state);
 		drawModel(straightState, matrices, new BendingVertexConsumer(vertexConsumers.getBuffer(RenderType.entityCutoutNoCull(TextureAtlas.LOCATION_BLOCKS)), context), light);
@@ -72,26 +74,6 @@ public class RenderCurvedPSD<T extends BlockEntityMapper> extends BlockEntityRen
 	@Override
 	public int getViewDistance() {
 		return 256;
-	}
-
-	/**
-	 * @return the block's piece with its corners smoothed against the pieces of the screen door or gate blocks beside it
-	 * along the run, curved or straight (0.91.3)
-	 */
-	private static PlatformEdges.Bend joined(Level world, net.minecraft.core.BlockPos pos, PlatformEdges.Bend bend) {
-		final net.minecraft.core.BlockPos leftPos = CurvedPSD.neighbour(world, pos, true);
-		final net.minecraft.core.BlockPos rightPos = CurvedPSD.neighbour(world, pos, false);
-		return bend.joined(pieceOf(world, leftPos), leftPos.getX() - pos.getX(), leftPos.getZ() - pos.getZ(), pieceOf(world, rightPos), rightPos.getX() - pos.getX(), rightPos.getZ() - pos.getZ());
-	}
-
-	private static PlatformEdges.Bend pieceOf(Level world, net.minecraft.core.BlockPos pos) {
-		final PlatformEdges.Bend bend = CurvedPSD.bendAt(world, pos);
-		if (bend != null) {
-			return bend;
-		}
-		final BlockState state = world.getBlockState(pos);
-		final boolean isDoorBlock = state.getBlock() instanceof mtr.block.BlockPSDAPGBase || state.getBlock() instanceof mtr.block.BlockPSDTop;
-		return isDoorBlock && state.hasProperty(BlockStateProperties.HORIZONTAL_FACING) ? CurvedPSD.straightBend(state.getValue(BlockStateProperties.HORIZONTAL_FACING)) : null;
 	}
 
 	/**

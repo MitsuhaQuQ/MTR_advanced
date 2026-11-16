@@ -19,7 +19,7 @@ import java.util.function.BiConsumer;
  * Bends what is drawn for a curved screen door's block onto its piece of the edge line (0.91.0, {@link
  * mtr.block.CurvedPSD}): the straight block's renderer draws as usual, and each vertex, which reaches the consumer already
  * turned to the view (the render matrices hold the camera's rotation in 1.20.1), is taken back to the block's own
- * coordinates with the inverse of the block's render matrix, moved as {@link PlatformEdges.Bend#point} says and taken
+ * coordinates with the inverse of the block's render matrix, moved as {@link PlatformEdges.Piece#point} says (onto the block's piece of the edge curve, or of its chord) and taken
  * forward again; its normal likewise. While a curved block is drawn, {@link #current}
  * is set, and {@link RenderTrains#scheduleRender} wraps what is queued then, so the queued drawing is bent too.
  */
@@ -137,7 +137,7 @@ public class BendingVertexConsumer implements VertexConsumer {
 	 */
 	public static final class Context {
 
-		private final PlatformEdges.Bend bend;
+		private final PlatformEdges.Piece bend;
 		private final Direction facing;
 		private final int facingX;
 		private final int facingZ;
@@ -150,11 +150,11 @@ public class BendingVertexConsumer implements VertexConsumer {
 		/**
 		 * @param blockPose the render matrices at the block's corner, as a block entity renderer gets them
 		 */
-		public Context(PlatformEdges.Bend bend, Direction facing, BlockPos pos, PoseStack.Pose blockPose) {
+		public Context(PlatformEdges.Piece bend, Direction facing, BlockPos pos, PoseStack.Pose blockPose) {
 			this(bend, facing, pos, blockPose.pose(), blockPose.normal());
 		}
 
-		private Context(PlatformEdges.Bend bend, Direction facing, BlockPos pos, Matrix4f pose, Matrix3f normal) {
+		private Context(PlatformEdges.Piece bend, Direction facing, BlockPos pos, Matrix4f pose, Matrix3f normal) {
 			this.bend = bend;
 			this.facing = facing;
 			facingX = facing.getStepX();

@@ -562,8 +562,10 @@
   "block.mtr.curved_apg_door": "Curved Automatic Platform Gate",
   "item.mtr.curved_apg_door": "Curved Automatic Platform Gate",
   "block.mtr.curved_psd_top": "Curved Platform Screen Door Top",
-  "tooltip.mtr.curved_psd_glass": "Stands on the edge line of the platform below, as laid by platform edge blocks, else of the nearest platform.",
+  "tooltip.mtr.curved_psd_glass": "Stands on the edge line of the platform below, as laid by platform edge blocks, else of the nearest platform.Brush a glass to cut the run on its right, again to join it. ",
   "tooltip.mtr.curved_psd_door": "Puts two leaves along the platform edge line. Right-click curved glass of the same kind to put the door there instead.",
   "gui.mtr.curved_psd_no_edge": "No platform edge line crosses this block",
-  "gui.mtr.curved_psd_no_room": "No room for the door here"
+  "gui.mtr.curved_psd_no_room": "No room for the door here",
+  "gui.mtr.curved_psd_cut": "Run cut on the right of this glass",
+  "gui.mtr.curved_psd_joined": "Run joined on the right of this glass"
 }

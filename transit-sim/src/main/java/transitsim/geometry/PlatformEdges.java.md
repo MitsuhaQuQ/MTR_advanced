@@ -19,6 +19,7 @@
 - `outline(angle, cut)`：站台部分的多边形顶点（0..1），最后两点为切口两端。
 - `wallSegment(angle, cut)`（0.90.0）：边线在方块内的一段 {x1,z1,x2,z2}，沿 `alongX/alongZ` 方向（朝轨道方向顺时针转 90°）；短于 `SHORTEST_WALL`（1/16）为 null。
 - `wallMask(angle, cut, 起深, 止深)`（0.91.0）：边线后两深度之间的柱，曲线屏蔽门、安全门各部分的形状。
+- `Piece`（0.92.0）：曲线屏蔽门画在什么上：`at(沿线位置, 深度)`、`turn`，默认 `point`/`direction` 经 `modelPoint` 把直线门方块里的点换成沿线位置和深度。实现有直线弦 `Bend` 和游戏客户端的 `mtr.render.CurvePiece`（沿真实边线曲线）。
 - `bend(angle, cut)` → `Bend`（0.91.0）：`point(朝向, x, z)` 把直线门方块里的点映射到边线段上（离轨道一侧的深度不变，横向位置变为沿线位置；直线贴边时不变）、`direction` 转方向、`beyond(左/右)` 沿线下一格的点、`nearestFacing` 最近的四向。
 - `wallMask(angle, cut)`（0.90.0）：曲线屏蔽门墙的柱，边线后 `WALL_COLLISION_CELLS`（3）个十六分之一格；画的厚度 `WALL_THICKNESS` 2/16。
 

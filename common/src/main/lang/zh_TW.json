@@ -658,8 +658,10 @@
   "block.mtr.curved_apg_door": "曲線月台閘門",
   "item.mtr.curved_apg_door": "曲線月台閘門",
   "block.mtr.curved_psd_top": "曲線月台門頂部",
-  "tooltip.mtr.curved_psd_glass": "立在下方月台邊線上（按精確月台邊，沒有就按最近的月台）。",
+  "tooltip.mtr.curved_psd_glass": "立在下方月台邊線上（按精確月台邊，沒有就按最近的月台）。用刷子點玻璃在它右側隔斷，再點接上。",
   "tooltip.mtr.curved_psd_door": "沿月台邊線放一對門扇。右鍵同種的曲線玻璃，可把那裡換成門。",
   "gui.mtr.curved_psd_no_edge": "月台邊線不經過這一格",
-  "gui.mtr.curved_psd_no_room": "這裡放不下門"
+  "gui.mtr.curved_psd_no_room": "這裡放不下門",
+  "gui.mtr.curved_psd_cut": "已在這塊玻璃右側隔斷",
+  "gui.mtr.curved_psd_joined": "已和右側的玻璃接上"
 }

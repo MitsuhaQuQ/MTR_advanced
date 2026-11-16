@@ -182,43 +182,4 @@ class PlatformEdgesTest {
 			assertEquals(x >= 10 && x < 12, mask[x * 16 + 7], "column " + x);
 		}
 	}
-
-	@Test
-	void twoPiecesOfAStraightEdgeJoinAsTheyAre() {
-		// The edge on the west side of two blocks one after the other along z
-		final int cut = PlatformEdges.cutOf(0, 0, 0, 0.5, 1, 0);
-		final PlatformEdges.Bend bend = PlatformEdges.bend(PlatformEdges.angleOf(cut), PlatformEdges.cutOfPacked(cut));
-		final PlatformEdges.Bend joined = bend.joined(bend, 0, 1, bend, 0, -1);
-		for (final double[] point : new double[][]{{0.125, 0.2}, {0.25, 0.9}, {0, 0}, {0.375, 1}}) {
-			assertArrayEquals(bend.point(-1, 0, point[0], point[1]), joined.point(-1, 0, point[0], point[1]), 1E-9);
-		}
-	}
-
-	@Test
-	void piecesTurningAtACornerMeetWithoutAGap() {
-		// Block (0, 0): the line x = 0.25 going north, the platform to the east
-		final int cutA = PlatformEdges.cutOf(0, 0, 0.25, 0.5, 1, 0);
-		final PlatformEdges.Bend a = PlatformEdges.bend(PlatformEdges.angleOf(cutA), PlatformEdges.cutOfPacked(cutA));
-		// Block (0, -1) to the north: the line from (0.25, 0) turned 22.5 degrees east
-		final double turn = Math.toRadians(22.5);
-		final int cutB = PlatformEdges.cutOf(0, -1, 0.25 + 0.5 * Math.sin(turn), -0.5 * Math.cos(turn), Math.cos(turn), Math.sin(turn));
-		final PlatformEdges.Bend b = PlatformEdges.bend(PlatformEdges.angleOf(cutB), PlatformEdges.cutOfPacked(cutB));
-		assertNotNull(a);
-		assertNotNull(b);
-		final PlatformEdges.Bend joinedA = a.joined(b, 0, -1, b, 0, -1);
-		final PlatformEdges.Bend joinedB = b.joined(a, 0, 1, a, 0, 1);
-		// The ends at the joint (z = 0 of block (0, 0))
-		final double alongA = Math.abs(joinedA.startZ) < Math.abs(joinedA.endZ) ? 0 : 1;
-		final double alongB = Math.abs(joinedB.startZ - 1) < Math.abs(joinedB.endZ - 1) ? 0 : 1;
-		for (final double back : new double[]{0, 0.125, 0.25}) {
-			final double[] pointA = joinedA.at(alongA, back);
-			final double[] pointB = joinedB.at(alongB, back);
-			assertEquals(pointA[0], pointB[0], 1E-6, "x at depth " + back);
-			assertEquals(pointA[1], pointB[1] - 1, 1E-6, "z at depth " + back);
-		}
-		// Away from the joint the depth is square to the line as before
-		final double[] middle = joinedA.at(0.5, 0.125);
-		final double[] plain = a.at(0.5, 0.125);
-		assertEquals(plain[0], middle[0], 0.02);
-	}
 }

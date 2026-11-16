@@ -36,6 +36,16 @@ public final class CurvedPSD {
 
 	private static final String KEY_ANGLE = "bend_angle";
 	private static final String KEY_CUT = "bend_cut";
+	private static final String KEY_CURVE_FROM = "curve_from";
+	private static final String KEY_CURVE_TO = "curve_to";
+	private static final String KEY_CURVE_OFFSET = "curve_offset";
+	private static final String KEY_CURVE_SIDE = "curve_side";
+	private static final String KEY_CURVE_START = "curve_start";
+	private static final String KEY_CURVE_END = "curve_end";
+	/**
+	 * How finely the edge curve is walked to find where it crosses a block, in blocks along the rail
+	 */
+	private static final double CURVE_STEP = 0.05;
 	private static final Map<Long, VoxelShape> SHAPES = new HashMap<>();
 	/**
 	 * How far along the run a brush sets the arrows and the persistent tops, as for the straight ones
@@ -73,6 +83,20 @@ public final class CurvedPSD {
 		private int angle = -1;
 		private int cut;
 		private PlatformEdges.Bend bend;
+		/**
+		 * The block's piece of the edge curve itself (0.92.0): the platform's rail by its two ends, how far from its centre
+		 * line the edge is and on which side (1 left of the rail's direction, -1 right), and where along the rail the piece
+		 * starts and ends (its start the end on the left seen from the platform); null where only the chord is known
+		 */
+		private Curve curve;
+
+		public Curve getCurve() {
+			return curve;
+		}
+
+		public void setCurve(Curve curve) {
+			this.curve = curve;
+		}
 
 		public PlatformEdges.Bend getBend() {
 			return bend;
@@ -94,6 +118,7 @@ public final class CurvedPSD {
 
 		public void read(CompoundTag compoundTag) {
 			set(compoundTag.contains(KEY_ANGLE) ? compoundTag.getInt(KEY_ANGLE) : -1, compoundTag.getInt(KEY_CUT));
+			curve = compoundTag.contains(KEY_CURVE_FROM) ? new Curve(BlockPos.of(compoundTag.getLong(KEY_CURVE_FROM)), BlockPos.of(compoundTag.getLong(KEY_CURVE_TO)), compoundTag.getDouble(KEY_CURVE_OFFSET), compoundTag.getInt(KEY_CURVE_SIDE), compoundTag.getDouble(KEY_CURVE_START), compoundTag.getDouble(KEY_CURVE_END)) : null;
 		}
 
 		public void write(CompoundTag compoundTag) {
@@ -101,7 +126,58 @@ public final class CurvedPSD {
 				compoundTag.putInt(KEY_ANGLE, angle);
 				compoundTag.putInt(KEY_CUT, cut);
 			}
+			if (curve != null) {
+				compoundTag.putLong(KEY_CURVE_FROM, curve.railFrom.asLong());
+				compoundTag.putLong(KEY_CURVE_TO, curve.railTo.asLong());
+				compoundTag.putDouble(KEY_CURVE_OFFSET, curve.offset);
+				compoundTag.putInt(KEY_CURVE_SIDE, curve.side);
+				compoundTag.putDouble(KEY_CURVE_START, curve.start);
+				compoundTag.putDouble(KEY_CURVE_END, curve.end);
+			}
 		}
+	}
+
+	/**
+	 * A block's piece of a platform's edge curve (0.92.0): drawn along the curve itself, the pieces of a run join smoothly
+	 */
+	public static final class Curve {
+
+		public final BlockPos railFrom;
+		public final BlockPos railTo;
+		public final double offset;
+		public final int side;
+		public final double start;
+		public final double end;
+
+		public Curve(BlockPos railFrom, BlockPos railTo, double offset, int side, double start, double end) {
+			this.railFrom = railFrom;
+			this.railTo = railTo;
+			this.offset = offset;
+			this.side = side;
+			this.start = start;
+			this.end = end;
+		}
+
+		/**
+		 * @return the edge curve at a distance along the rail and a depth back from it, in world coordinates, as {x, z}
+		 */
+		public static double[] edgePoint(Rail rail, double distance, int side, double offset) {
+			final double length = rail.getLength();
+			final net.minecraft.world.phys.Vec3 point = rail.getPosition(distance);
+			final net.minecraft.world.phys.Vec3 ahead = rail.getPosition(Math.min(length, distance + 0.05));
+			final net.minecraft.world.phys.Vec3 behind = rail.getPosition(Math.max(0, distance - 0.05));
+			final double directionX = ahead.x - behind.x;
+			final double directionZ = ahead.z - behind.z;
+			final double directionLength = Math.hypot(directionX, directionZ);
+			if (directionLength == 0) {
+				return new double[]{point.x, point.z};
+			}
+			// Left of the rail's direction (dx, dz) is (dz, -dx)
+			final double sideX = directionZ / directionLength * side;
+			final double sideZ = -directionX / directionLength * side;
+			return new double[]{point.x + sideX * offset, point.z + sideZ * offset};
+		}
+
 	}
 
 	/**
@@ -325,12 +401,84 @@ public final class CurvedPSD {
 	}
 
 	/**
+	 * @return the piece of the nearest platform's edge curve crossing the block's column (0.92.0), as {@link #lineAt}
+	 * places the edge; null when no platform is near or the curve doesn't cross the column
+	 */
+	public static Curve curveAt(Level world, BlockPos pos, PlatformEdges.Bend bend) {
+		final RailwayData railwayData = RailwayData.getInstance(world);
+		final Platform platform = railwayData == null || bend == null ? null : BlockPlatformEdge.nearestPlatform(railwayData, pos.below());
+		final Rail rail = platform == null ? null : PlatformCurves.railOf(platform, railwayData.getRails());
+		if (rail == null) {
+			return null;
+		}
+		final java.util.List<BlockPos> ends = platform.getOrderedPositions(BlockPos.ZERO, false);
+		final int[] cars = PlatformCurves.carsAt(platform.id, railwayData.routes, railwayData.sidings, railwayData.dataCache.sidingIdToDepot);
+		final PlatformCurves.Nearest nearest = PlatformCurves.nearest(rail, pos.getX() + 0.5, pos.getZ() + 0.5, cars[0]);
+		final double offset = PlatformEdges.edgeOffset(cars[1] / 2D, nearest.signedSagitta);
+		final double length = rail.getLength();
+		// Which side of the rail the platform is on
+		final double[] probe = Curve.edgePoint(rail, length / 2, 1, 1);
+		final net.minecraft.world.phys.Vec3 middle = rail.getPosition(length / 2);
+		final int side = (probe[0] - middle.x) * nearest.sideX + (probe[1] - middle.z) * nearest.sideZ >= 0 ? 1 : -1;
+		// Where along the rail the curve is in the block's column, its ends found more finely between the steps
+		double first = Double.NaN;
+		double last = Double.NaN;
+		boolean wasInside = false;
+		for (double distance = 0; distance <= length + CURVE_STEP / 2; distance += CURVE_STEP) {
+			final double clamped = Math.min(distance, length);
+			final boolean inside = inColumn(Curve.edgePoint(rail, clamped, side, offset), pos);
+			if (inside && !wasInside) {
+				first = Double.isNaN(first) ? clamped == 0 ? 0 : boundary(rail, side, offset, pos, clamped - CURVE_STEP, clamped) : first;
+			}
+			if (!inside && wasInside) {
+				last = boundary(rail, side, offset, pos, clamped, clamped - CURVE_STEP);
+			}
+			if (inside) {
+				last = clamped;
+			}
+			wasInside = inside;
+		}
+		if (Double.isNaN(first) || last - first < PlatformEdges.SHORTEST_WALL / 2) {
+			return null;
+		}
+		// The piece's start is the end on the left seen from the platform, as for the chord
+		final double[] firstPoint = Curve.edgePoint(rail, first, side, offset);
+		final double[] lastPoint = Curve.edgePoint(rail, last, side, offset);
+		final double alongX = bend.endX - bend.startX;
+		final double alongZ = bend.endZ - bend.startZ;
+		final boolean forwards = (lastPoint[0] - firstPoint[0]) * alongX + (lastPoint[1] - firstPoint[1]) * alongZ >= 0;
+		return new Curve(ends.get(0), ends.get(1), offset, side, forwards ? first : last, forwards ? last : first);
+	}
+
+	private static boolean inColumn(double[] point, BlockPos pos) {
+		return Math.floor(point[0]) == pos.getX() && Math.floor(point[1]) == pos.getZ();
+	}
+
+	/**
+	 * @return where between a distance outside the column and one inside the curve crosses its side
+	 */
+	private static double boundary(Rail rail, int side, double offset, BlockPos pos, double outside, double inside) {
+		double out = outside;
+		double in = inside;
+		for (int i = 0; i < 12; i++) {
+			final double middle = (out + in) / 2;
+			if (inColumn(Curve.edgePoint(rail, middle, side, offset), pos)) {
+				in = middle;
+			} else {
+				out = middle;
+			}
+		}
+		return (out + in) / 2;
+	}
+
+	/**
 	 * Gives a curved block just put down its piece of the edge line
 	 */
 	public static void setBend(Level world, BlockPos pos, int packed) {
 		final BlockEntity entity = world.getBlockEntity(pos);
 		if (entity instanceof Curved) {
 			((Curved) entity).getBendHolder().set(PlatformEdges.angleOf(packed), PlatformEdges.cutOfPacked(packed));
+			((Curved) entity).getBendHolder().setCurve(curveAt(world, pos, ((Curved) entity).getBendHolder().getBend()));
 			entity.setChanged();
 			((Curved) entity).syncBend();
 		}
@@ -358,6 +506,32 @@ public final class CurvedPSD {
 		}
 		final IBlock.EnumSide side = leftValid && rightValid ? IBlock.EnumSide.MIDDLE : leftValid ? IBlock.EnumSide.RIGHT : rightValid ? IBlock.EnumSide.LEFT : IBlock.EnumSide.SINGLE;
 		setSide(world, lowerPos, side);
+	}
+
+	/**
+	 * Cuts the run of glass between a column and the glass on its right, or joins them when cut (0.92.0)
+	 *
+	 * @return whether it is cut now
+	 */
+	public static boolean toggleCut(Level world, BlockPos lowerPos) {
+		final BlockState state = world.getBlockState(lowerPos);
+		final BlockPos rightPos = neighbour(world, lowerPos, false);
+		final boolean rightValid = isGlassOfKind(world, rightPos, state.getBlock());
+		final IBlock.EnumSide side = IBlock.getStatePropertySafe(state, IBlock.SIDE_EXTENDED);
+		final boolean joinedRight = side == IBlock.EnumSide.MIDDLE || side == IBlock.EnumSide.LEFT;
+		if (joinedRight) {
+			setSide(world, lowerPos, side == IBlock.EnumSide.MIDDLE ? IBlock.EnumSide.RIGHT : IBlock.EnumSide.SINGLE);
+			if (rightValid) {
+				final IBlock.EnumSide rightSide = IBlock.getStatePropertySafe(world.getBlockState(rightPos), IBlock.SIDE_EXTENDED);
+				setSide(world, rightPos, rightSide == IBlock.EnumSide.MIDDLE ? IBlock.EnumSide.LEFT : rightSide == IBlock.EnumSide.RIGHT ? IBlock.EnumSide.SINGLE : rightSide);
+			}
+			return true;
+		}
+		if (rightValid) {
+			setSide(world, lowerPos, side == IBlock.EnumSide.RIGHT ? IBlock.EnumSide.MIDDLE : IBlock.EnumSide.LEFT);
+			setSideTowards(world, rightPos, true);
+		}
+		return false;
 	}
 
 	/**

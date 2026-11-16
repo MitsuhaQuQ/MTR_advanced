@@ -56,10 +56,14 @@ public final class BlockCurvedPSD {
 	}
 
 	/**
-	 * Brushing glass joins it into the run along the edge line
+	 * Brushing glass cuts the run between it and the glass on its right (seen from the platform), so a route map ends
+	 * there and the glass gets a frame end; brushing again joins them (0.92.0: glass is joined into a run when put down)
 	 */
 	private static InteractionResult useGlass(Level world, BlockPos pos, BlockState state, Player player) {
-		return IBlock.checkHoldingBrush(world, player, () -> CurvedPSD.connectGlass(world, lowerOf(state, pos)));
+		return IBlock.checkHoldingBrush(world, player, () -> {
+			final boolean cut = CurvedPSD.toggleCut(world, lowerOf(state, pos));
+			player.displayClientMessage(mtr.mappings.Text.translatable(cut ? "gui.mtr.curved_psd_cut" : "gui.mtr.curved_psd_joined"), true);
+		});
 	}
 
 	/**
