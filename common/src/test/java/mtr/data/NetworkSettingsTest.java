@@ -72,6 +72,8 @@ class NetworkSettingsTest {
 		packet.writeVarInt(0);
 		// No running sides (0.69.0)
 		packet.writeVarInt(0);
+		// No lines joined into another's running diagram (0.85.0)
+		packet.writeVarInt(0);
 		final NetworkSettings read = new NetworkSettings();
 		read.read(packet);
 		assertEquals(java.util.Collections.singleton(NetworkSettings.DEFAULT_FARE_RULE), read.fareRules.keySet());
