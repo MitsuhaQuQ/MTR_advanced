@@ -1479,6 +1479,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 站台边样式（0.89.0）：组件 `PlatformEdges` 的切距范围扩到 ±1.75 格（`MARKING_REACH`），游戏 `BlockPlatformEdge.sourceFor`、`RenderPlatformEdge` 按来源方块模型画。
 
+站台边标线朝向和凹进形状（0.89.4）：只改游戏 `BlockPlatformEdge`、`RenderPlatformEdge`，组件 `PlatformEdges` 不变（凹进处只是把切距减去凹进深度再用同一个掩码）。
+
 单放站台边样式（0.89.2）：只改游戏 `BlockPlatformEdge.sourceOf`，组件不变。
 
 屏蔽门触发退后一格（0.89.3）：只改游戏开门扫描 `Train.isDoorScanned`（MTR、ANTE mixin、脚本三处共用），组件不变。

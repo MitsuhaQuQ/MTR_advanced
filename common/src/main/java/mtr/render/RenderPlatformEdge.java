@@ -20,12 +20,14 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.HorizontalDirectionalBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import transitsim.geometry.PlatformEdges;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
@@ -40,7 +42,7 @@ public class RenderPlatformEdge extends BlockEntityRendererMapper<BlockPlatformE
 	/**
 	 * The textures of each block's model, by the model, so a reload of the resources makes them again
 	 */
-	private static final Map<BakedModel, Textures> TEXTURES = new WeakHashMap<>();
+	private static final Map<BakedModel, Map<BlockState, Textures>> TEXTURES = new WeakHashMap<>();
 	private static final float MARKING_LIFT = 0.003F;
 
 	public RenderPlatformEdge(BlockEntityRenderDispatcher dispatcher) {
@@ -65,7 +67,12 @@ public class RenderPlatformEdge extends BlockEntityRendererMapper<BlockPlatformE
 		if (corners < 3) {
 			return;
 		}
-		final Textures textures = texturesOf(entity.getSource() == null ? Blocks.PLATFORM.get().defaultBlockState() : entity.getSource());
+		final BlockState source = entity.getSource() == null ? Blocks.PLATFORM.get().defaultBlockState() : entity.getSource();
+		final Textures textures = texturesOf(source);
+		// Below a recess (MTR's indented platforms) the platform's part starts further from the track (0.89.3)
+		final int[] recess = BlockPlatformEdge.recessOf(entity.getSource());
+		final float recessHeight = recess[0] == 0 ? 0 : (float) recess[1] / PlatformEdges.CELLS;
+		final double[] lowerOutline = recess[0] == 0 ? outline : PlatformEdges.outline(angle, BlockPlatformEdge.recessedCut(cut, recess));
 		final int topLight = LevelRenderer.getLightColor(world, pos.above());
 		final int sideLight = LevelRenderer.getLightColor(world, pos);
 		final Matrix4f pose = matrices.last().pose();
@@ -77,7 +84,13 @@ public class RenderPlatformEdge extends BlockEntityRendererMapper<BlockPlatformE
 			fan(consumer, pose, normal, outline, 1, textures.top, topLight, 1, null);
 		}
 		if (textures.side != null) {
-			fan(consumer, pose, normal, outline, 0, textures.side, sideLight, -1, null);
+			if (lowerOutline.length >= 6) {
+				fan(consumer, pose, normal, lowerOutline, 0, textures.side, sideLight, -1, null);
+			}
+			if (recessHeight > 0) {
+				// The underside of the top over the recess
+				fan(consumer, pose, normal, outline, recessHeight, textures.side, sideLight, -1, null);
+			}
 		}
 		// The top's further layers along the cut: across the cut from 1 at the edge to 0 a block in, along it centred
 		final double towardsTrackX = Math.cos(angle * 2 * Math.PI / PlatformEdges.ANGLES);
@@ -85,32 +98,52 @@ public class RenderPlatformEdge extends BlockEntityRendererMapper<BlockPlatformE
 		final double d = (double) (cut - PlatformEdges.CUT_CENTRE) / PlatformEdges.CELLS;
 		final double[] marked = clip(outline, (x, z) -> d - ((x - 0.5) * towardsTrackX + (z - 0.5) * towardsTrackZ) - PlatformEdges.MARKING_REACH);
 		if (marked.length >= 6) {
-			for (final TextureAtlasSprite layer : textures.layers) {
-				fan(consumer, pose, normal, marked, 1 + MARKING_LIFT, layer, topLight, 1, (x, z) -> new float[]{
-						(float) (0.5 + ((x - 0.5) * -towardsTrackZ + (z - 0.5) * towardsTrackX) / Math.sqrt(2)),
-						(float) (1 - (d - ((x - 0.5) * towardsTrackX + (z - 0.5) * towardsTrackZ)) / PlatformEdges.MARKING_REACH),
+			// The side the source block faces is its side towards the track (0.89.3): that side of its marking is laid at the
+			// cut, wherever it is on the texture; a block with no facing has the texture's bottom (v = 1) there
+			final Direction facing = source.hasProperty(HorizontalDirectionalBlock.FACING) ? source.getValue(HorizontalDirectionalBlock.FACING) : null;
+			for (final Layer layer : textures.layers) {
+				fan(consumer, pose, normal, marked, 1 + MARKING_LIFT, layer.sprite, topLight, 1, (x, z) -> {
+					final double inwards = (d - ((x - 0.5) * towardsTrackX + (z - 0.5) * towardsTrackZ)) / PlatformEdges.MARKING_REACH;
+					final double along = ((x - 0.5) * -towardsTrackZ + (z - 0.5) * towardsTrackX) / Math.sqrt(2);
+					if (facing == null || layer.uvOf == null) {
+						return new float[]{(float) (0.5 + along), (float) (1 - inwards)};
+					}
+					// The point of the source block as far from its facing side and as far along it
+					final double towardsFacing = 0.5 - inwards;
+					return layer.uvOf(0.5 + towardsFacing * facing.getStepX() - along * facing.getStepZ(), 0.5 + towardsFacing * facing.getStepZ() + along * facing.getStepX());
 				});
 			}
 		}
-		// Each side of the outline, the cut among them, from the bottom to the top
+		// Each side of the outline, the cut among them, from the bottom to the top; under a recess the lower outline's
 		if (textures.side != null) {
-			for (int i = 0; i < corners; i++) {
-				final float x1 = (float) outline[i * 2], z1 = (float) outline[i * 2 + 1];
-				final float x2 = (float) outline[(i + 1) % corners * 2], z2 = (float) outline[(i + 1) % corners * 2 + 1];
-				final float length = (float) Math.hypot(x2 - x1, z2 - z1);
-				if (length < 1E-4) {
-					continue;
-				}
-				// Outwards: the outline goes round anticlockwise seen from above when x is east and z south
-				final float normalX = (z2 - z1) / length;
-				final float normalZ = -(x2 - x1) / length;
-				final float u1 = x1 * Math.abs(normalZ) + z1 * Math.abs(normalX);
-				final float u2 = x2 * Math.abs(normalZ) + z2 * Math.abs(normalX);
-				vertex(consumer, pose, normal, x1, 0, z1, textures.side, u1, 1, normalX, 0, normalZ, sideLight);
-				vertex(consumer, pose, normal, x2, 0, z2, textures.side, u2, 1, normalX, 0, normalZ, sideLight);
-				vertex(consumer, pose, normal, x2, 1, z2, textures.side, u2, 0, normalX, 0, normalZ, sideLight);
-				vertex(consumer, pose, normal, x1, 1, z1, textures.side, u1, 0, normalX, 0, normalZ, sideLight);
+			sides(consumer, pose, normal, outline, recessHeight, 1, textures.side, sideLight);
+			if (recessHeight > 0) {
+				sides(consumer, pose, normal, lowerOutline, 0, recessHeight, textures.side, sideLight);
 			}
+		}
+	}
+
+	private static void sides(VertexConsumer consumer, Matrix4f pose, Matrix3f normal, double[] outline, float bottom, float top, TextureAtlasSprite sprite, int light) {
+		final int corners = outline.length / 2;
+		if (corners < 3) {
+			return;
+		}
+		for (int i = 0; i < corners; i++) {
+			final float x1 = (float) outline[i * 2], z1 = (float) outline[i * 2 + 1];
+			final float x2 = (float) outline[(i + 1) % corners * 2], z2 = (float) outline[(i + 1) % corners * 2 + 1];
+			final float length = (float) Math.hypot(x2 - x1, z2 - z1);
+			if (length < 1E-4) {
+				continue;
+			}
+			// Outwards: the outline goes round anticlockwise seen from above when x is east and z south
+			final float normalX = (z2 - z1) / length;
+			final float normalZ = -(x2 - x1) / length;
+			final float u1 = x1 * Math.abs(normalZ) + z1 * Math.abs(normalX);
+			final float u2 = x2 * Math.abs(normalZ) + z2 * Math.abs(normalX);
+			vertex(consumer, pose, normal, x1, bottom, z1, sprite, u1, 1 - bottom, normalX, 0, normalZ, light);
+			vertex(consumer, pose, normal, x2, bottom, z2, sprite, u2, 1 - bottom, normalX, 0, normalZ, light);
+			vertex(consumer, pose, normal, x2, top, z2, sprite, u2, 1 - top, normalX, 0, normalZ, light);
+			vertex(consumer, pose, normal, x1, top, z1, sprite, u1, 1 - top, normalX, 0, normalZ, light);
 		}
 	}
 
@@ -172,7 +205,8 @@ public class RenderPlatformEdge extends BlockEntityRendererMapper<BlockPlatformE
 	 */
 	private static Textures texturesOf(BlockState source) {
 		final BakedModel model = Minecraft.getInstance().getBlockRenderer().getBlockModel(source);
-		return TEXTURES.computeIfAbsent(model, key -> {
+		// By the model and then the state, as one model (a multipart one) can lay its faces turned for each facing
+		return TEXTURES.computeIfAbsent(model, key -> new HashMap<>()).computeIfAbsent(source, key -> {
 			final RandomSource random = RandomSource.create(42);
 			final List<BakedQuad> tops = new ArrayList<>(model.getQuads(source, Direction.UP, random));
 			if (tops.isEmpty()) {
@@ -182,9 +216,9 @@ public class RenderPlatformEdge extends BlockEntityRendererMapper<BlockPlatformE
 			if (sides.isEmpty()) {
 				model.getQuads(source, null, random).stream().filter(quad -> quad.getDirection().getAxis().isHorizontal()).forEach(sides::add);
 			}
-			final List<TextureAtlasSprite> layers = new ArrayList<>();
+			final List<Layer> layers = new ArrayList<>();
 			for (int i = 1; i < tops.size(); i++) {
-				layers.add(tops.get(i).getSprite());
+				layers.add(new Layer(tops.get(i)));
 			}
 			final TextureAtlasSprite side = sides.isEmpty() ? model.getParticleIcon() : sides.get(0).getSprite();
 			return new Textures(tops.isEmpty() ? side : tops.get(0).getSprite(), layers, side);
@@ -194,13 +228,71 @@ public class RenderPlatformEdge extends BlockEntityRendererMapper<BlockPlatformE
 	private static final class Textures {
 
 		private final TextureAtlasSprite top;
-		private final List<TextureAtlasSprite> layers;
+		private final List<Layer> layers;
 		private final TextureAtlasSprite side;
 
-		private Textures(TextureAtlasSprite top, List<TextureAtlasSprite> layers, TextureAtlasSprite side) {
+		private Textures(TextureAtlasSprite top, List<Layer> layers, TextureAtlasSprite side) {
 			this.top = top;
 			this.layers = layers;
 			this.side = side;
+		}
+	}
+
+	/**
+	 * A further layer of a block's top, with where on its texture each point of the top is as the block's model lays it
+	 * (turned with the block's facing), so the marking keeps the side the block has towards the track (0.89.3)
+	 */
+	private static final class Layer {
+
+		private final TextureAtlasSprite sprite;
+		/**
+		 * u = a x + b z + c, v = d x + e z + f, in block coordinates and the texture from 0 to 1; null when the quad does not
+		 * give it
+		 */
+		private final double[] uvOf;
+
+		private Layer(BakedQuad quad) {
+			sprite = quad.getSprite();
+			uvOf = mapping(quad);
+		}
+
+		private float[] uvOf(double x, double z) {
+			return new float[]{(float) (uvOf[0] * x + uvOf[1] * z + uvOf[2]), (float) (uvOf[3] * x + uvOf[4] * z + uvOf[5])};
+		}
+
+		private static double[] mapping(BakedQuad quad) {
+			final int[] vertices = quad.getVertices();
+			final int stride = vertices.length / 4;
+			if (stride < 6) {
+				return null;
+			}
+			final TextureAtlasSprite sprite = quad.getSprite();
+			final double uSpan = sprite.getU1() - sprite.getU0();
+			final double vSpan = sprite.getV1() - sprite.getV0();
+			if (uSpan == 0 || vSpan == 0) {
+				return null;
+			}
+			final double[] x = new double[3], z = new double[3], u = new double[3], v = new double[3];
+			for (int i = 0; i < 3; i++) {
+				x[i] = Float.intBitsToFloat(vertices[i * stride]);
+				z[i] = Float.intBitsToFloat(vertices[i * stride + 2]);
+				u[i] = (Float.intBitsToFloat(vertices[i * stride + 4]) - sprite.getU0()) / uSpan;
+				v[i] = (Float.intBitsToFloat(vertices[i * stride + 5]) - sprite.getV0()) / vSpan;
+			}
+			final double determinant = (x[1] - x[0]) * (z[2] - z[0]) - (x[2] - x[0]) * (z[1] - z[0]);
+			if (Math.abs(determinant) < 1E-6) {
+				return null;
+			}
+			final double[] result = new double[6];
+			for (int row = 0; row < 2; row++) {
+				final double[] w = row == 0 ? u : v;
+				final double a = ((w[1] - w[0]) * (z[2] - z[0]) - (w[2] - w[0]) * (z[1] - z[0])) / determinant;
+				final double b = ((x[1] - x[0]) * (w[2] - w[0]) - (x[2] - x[0]) * (w[1] - w[0])) / determinant;
+				result[row * 3] = a;
+				result[row * 3 + 1] = b;
+				result[row * 3 + 2] = w[0] - a * x[0] - b * z[0];
+			}
+			return result;
 		}
 	}
 

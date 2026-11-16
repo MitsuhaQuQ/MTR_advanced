@@ -89,6 +89,11 @@
 
 0.89.2 单放站台边丢标线（用户 2026-11-17 截图：手动单放的那一格顶面只有灰色，没有黄白线）：`BlockPlatformEdge.sourceOf` 遇到默认样式的站台边（`source` 为空）时返回 null，`sourceFor` 便当作没找到，转去取四周任一整格方块（玩家脚下的灰色方块），于是那一格画成没有标线的灰块。改为默认样式的站台边返回默认站台方块状态（和 `RenderPlatformEdge` 画空来源时一致）。只改服务端放方块，升第三位。
 
+0.89.4 站台边标线朝向和凹进形状（用户 2026-11-17：“让材质跟随基准的站台方块朝向”，选“取朝向判断哪边是边”；“包括形状也处理一下，一些站台方块边缘是凹进去的”）：
+- 标线朝向：`RenderPlatformEdge` 取来源方块模型顶面各层的四边形（`BakedQuad` 顶点的 x、z 和 u、v），解出方块坐标到贴图坐标的仿射映射（内部类 `Layer.uvOf`），所以转了朝向的模型（多部件模型按 facing 转 y）照样知道贴图哪一边在哪一侧。来源方块有 `HorizontalDirectionalBlock.FACING` 时，把它朝向的那一侧放在切口处：边块里离切口 t 格（0…1）、沿切线 s 的点，取来源方块里离朝向那一侧 t、沿那一侧 s 的点的贴图坐标。没有朝向的方块照旧（贴图 v=1 在切口）。贴图缓存改为按模型再按方块状态（同一个多部件模型各朝向的面不同）。
+- 凹进形状：`BlockPlatformEdge.recessOf(source)` 从来源方块的形状（`getShape(EmptyBlockGetter, ZERO)`）找朝向一侧在某高度以下缩进去的部分（MTR 凹进式站台：13/16 以下缩进 6/16），得到深度和高度（十六分之一格），按方块状态缓存。边块形状 `getShape` 读方块实体的来源：有凹进时，高度以下用切距减去深度的掩码（`recessedCut`），以上用原切距（`recessedShapeOf`，按角度、切距、深度、高度缓存）；`hasDynamicShape` 为真，游戏不按方块状态缓存形状。`RenderPlatformEdge` 同样画：上部外轮廓的侧面从凹进高度到顶，下部轮廓的侧面和底面从 0 到凹进高度，凹进处画顶板的底面。
+- 两边都改（形状服务端也用），存档和数据包不变，升第三位。资源不变。
+
 0.89.3 屏蔽门触发范围退后一格（用户 2026-11-17 “增加屏蔽门的触发范围到能退后一格”）：开门扫描原来从车中线往外 1–3 格找站台和门方块，现在到第 4 格（`Train.DOOR_SCAN_REACH`）；第 4 格只认屏蔽门、安全门（`BlockPSDAPGBase`），而且要朝着这条轨道（门方块放下时朝向轨道，`FACING` 与车往外的方向点积 < −0.5），窄岛式站台对面那排门不会被打开。判断放在 `Train.isDoorScanned`，三处扫描共用：`Train.scanDoors`、ANTE 的 `TrainMixin.onScanDoors`（`anteRunHooks` 开时；它额外认的 metropolis 站台和装饰方块站台仍只到第 3 格）、脚本用的 `MinecraftClientUtil.scanDoors`。另外精确站台边 `BlockPlatformEdge` 也算站台：只铺站台边的曲线站台以前扫不到站台，列车不开门。开门本身（`TrainServer.openDoors` 设门方块实体开度）不变。服务端客户端都改，但不改数据包和存档，升第三位。
 
 0.89.1 网页不拖选文字（用户 2026-11-16 “默认直接把非输入框的文字拖选全停用”）：`editor-web/src/styles.css` 的 base 层给 `body` 设 `user-select: none`（带 `-webkit-` 前缀），`input`、`textarea` 和可编辑的 `[contenteditable]` 设回 `text`。只改网页（构建结果在逻辑 jar 的 `assets/mtr/editor/`，不在资源包），升第三位。

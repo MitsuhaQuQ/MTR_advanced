@@ -16,6 +16,9 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtUtils;
 import net.minecraft.world.level.BlockGetter;
+import net.minecraft.world.level.EmptyBlockGetter;
+import net.minecraft.world.level.block.HorizontalDirectionalBlock;
+import net.minecraft.world.phys.AABB;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.RenderShape;
@@ -27,6 +30,9 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 import transitsim.geometry.PlatformEdges;
+
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * A platform block cut along the track beside it (0.88.0, diagonal and curved platforms, tier 2): the platform's part of
@@ -45,6 +51,12 @@ public class BlockPlatformEdge extends BlockMapper implements EntityBlockMapper 
 	public static final double REACH = 4.5;
 
 	private static final VoxelShape[] SHAPES = new VoxelShape[PlatformEdges.ANGLES * PlatformEdges.CUTS];
+	private static final Map<Long, VoxelShape> RECESSED_SHAPES = new ConcurrentHashMap<>();
+	/**
+	 * The recess of each source block, as {@link #recessOf} works it out; {@link #NO_RECESS} for none
+	 */
+	private static final Map<BlockState, int[]> RECESSES = new ConcurrentHashMap<>();
+	private static final int[] NO_RECESS = {0, 0};
 
 	public BlockPlatformEdge(Properties settings) {
 		super(settings);
@@ -58,7 +70,79 @@ public class BlockPlatformEdge extends BlockMapper implements EntityBlockMapper 
 
 	@Override
 	public VoxelShape getShape(BlockState state, BlockGetter world, BlockPos pos, CollisionContext context) {
-		return shapeOf(IBlock.getStatePropertySafe(state, ANGLE), IBlock.getStatePropertySafe(state, CUT));
+		final int angle = IBlock.getStatePropertySafe(state, ANGLE);
+		final int cut = IBlock.getStatePropertySafe(state, CUT);
+		final BlockEntity entity = world.getBlockEntity(pos);
+		final int[] recess = recessOf(entity instanceof TileEntityPlatformEdge ? ((TileEntityPlatformEdge) entity).getSource() : null);
+		return recess[0] == 0 ? shapeOf(angle, cut) : recessedShapeOf(angle, cut, recess);
+	}
+
+	/**
+	 * A platform block whose side towards the track is set back under its top (MTR's indented platforms, 0.89.3) has the
+	 * same recess along the cut: below its height the platform's part starts that much further from the track.
+	 *
+	 * @param source the block the edge block looks like, null for the default platform
+	 * @return the recess's depth and height, in sixteenths; {0, 0} for none, also for a block with no facing
+	 */
+	public static int[] recessOf(BlockState source) {
+		if (source == null || !source.hasProperty(HorizontalDirectionalBlock.FACING)) {
+			return NO_RECESS;
+		}
+		return RECESSES.computeIfAbsent(source, key -> {
+			final Direction facing = source.getValue(HorizontalDirectionalBlock.FACING);
+			final java.util.List<AABB> boxes;
+			try {
+				boxes = source.getShape(EmptyBlockGetter.INSTANCE, BlockPos.ZERO).toAabbs();
+			} catch (Exception ignored) {
+				return NO_RECESS;
+			}
+			// How far each box stays back from the side the block faces
+			final double[] setBack = new double[boxes.size()];
+			double height = 1;
+			for (int i = 0; i < boxes.size(); i++) {
+				final AABB box = boxes.get(i);
+				final double reach = facing.getStepX() > 0 ? box.maxX : facing.getStepX() < 0 ? 1 - box.minX : facing.getStepZ() > 0 ? box.maxZ : 1 - box.minZ;
+				setBack[i] = 1 - reach;
+				if (setBack[i] < 1E-3) {
+					height = Math.min(height, box.minY);
+				}
+			}
+			if (height < 1E-3 || height > 1 - 1E-3) {
+				return NO_RECESS;
+			}
+			double depth = 1;
+			for (int i = 0; i < boxes.size(); i++) {
+				if (boxes.get(i).minY < height - 1E-3) {
+					depth = Math.min(depth, setBack[i]);
+				}
+			}
+			final int depthSixteenths = (int) Math.round(depth * PlatformEdges.CELLS);
+			return depthSixteenths <= 0 ? NO_RECESS : new int[]{depthSixteenths, (int) Math.round(height * PlatformEdges.CELLS)};
+		});
+	}
+
+	/**
+	 * @return the cut below a recess: further from the track by its depth
+	 */
+	public static int recessedCut(int cut, int[] recess) {
+		return Math.max(0, cut - recess[0]);
+	}
+
+	private static VoxelShape recessedShapeOf(int angle, int cut, int[] recess) {
+		final long key = ((long) PlatformEdges.pack(angle, cut) << 16) | (long) recess[0] << 8 | recess[1];
+		return RECESSED_SHAPES.computeIfAbsent(key, ignored -> Shapes.or(
+				columns(PlatformEdges.mask(angle, recessedCut(cut, recess)), 0, recess[1]),
+				columns(PlatformEdges.mask(angle, cut), recess[1], PlatformEdges.CELLS)
+		).optimize());
+	}
+
+	/**
+	 * The shape depends on the block it looks like (its recess), not only the state, so the game must not keep one shape
+	 * per state
+	 */
+	@Override
+	public boolean hasDynamicShape() {
+		return true;
 	}
 
 	@Override
@@ -86,22 +170,31 @@ public class BlockPlatformEdge extends BlockMapper implements EntityBlockMapper 
 		final int index = PlatformEdges.pack(angle, cut);
 		VoxelShape shape = SHAPES[index];
 		if (shape == null) {
-			final boolean[] mask = PlatformEdges.mask(angle, cut);
-			shape = Shapes.empty();
-			for (int x = 0; x < PlatformEdges.CELLS; x++) {
-				int start = -1;
-				for (int z = 0; z <= PlatformEdges.CELLS; z++) {
-					final boolean solid = z < PlatformEdges.CELLS && mask[x * PlatformEdges.CELLS + z];
-					if (solid && start < 0) {
-						start = z;
-					} else if (!solid && start >= 0) {
-						shape = Shapes.or(shape, Block.box(x, 0, start, x + 1, 16, z));
-						start = -1;
-					}
+			shape = columns(PlatformEdges.mask(angle, cut), 0, PlatformEdges.CELLS).optimize();
+			SHAPES[index] = shape;
+		}
+		return shape;
+	}
+
+	/**
+	 * @return the mask's columns between two heights in sixteenths, each row joined along it
+	 */
+	private static VoxelShape columns(boolean[] mask, int bottom, int top) {
+		VoxelShape shape = Shapes.empty();
+		if (top <= bottom) {
+			return shape;
+		}
+		for (int x = 0; x < PlatformEdges.CELLS; x++) {
+			int start = -1;
+			for (int z = 0; z <= PlatformEdges.CELLS; z++) {
+				final boolean solid = z < PlatformEdges.CELLS && mask[x * PlatformEdges.CELLS + z];
+				if (solid && start < 0) {
+					start = z;
+				} else if (!solid && start >= 0) {
+					shape = Shapes.or(shape, Block.box(x, bottom, start, x + 1, top, z));
+					start = -1;
 				}
 			}
-			shape = shape.optimize();
-			SHAPES[index] = shape;
 		}
 		return shape;
 	}

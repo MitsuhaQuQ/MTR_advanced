@@ -44,6 +44,8 @@
 
 0.89.2 (server only): a platform edge block put down by itself against an edge block of the default look now takes the default platform's look with its edge marking, instead of the look of a plain block beside it.
 
+0.89.4 (client and server): a platform edge block lays the marking of the platform block it looks like with that block's facing side at the cut, so the yellow line and the tactile strip keep the sides they have on that block, and an edge block that looks like an indented platform is set back under its top along the cut as that block is.
+
 0.89.3 (client and server, no protocol change): a train opens screen doors and platform gates set back one block more than before (four blocks out from the car's centre instead of three), but only those facing its track, so a row of doors behind the cut edge blocks of a curved or diagonal platform opens and the far side of a narrow island platform does not. Platform edge blocks now count as platform for the doors, so trains open their doors at platforms laid only with edge blocks.
 
 0.89.1 (web editor only): text on the editor page can no longer be selected by dragging or double-clicking, so drags on tables, diagrams and lists never highlight it; input boxes and text areas still select and copy as before.
