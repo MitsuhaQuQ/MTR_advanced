@@ -125,6 +125,48 @@ class PlatformEdgesTest {
 	}
 
 	@Test
+	void aGapFillerAlongTheBlockGridKeepsWholeBlocks() {
+		// A rail along z through block centres at x = 0.5, a tunnel of radius 2: the line 2.5 out, at x = 3, a hair off
+		for (final double noise : new double[]{0, 1E-7, -1E-7}) {
+			assertEquals(PlatformEdges.FULL, PlatformEdges.fillerCutOf(2, 5, 0.5 + noise, 5.5, 1, 0, 2.5, true));
+			assertEquals(PlatformEdges.EMPTY, PlatformEdges.fillerCutOf(3, 5, 0.5 + noise, 5.5, 1, 0, 2.5, true));
+			assertEquals(PlatformEdges.EMPTY, PlatformEdges.fillerCutOf(2, 5, 0.5 + noise, 5.5, 1, 0, 2.5, false));
+			assertEquals(PlatformEdges.FULL, PlatformEdges.fillerCutOf(3, 5, 0.5 + noise, 5.5, 1, 0, 2.5, false));
+			// The other side of the rail
+			assertEquals(PlatformEdges.FULL, PlatformEdges.fillerCutOf(-2, 5, 0.5 + noise, 5.5, -1, 0, 2.5, true));
+			assertEquals(PlatformEdges.EMPTY, PlatformEdges.fillerCutOf(-3, 5, 0.5 + noise, 5.5, -1, 0, 2.5, true));
+		}
+	}
+
+	@Test
+	void aGapFillerOnADiagonalKeepsOneSideOfTheLineAndTheOtherSideIsTheRest() {
+		// A rail along x = z through the origin, the line 2.5 out towards +x -z
+		final double outX = 1, outZ = -1;
+		// The block with corner (1, -2) has its centre at (1.5, -1.5), 3 / sqrt 2 = 2.12 out: the line crosses it
+		final int inside = PlatformEdges.fillerCutOf(1, -2, 0, 0, outX, outZ, 2.5, true);
+		final int outside = PlatformEdges.fillerCutOf(1, -2, 0, 0, outX, outZ, 2.5, false);
+		assertTrue(inside >= 0 && outside >= 0);
+		final boolean[] insideMask = PlatformEdges.mask(PlatformEdges.angleOf(inside), PlatformEdges.cutOfPacked(inside));
+		final boolean[] outsideMask = PlatformEdges.mask(PlatformEdges.angleOf(outside), PlatformEdges.cutOfPacked(outside));
+		int kept = 0;
+		for (int x = 0; x < 16; x++) {
+			for (int z = 0; z < 16; z++) {
+				final double out = (1 + (x + 0.5) / 16 - (-2 + (z + 0.5) / 16)) / Math.sqrt(2);
+				// Away from the line by more than the cut's rounding, each column is on its own side
+				if (Math.abs(out - 2.5) > 0.07) {
+					assertEquals(out < 2.5, insideMask[x * 16 + z], "inside " + x + "," + z);
+					assertEquals(out > 2.5, outsideMask[x * 16 + z], "outside " + x + "," + z);
+				}
+				kept += insideMask[x * 16 + z] ? 1 : 0;
+			}
+		}
+		assertTrue(kept > 0 && kept < 256);
+		// Further in the whole block is the deck's, further out none of it
+		assertEquals(PlatformEdges.FULL, PlatformEdges.fillerCutOf(0, -1, 0, 0, outX, outZ, 2.5, true));
+		assertEquals(PlatformEdges.EMPTY, PlatformEdges.fillerCutOf(3, -3, 0, 0, outX, outZ, 2.5, true));
+	}
+
+	@Test
 	void aLineOnlyTouchingACornerGivesNoWall() {
 		// Edge at 45 degrees just touching the block's corner (0, 0)
 		final int cut = PlatformEdges.cutOf(0, 0, -0.01, -0.01, 1, 1);

@@ -15,6 +15,7 @@
 - `signedSagitta(前半车点, 该点, 后半车点, 站台方向)`：弦中点相对该点在站台方向上的分量，弯内为正、弯外为负、直线为 0。
 - `sagitta(车长, 半径)`、`edgeOffset(半车宽, 带符号矢高)`、`largestGap(带符号矢高)`、`smallestRadius(车长)`。
 - `cutOf(方块角, 边线上一点, 站台方向)`：返回 `pack(angle, cut)`，整格站台 `FULL`，整格不是 `EMPTY`。
+- `fillerCutOf(方块角, 轨道最近点, 指向方块的法向, 距离, 留内侧?)`（0.93.0）：填缝方块的切法，轨道旁平行线切方块，同样返回 `pack`/`FULL`/`EMPTY`；离整块或空块不到 `FILLER_SNAP`（半个十六分之一）取整块，正对网格的直线照旧整格。
 - `mask(angle, cut)`：16×16 柱，[x*16+z]，缓存。
 - `outline(angle, cut)`：站台部分的多边形顶点（0..1），最后两点为切口两端。
 - `wallSegment(angle, cut)`（0.90.0）：边线在方块内的一段 {x1,z1,x2,z2}，沿 `alongX/alongZ` 方向（朝轨道方向顺时针转 90°）；短于 `SHORTEST_WALL`（1/16）为 null。

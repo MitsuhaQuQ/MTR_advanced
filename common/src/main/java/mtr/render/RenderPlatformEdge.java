@@ -3,6 +3,7 @@ package mtr.render;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import mtr.Blocks;
+import mtr.block.BlockGapFiller;
 import mtr.block.BlockPlatformEdge;
 import mtr.block.IBlock;
 import mtr.mappings.BlockEntityRendererMapper;
@@ -35,29 +36,36 @@ import java.util.WeakHashMap;
 /**
  * Draws a platform edge block (0.88.0) as the platform block it was put against (0.89.0): the platform's part of the block
  * as a prism with that block's top and side textures, and the top's further layers (the edge marking of MTR's platforms)
- * laid along the cut, so the marking runs along the track whatever its direction, up to a block from the edge.
+ * laid along the cut, so the marking runs along the track whatever its direction, up to a block from the edge. Also draws
+ * a gap filler (0.93.0, {@link mtr.block.BlockGapFiller}) as the block it was cut from: the same prism, with no marking
+ * and no recess, and from nearer, as there may be many of them along a tunnel.
  */
-public class RenderPlatformEdge extends BlockEntityRendererMapper<BlockPlatformEdge.TileEntityPlatformEdge> {
+public class RenderPlatformEdge<T extends BlockPlatformEdge.TileEntityPlatformEdge> extends BlockEntityRendererMapper<T> {
 
 	/**
 	 * The textures of each block's model, by the model, so a reload of the resources makes them again
 	 */
 	private static final Map<BakedModel, Map<BlockState, Textures>> TEXTURES = new WeakHashMap<>();
 	private static final float MARKING_LIFT = 0.003F;
+	/**
+	 * How far gap fillers are drawn from, in blocks
+	 */
+	private static final int GAP_FILLER_VIEW_DISTANCE = 96;
 
 	public RenderPlatformEdge(BlockEntityRenderDispatcher dispatcher) {
 		super(dispatcher);
 	}
 
 	@Override
-	public void render(BlockPlatformEdge.TileEntityPlatformEdge entity, float tickDelta, PoseStack matrices, MultiBufferSource vertexConsumers, int light, int overlay) {
+	public void render(T entity, float tickDelta, PoseStack matrices, MultiBufferSource vertexConsumers, int light, int overlay) {
 		final Level world = entity.getLevel();
 		if (world == null) {
 			return;
 		}
 		final BlockPos pos = entity.getBlockPos();
 		final BlockState state = world.getBlockState(pos);
-		if (!(state.getBlock() instanceof BlockPlatformEdge)) {
+		final boolean gapFiller = state.getBlock() instanceof BlockGapFiller;
+		if (!(state.getBlock() instanceof BlockPlatformEdge) && !gapFiller) {
 			return;
 		}
 		final int angle = IBlock.getStatePropertySafe(state, BlockPlatformEdge.ANGLE);
@@ -70,7 +78,7 @@ public class RenderPlatformEdge extends BlockEntityRendererMapper<BlockPlatformE
 		final BlockState source = entity.getSource() == null ? Blocks.PLATFORM.get().defaultBlockState() : entity.getSource();
 		final Textures textures = texturesOf(source);
 		// Below a recess (MTR's indented platforms) the platform's part starts further from the track (0.89.4)
-		final int[] recess = BlockPlatformEdge.recessOf(entity.getSource());
+		final int[] recess = gapFiller ? new int[]{0, 0} : BlockPlatformEdge.recessOf(entity.getSource());
 		final float recessHeight = recess[0] == 0 ? 0 : (float) recess[1] / PlatformEdges.CELLS;
 		final double[] lowerOutline = recess[0] == 0 ? outline : PlatformEdges.outline(angle, BlockPlatformEdge.recessedCut(cut, recess));
 		final int topLight = LevelRenderer.getLightColor(world, pos.above());
@@ -97,7 +105,7 @@ public class RenderPlatformEdge extends BlockEntityRendererMapper<BlockPlatformE
 		final double towardsTrackZ = Math.sin(angle * 2 * Math.PI / PlatformEdges.ANGLES);
 		final double d = (double) (cut - PlatformEdges.CUT_CENTRE) / PlatformEdges.CELLS;
 		final double[] marked = clip(outline, (x, z) -> d - ((x - 0.5) * towardsTrackX + (z - 0.5) * towardsTrackZ) - PlatformEdges.MARKING_REACH);
-		if (marked.length >= 6) {
+		if (marked.length >= 6 && !gapFiller) {
 			// The side the source block faces is its side towards the track (0.89.4): that side of its marking is laid at the
 			// cut, wherever it is on the texture; a block with no facing has the texture's bottom (v = 1) there
 			final Direction facing = source.hasProperty(HorizontalDirectionalBlock.FACING) ? source.getValue(HorizontalDirectionalBlock.FACING) : null;
@@ -149,7 +157,7 @@ public class RenderPlatformEdge extends BlockEntityRendererMapper<BlockPlatformE
 
 	@Override
 	public int getViewDistance() {
-		return 256;
+		return this instanceof GapFiller ? GAP_FILLER_VIEW_DISTANCE : 256;
 	}
 
 	private static void fan(VertexConsumer consumer, Matrix4f pose, Matrix3f normal, double[] polygon, float y, TextureAtlasSprite sprite, int light, int up, Mapping mapping) {
@@ -304,5 +312,15 @@ public class RenderPlatformEdge extends BlockEntityRendererMapper<BlockPlatformE
 	@FunctionalInterface
 	private interface Mapping {
 		float[] uv(double x, double z);
+	}
+
+	/**
+	 * Gap fillers' drawing (0.93.0): the same, from nearer
+	 */
+	public static class GapFiller extends RenderPlatformEdge<BlockGapFiller.TileEntityGapFiller> {
+
+		public GapFiller(BlockEntityRenderDispatcher dispatcher) {
+			super(dispatcher);
+		}
 	}
 }

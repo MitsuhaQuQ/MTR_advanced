@@ -293,7 +293,14 @@ public class BlockPlatformEdge extends BlockMapper implements EntityBlockMapper 
 		private BlockState source;
 
 		public TileEntityPlatformEdge(BlockPos pos, BlockState state) {
-			super(BlockEntityTypes.PLATFORM_EDGE_TILE_ENTITY.get(), pos, state);
+			this(BlockEntityTypes.PLATFORM_EDGE_TILE_ENTITY.get(), pos, state);
+		}
+
+		/**
+		 * For a gap filler (0.93.0), which keeps its source the same way
+		 */
+		protected TileEntityPlatformEdge(net.minecraft.world.level.block.entity.BlockEntityType<?> type, BlockPos pos, BlockState state) {
+			super(type, pos, state);
 		}
 
 		/**

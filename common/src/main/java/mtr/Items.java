@@ -56,6 +56,7 @@ public interface Items {
 	RegistryObject<Item> RAIL_CONNECTOR_300 = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, false, RailType.DIAMOND));
 	RegistryObject<Item> RAIL_CONNECTOR_300_ONE_WAY = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, true, RailType.DIAMOND));
 	RegistryObject<Item> PLATFORM_EDGE = new RegistryObject<>(mtr.item.ItemPlatformEdge::new);
+	RegistryObject<Item> GAP_FILLER = new RegistryObject<>(mtr.item.ItemGapFiller::new);
 	RegistryObject<Item> CURVED_PSD_GLASS_1 = new RegistryObject<>(() -> new mtr.item.ItemCurvedPSD(Blocks.CURVED_PSD_GLASS_1::get, Blocks.CURVED_PSD_GLASS_1::get, false, true));
 	RegistryObject<Item> CURVED_PSD_GLASS_2 = new RegistryObject<>(() -> new mtr.item.ItemCurvedPSD(Blocks.CURVED_PSD_GLASS_2::get, Blocks.CURVED_PSD_GLASS_2::get, false, true));
 	RegistryObject<Item> CURVED_PSD_DOOR_1 = new RegistryObject<>(() -> new mtr.item.ItemCurvedPSD(Blocks.CURVED_PSD_DOOR_1::get, Blocks.CURVED_PSD_GLASS_1::get, true, true));

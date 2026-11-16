@@ -265,6 +265,9 @@ public class MTR implements IPacket {
 			// Cut along a curved or diagonal track, put down by its own item (0.88.0)
 			registerBlock.accept("platform_edge", Blocks.PLATFORM_EDGE);
 			registerItem.accept("platform_edge", Items.PLATFORM_EDGE);
+			// Cuts a block along a line beside a rail; the creators put the same blocks down (0.93.0)
+			registerBlock.accept("gap_filler", Blocks.GAP_FILLER);
+			registerItem.accept("gap_filler", Items.GAP_FILLER);
 			registerBlock.accept("curved_psd_glass", Blocks.CURVED_PSD_GLASS_1);
 			registerItem.accept("curved_psd_glass", Items.CURVED_PSD_GLASS_1);
 			registerBlock.accept("curved_psd_glass_2", Blocks.CURVED_PSD_GLASS_2);
@@ -433,6 +436,7 @@ public class MTR implements IPacket {
 			registerBlockEntityType.accept("curved_apg_glass", BlockEntityTypes.CURVED_APG_GLASS_TILE_ENTITY);
 			registerBlockEntityType.accept("curved_apg_door", BlockEntityTypes.CURVED_APG_DOOR_TILE_ENTITY);
 			registerBlockEntityType.accept("curved_psd_top", BlockEntityTypes.CURVED_PSD_TOP_TILE_ENTITY);
+			registerBlockEntityType.accept("gap_filler", BlockEntityTypes.GAP_FILLER_TILE_ENTITY);
 			registerBlockEntityType.accept("edge_screen_door", BlockEntityTypes.EDGE_SCREEN_DOOR_TILE_ENTITY);
 			registerBlockEntityType.accept("psd_door_1", BlockEntityTypes.PSD_DOOR_1_TILE_ENTITY);
 			registerBlockEntityType.accept("psd_door_2", BlockEntityTypes.PSD_DOOR_2_TILE_ENTITY);

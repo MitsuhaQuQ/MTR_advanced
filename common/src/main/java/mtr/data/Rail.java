@@ -1,5 +1,6 @@
 package mtr.data;
 
+import mtr.block.BlockGapFiller;
 import mtr.block.BlockNode;
 import mtr.block.BlockPSDAPGBase;
 import mtr.block.BlockPSDTop;
@@ -26,11 +27,11 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.world.phys.Vec3;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
+import transitsim.geometry.PlatformEdges;
 import transitsim.geometry.VerticalProfile;
 
 import java.io.IOException;
 import java.util.*;
-import java.util.function.Consumer;
 
 /**
  * One rail between two nodes. Its shape is up to two circular arcs (or straight lines), set from the nodes'
@@ -877,12 +878,24 @@ public class Rail extends SerializedDataBase {
 		private final LongOpenHashSet roundDonePos = new LongOpenHashSet();
 		private LongOpenHashSet roundTunnelPos;
 		private boolean roundTunnelCollected;
+		// Gap fillers (0.93.0): the cut of each block column by this creator's line, and the distance along the rail of the cross-section being worked on
+		private final Long2IntMap columnCuts = new Long2IntOpenHashMap();
+		private double sampleAlong;
 
 		// Distance along the rail between cross-sections, and across the rail between samples of one cross-section
 		private static final double INCREMENT = 0.1;
 		private static final double SIDE_INCREMENT = 0.01;
 		private static final double ROUND_TUNNEL_INCREMENT = 0.1;
 		private static final long TICK_BUDGET_NANOS = 2_000_000;
+		/**
+		 * How far beyond the radius a bridge or tunnel looks for blocks its line cuts, in blocks: a block crossed by a line
+		 * half a block beyond the radius reaches at most this far
+		 */
+		private static final double FILLER_BEYOND = 1.25;
+		/**
+		 * How far either way along the rail the point nearest a block column is looked for, from the cross-section that found it
+		 */
+		private static final double FILLER_SEARCH = 3;
 
 		public RailActions(Level world, Player player, RailActionType railActionType, Rail rail, int radius, int height, BlockState state) {
 			id = new Random().nextLong();
@@ -925,34 +938,83 @@ public class Rail extends SerializedDataBase {
 			packet.writeInt(railActionType.color);
 		}
 
+		/**
+		 * One block a creator works on (0.93.0): its place; whether it is in the cross-section's top row; whether the creators
+		 * before 0.93.0 worked only on the top row of its column (a sample between the edges, for a bridge or a wall), so the
+		 * rows below are only for a gap filler; and whether it was found only beyond the radius, where a gap filler's line may
+		 * still cut its block
+		 */
+		private interface RowAction {
+			void accept(Vec3 editPos, boolean top, boolean middle, boolean beyond);
+		}
+
+		// The tunnel's side is the line half a block beyond its radius, where it is along the block grid (0.93.0): blocks wholly
+		// inside it are cleared, and a whole block the line crosses is cut, the part beyond the line kept as a gap filler of it
 		private boolean createTunnel() {
-			return create(true, editPos -> {
+			final double line = radius + 0.5;
+			return create(true, FILLER_BEYOND, (editPos, top, middle, beyond) -> {
 				final BlockPos pos = RailwayData.newBlockPos(editPos);
-				if (blacklistedPos.add(pos)) {
+				final int cut = columnCut(pos, line, false);
+				if (cut == PlatformEdges.FULL || !blacklistedPos.add(pos)) {
+					return;
+				}
+				if (cut == PlatformEdges.EMPTY) {
+					setBlockIfChanged(pos, Blocks.AIR.defaultBlockState());
+					return;
+				}
+				final BlockState oldState = world.getBlockState(pos);
+				if (oldState.getBlock() instanceof BlockGapFiller || isProtected(oldState.getBlock())) {
+					return;
+				}
+				if (BlockGapFiller.canBeCutFrom(world, pos, oldState)) {
+					BlockGapFiller.put(world, pos, cut, oldState);
+				} else if (!beyond) {
 					setBlockIfChanged(pos, Blocks.AIR.defaultBlockState());
 				}
 			});
 		}
 
+		// The wall's inner face is the line half a block inside the radius, where it is along the block grid (0.93.0): below the
+		// top row a block the line crosses is a gap filler of the wall's block beyond the line; the top row stays whole blocks
 		private boolean createTunnelWall() {
-			return create(false, editPos -> {
+			final double line = radius - 0.5;
+			return create(false, 0, (editPos, top, middle, beyond) -> {
 				final BlockPos pos = RailwayData.newBlockPos(editPos);
+				final int cut = top || radius == 0 ? PlatformEdges.FULL : columnCut(pos, line, false);
+				if (cut == PlatformEdges.EMPTY || middle && !top && cut < 0) {
+					return;
+				}
 				if (blacklistedPos.add(pos)) {
-					setBlockIfChanged(pos, state);
+					if (cut >= 0) {
+						putFiller(pos, cut, state);
+					} else {
+						setBlockIfChanged(pos, state);
+					}
 				}
 			});
 		}
 
-		// Slabs fill the half block the rail passes through; a full block or a double slab goes under it, and the space above is cleared
+		// Slabs fill the half block the rail passes through; a full block or a double slab goes under it, and the space above is cleared.
+		// The deck's side is the line half a block beyond the radius, where it is along the block grid (0.93.0): a block the line
+		// crosses is a gap filler of the deck's block, the part towards the rail; a half slab is not cut
 		private boolean createBridge() {
-			return create(false, editPos -> {
+			final double line = radius + 0.5;
+			return create(false, FILLER_BEYOND, (editPos, top, middle, beyond) -> {
+				if (middle && !top) {
+					return;
+				}
 				final BlockPos pos = RailwayData.newBlockPos(editPos);
+				final int cut = columnCut(pos, line, true);
 				final boolean isTopHalf = editPos.y - Math.floor(editPos.y) >= 0.5;
+				final boolean halfSlab = isSlab && isTopHalf;
+				if (cut == PlatformEdges.EMPTY || beyond && (cut < 0 || halfSlab)) {
+					return;
+				}
 
 				final BlockPos placePos;
 				final BlockPos airPos;
 				final BlockState placeState;
-				if (isSlab && isTopHalf) {
+				if (halfSlab) {
 					placePos = pos;
 					airPos = pos.above();
 					placeState = state.setValue(SlabBlock.TYPE, SlabType.BOTTOM);
@@ -964,51 +1026,71 @@ public class Rail extends SerializedDataBase {
 
 				final int slabPriority = isTopHalf ? 2 : 1;
 				if (bridgePlacedState.get(placePos.asLong()) < slabPriority) {
-					setBlockIfChanged(placePos, placeState);
+					if (cut >= 0 && !halfSlab) {
+						putFiller(placePos, cut, placeState);
+					} else {
+						setBlockIfChanged(placePos, placeState);
+					}
 					bridgePlacedState.put(placePos.asLong(), slabPriority);
 				}
-				if (bridgePlacedState.get(airPos.asLong()) < 3) {
+				// Beyond the radius nothing was cleared before, and the deck's edge is no reason to start
+				if (!beyond && bridgePlacedState.get(airPos.asLong()) < 3) {
 					setBlockIfChanged(airPos, Blocks.AIR.defaultBlockState());
 					bridgePlacedState.put(airPos.asLong(), 3);
 				}
 			});
 		}
 
-		private boolean create(boolean includeMiddle, Consumer<Vec3> consumer) {
+		/**
+		 * @param beyond how far beyond the radius each cross-section also looks for blocks a gap filler's line cuts
+		 */
+		private boolean create(boolean includeMiddle, double beyond, RowAction action) {
 			final long startTime = System.nanoTime();
+			final int radiusSteps = (int) Math.round(radius / SIDE_INCREMENT);
+			final int steps = (int) Math.round((radius + beyond) / SIDE_INCREMENT);
 			while (System.nanoTime() - startTime < TICK_BUDGET_NANOS) {
 				final Vec3 pos1 = rail.getPosition(distance);
+				sampleAlong = distance;
 				distance += INCREMENT;
 				final Vec3 pos2 = rail.getPosition(distance);
 				final Vec3 vec3 = new Vec3(pos2.x - pos1.x, 0, pos2.z - pos1.z).normalize().yRot((float) Math.PI / 2);
 				final boolean wholeNumber = Math.floor(pos1.y) == Math.ceil(pos1.y);
+				final int topRow = wholeNumber ? height - 1 : height;
 
 				// Neighbouring samples usually fall in the same block column and would repeat the same work, so only the first one in each column is used
 				int lastBlockX = Integer.MIN_VALUE;
 				int lastBlockZ = Integer.MIN_VALUE;
 				boolean lastIsEdge = false;
-				for (double x = -radius; x <= radius; x += SIDE_INCREMENT) {
+				boolean lastIsBeyond = false;
+				for (int step = -steps; step <= steps; step++) {
+					final double x = step * SIDE_INCREMENT;
 					final double editX = pos1.x + vec3.x * x;
 					final double editZ = pos1.z + vec3.z * x;
 					final int blockX = (int) Math.floor(editX);
 					final int blockZ = (int) Math.floor(editZ);
-					final boolean isEdge = radius != 0 && Math.abs(x) > radius - SIDE_INCREMENT;
-					if (blockX == lastBlockX && blockZ == lastBlockZ && isEdge == lastIsEdge) {
+					final boolean isBeyond = Math.abs(step) > radiusSteps;
+					final boolean isEdge = !isBeyond && radius != 0 && Math.abs(step) == radiusSteps;
+					if (blockX == lastBlockX && blockZ == lastBlockZ && isEdge == lastIsEdge && isBeyond == lastIsBeyond) {
 						continue;
 					}
 					lastBlockX = blockX;
 					lastBlockZ = blockZ;
 					lastIsEdge = isEdge;
+					lastIsBeyond = isBeyond;
 
 					final Vec3 editPos = new Vec3(editX, pos1.y, editZ);
-					if (includeMiddle || isEdge) {
+					if (isBeyond || includeMiddle || isEdge) {
 						for (int y = 0; y <= height; y++) {
 							if (y < height || !wholeNumber) {
-								consumer.accept(editPos.add(0, y, 0));
+								action.accept(editPos.add(0, y, 0), y == topRow, false, isBeyond);
 							}
 						}
 					} else {
-						consumer.accept(editPos.add(0, Math.max(0, wholeNumber ? height - 1 : height), 0));
+						// The rows below are only for a gap filler (a wall's inner face)
+						for (int y = 0; y < topRow; y++) {
+							action.accept(editPos.add(0, y, 0), false, true, false);
+						}
+						action.accept(editPos.add(0, Math.max(0, topRow), 0), true, true, false);
 					}
 				}
 
@@ -1020,6 +1102,28 @@ public class Rail extends SerializedDataBase {
 
 			showProgressMessage(RailwayData.round(100 * distance / length, 1));
 			return false;
+		}
+
+		/**
+		 * @return the cut of a block's column by this creator's line, worked out once, from the rail's point nearest the column
+		 * near the cross-section that found it (0.93.0)
+		 */
+		private int columnCut(BlockPos pos, double line, boolean keepInside) {
+			final long key = BlockPos.asLong(pos.getX(), 0, pos.getZ());
+			if (!columnCuts.containsKey(key)) {
+				columnCuts.put(key, BlockGapFiller.cutOf(rail, pos.getX(), pos.getZ(), sampleAlong - FILLER_SEARCH, sampleAlong + FILLER_SEARCH, line, keepInside));
+			}
+			return columnCuts.get(key);
+		}
+
+		// A gap filler goes where a block may be replaced, or over a gap filler this or an earlier creator put down
+		private void putFiller(BlockPos pos, int cut, BlockState source) {
+			final BlockState oldState = world.getBlockState(pos);
+			final boolean filler = oldState.getBlock() instanceof BlockGapFiller;
+			if (!filler && (isProtected(oldState.getBlock()) || world.getBlockEntity(pos) != null)) {
+				return;
+			}
+			BlockGapFiller.put(world, pos, cut, source);
 		}
 
 		// The circle's centre is (radius - 1) blocks above the rail, so on level track the lowest cleared row is the rail's own row

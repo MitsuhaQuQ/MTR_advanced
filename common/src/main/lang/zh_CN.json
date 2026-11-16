@@ -662,5 +662,12 @@
   "gui.mtr.curved_psd_no_edge": "站台边线不经过这一格",
   "gui.mtr.curved_psd_no_room": "这里放不下门",
   "gui.mtr.curved_psd_cut": "已在这块玻璃右侧隔断",
-  "gui.mtr.curved_psd_joined": "已和右侧的玻璃接上"
+  "gui.mtr.curved_psd_joined": "已和右侧的玻璃接上",
+  "block.mtr.gap_filler": "填缝方块",
+  "item.mtr.gap_filler": "填缝方块",
+  "tooltip.mtr.gap_filler": "右键一块方块，沿最近的轨道、在点到的位置把它切开，留下靠轨道的一侧；潜行右键留下远离轨道的一侧。隧道、桥梁、隧道壁创建器在斜线和弯道边上也会放这种方块。",
+  "gui.mtr.gap_filler_no_rail": "20 格内没有轨道",
+  "gui.mtr.gap_filler_cannot_cut": "只能切没有方块实体的整块方块",
+  "gui.mtr.gap_filler_whole": "这一块整块都在留下的一侧",
+  "gui.mtr.gap_filler_nothing_left": "这一块没有在留下一侧的部分"
 }

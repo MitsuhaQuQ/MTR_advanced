@@ -110,7 +110,8 @@ public class MTRClient implements IPacket {
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.ARRIVAL_PROJECTOR_1_MEDIUM_TILE_ENTITY.get(), dispatcher -> new RenderPIDS<>(dispatcher, 12, 1, -15, 15, 16, 30, 46, false, false, PIDSType.ARRIVAL_PROJECTOR, 0xFF9900, 0xFF9900));
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.ARRIVAL_PROJECTOR_1_LARGE_TILE_ENTITY.get(), dispatcher -> new RenderPIDS<>(dispatcher, 16, 1, -15, 15, 16, 46, 46, false, false, PIDSType.ARRIVAL_PROJECTOR, 0xFF9900, 0xFF9900));
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.BOAT_NODE_TILE_ENTITY.get(), RenderBoatNode::new);
-			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.PLATFORM_EDGE_TILE_ENTITY.get(), mtr.render.RenderPlatformEdge::new);
+			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.PLATFORM_EDGE_TILE_ENTITY.get(), mtr.render.RenderPlatformEdge<mtr.block.BlockPlatformEdge.TileEntityPlatformEdge>::new);
+			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.GAP_FILLER_TILE_ENTITY.get(), mtr.render.RenderPlatformEdge.GapFiller::new);
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.EDGE_SCREEN_DOOR_TILE_ENTITY.get(), mtr.render.RenderEdgeScreenDoor::new);
 			// Curved screen doors and gates (0.91.0): the straight blocks' drawing, bent
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.CURVED_PSD_GLASS_1_TILE_ENTITY.get(), dispatcher -> new mtr.render.RenderCurvedPSD<>(dispatcher, null));

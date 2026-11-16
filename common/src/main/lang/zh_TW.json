@@ -663,5 +663,12 @@
   "gui.mtr.curved_psd_no_edge": "月台邊線不經過這一格",
   "gui.mtr.curved_psd_no_room": "這裡放不下門",
   "gui.mtr.curved_psd_cut": "已在這塊玻璃右側隔斷",
-  "gui.mtr.curved_psd_joined": "已和右側的玻璃接上"
+  "gui.mtr.curved_psd_joined": "已和右側的玻璃接上",
+  "block.mtr.gap_filler": "填縫方塊",
+  "item.mtr.gap_filler": "填縫方塊",
+  "tooltip.mtr.gap_filler": "右鍵一塊方塊，沿最近的軌道、在點到的位置把它切開，留下靠軌道的一側；潛行右鍵留下遠離軌道的一側。隧道、橋樑、隧道壁建造器在斜線和彎道邊上也會放這種方塊。",
+  "gui.mtr.gap_filler_no_rail": "20 格內沒有軌道",
+  "gui.mtr.gap_filler_cannot_cut": "只能切沒有方塊實體的整塊方塊",
+  "gui.mtr.gap_filler_whole": "這一塊整塊都在留下的一側",
+  "gui.mtr.gap_filler_nothing_left": "這一塊沒有在留下一側的部分"
 }

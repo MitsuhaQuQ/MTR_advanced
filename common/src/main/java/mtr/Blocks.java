@@ -68,6 +68,8 @@ public interface Blocks {
 	RegistryObject<Block> CURVED_PSD_GLASS_2 = new RegistryObject<>(() -> new mtr.block.BlockCurvedPSD.PSDGlass(1));
 	RegistryObject<Block> CURVED_PSD_DOOR_1 = new RegistryObject<>(() -> new mtr.block.BlockCurvedPSD.PSDDoor(0));
 	RegistryObject<Block> CURVED_PSD_DOOR_2 = new RegistryObject<>(() -> new mtr.block.BlockCurvedPSD.PSDDoor(1));
+	// Cut along a line beside a rail, for the creators' gaps beside diagonal and curved track (0.93.0)
+	RegistryObject<Block> GAP_FILLER = new RegistryObject<>(() -> new mtr.block.BlockGapFiller(Material.properties(Material.STONE, MaterialColor.STONE).strength(1.5F, 6).noOcclusion()));
 	RegistryObject<Block> CURVED_PSD_TOP = new RegistryObject<>(mtr.block.BlockCurvedPSD.PSDTop::new);
 	RegistryObject<Block> CURVED_APG_GLASS = new RegistryObject<>(mtr.block.BlockCurvedPSD.APGGlass::new);
 	RegistryObject<Block> CURVED_APG_DOOR = new RegistryObject<>(mtr.block.BlockCurvedPSD.APGDoor::new);

@@ -663,5 +663,12 @@
   "gui.mtr.curved_psd_no_edge": "月台邊線唔經過呢一格",
   "gui.mtr.curved_psd_no_room": "呢度放唔落門",
   "gui.mtr.curved_psd_cut": "已喺呢塊玻璃右邊隔斷",
-  "gui.mtr.curved_psd_joined": "已同右邊嘅玻璃接返"
+  "gui.mtr.curved_psd_joined": "已同右邊嘅玻璃接返",
+  "block.mtr.gap_filler": "填縫方塊",
+  "item.mtr.gap_filler": "填縫方塊",
+  "tooltip.mtr.gap_filler": "右鍵一塊方塊，沿最近嘅路軌、喺點到嘅位置將佢切開，留低近路軌嗰邊；潛行右鍵留低遠離路軌嗰邊。隧道、橋樑、隧道壁建造器喺斜線同彎位邊都會放呢種方塊。",
+  "gui.mtr.gap_filler_no_rail": "20 格內冇路軌",
+  "gui.mtr.gap_filler_cannot_cut": "只可以切冇方塊實體嘅整塊方塊",
+  "gui.mtr.gap_filler_whole": "成塊都喺留低嗰邊",
+  "gui.mtr.gap_filler_nothing_left": "呢塊冇部分喺留低嗰邊"
 }

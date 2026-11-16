@@ -132,6 +132,51 @@ public final class PlatformEdges {
 	}
 
 	/**
+	 * How near a whole or an empty block a gap filler's cut still counts as one, in blocks (0.93.0): under half a
+	 * sixteenth, so a line along the block grid that the rail's sums put a hair off still gives whole blocks
+	 */
+	public static final double FILLER_SNAP = 0.5 / CELLS;
+
+	/**
+	 * The cut of a block by a gap filler's line (0.93.0): the line a tunnel, bridge or wall creator should have kept to, a
+	 * line beside a rail at a distance from it, square to the rail where it passes nearest the block. The kept part is the
+	 * filler's, in the same angle and cut as a platform edge block's.
+	 *
+	 * @param blockX     the block's corner (its smallest x and z)
+	 * @param railX      the point of the rail nearest the block
+	 * @param outX       a horizontal direction square to the rail there, from it towards the block (any length)
+	 * @param distance   the line's distance from the rail, in blocks
+	 * @param keepInside whether the part between the line and the rail is kept (a bridge's deck), else the part beyond it
+	 *                   (the ground a tunnel leaves)
+	 * @return as {@link #cutOf}: {@link #FULL} when the whole block is kept, {@link #EMPTY} when none of it is
+	 */
+	public static int fillerCutOf(int blockX, int blockZ, double railX, double railZ, double outX, double outZ, double distance, boolean keepInside) {
+		final double outLength = Math.hypot(outX, outZ);
+		if (outLength == 0) {
+			return keepInside ? FULL : EMPTY;
+		}
+		final double unitX = outX / outLength;
+		final double unitZ = outZ / outLength;
+		final double lineX = railX + unitX * distance;
+		final double lineZ = railZ + unitZ * distance;
+		// Kept where (q - centre) · cutTowards <= d, cutTowards pointing from the kept part to the line
+		final double cutTowardsX = keepInside ? unitX : -unitX;
+		final double cutTowardsZ = keepInside ? unitZ : -unitZ;
+		final double d = (lineX - blockX - 0.5) * cutTowardsX + (lineZ - blockZ - 0.5) * cutTowardsZ;
+		final double halfExtent = (Math.abs(cutTowardsX) + Math.abs(cutTowardsZ)) / 2;
+		if (d >= halfExtent - FILLER_SNAP) {
+			return FULL;
+		}
+		if (d <= -halfExtent + FILLER_SNAP) {
+			return EMPTY;
+		}
+		final double angle = Math.atan2(cutTowardsZ, cutTowardsX);
+		final int angleIndex = Math.floorMod((int) Math.round(angle / (2 * Math.PI) * ANGLES), ANGLES);
+		final int cutIndex = Math.max(0, Math.min(CUTS - 1, (int) Math.round(d * CELLS) + CUT_CENTRE));
+		return pack(angleIndex, cutIndex);
+	}
+
+	/**
 	 * How far from the edge the platform's edge marking reaches, in blocks: a block nearer the edge than this keeps the cut
 	 * line even when wholly platform
 	 */

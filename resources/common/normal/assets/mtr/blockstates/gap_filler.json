@@ -1,0 +1,7 @@
+{
+	"variants": {
+		"": {
+			"model": "mtr:block/gap_filler"
+		}
+	}
+}
