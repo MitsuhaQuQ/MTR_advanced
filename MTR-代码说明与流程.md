@@ -87,6 +87,8 @@
 
 0.89.0 精确站台边跟随站台样式（用户 2026-11-16 选“放下时记住旁边站台的样式”）：`BlockPlatformEdge.TileEntityPlatformEdge` 改为 `BlockEntityClientSerializableMapper`，存 `source`（方块状态，`NbtUtils`），随方块数据发给玩家。`BlockPlatformEdge.sourceFor`：点击的方块是站台或站台边（取其 source）就用它，否则四周的站台/站台边，否则四周任一整格方块；都没有为 null（画默认港式站台）。`ItemPlatformEdge` 单放和铺边都设置，铺边整条用同一个来源。`RenderPlatformEdge` 从来源方块的模型取贴图（`getQuads` 向上的第一个面为顶面，其余向上的面为顶层标线，北面为侧面），按模型缓存（`WeakHashMap`，资源重载后换新），用方块图集画；顶层标线沿切口铺：横向从切口处 v=1 到一格内 v=0，纵向沿切口居中，超出一格的部分裁掉。组件 `PlatformEdges.CUT_CENTRE` 改为 28（±1.75 格），`MARKING_REACH` 1：离边一格内的整格方块也保留切线方向，好画标线，再往里才 `FULL`。方块实体存档多了内容，升第二位。
 
+0.89.2 单放站台边丢标线（用户 2026-11-17 截图：手动单放的那一格顶面只有灰色，没有黄白线）：`BlockPlatformEdge.sourceOf` 遇到默认样式的站台边（`source` 为空）时返回 null，`sourceFor` 便当作没找到，转去取四周任一整格方块（玩家脚下的灰色方块），于是那一格画成没有标线的灰块。改为默认样式的站台边返回默认站台方块状态（和 `RenderPlatformEdge` 画空来源时一致）。只改服务端放方块，升第三位。
+
 0.89.1 网页不拖选文字（用户 2026-11-16 “默认直接把非输入框的文字拖选全停用”）：`editor-web/src/styles.css` 的 base 层给 `body` 设 `user-select: none`（带 `-webkit-` 前缀），`input`、`textarea` 和可编辑的 `[contenteditable]` 设回 `text`。只改网页（构建结果在逻辑 jar 的 `assets/mtr/editor/`，不在资源包），升第三位。
 
 0.88.0 斜线、曲线站台（用户 2026-11-16 选一、二档一起做）：

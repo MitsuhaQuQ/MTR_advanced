@@ -180,7 +180,10 @@ public class BlockPlatformEdge extends BlockMapper implements EntityBlockMapper 
 		final BlockState state = world.getBlockState(pos);
 		if (state.getBlock() instanceof BlockPlatformEdge) {
 			final BlockEntity entity = world.getBlockEntity(pos);
-			return entity instanceof TileEntityPlatformEdge ? ((TileEntityPlatformEdge) entity).getSource() : null;
+			// An edge block with no source of its own looks like the default platform, so that is its look to copy, not
+			// a reason to look further and take a plain block beside it (0.89.2)
+			final BlockState source = entity instanceof TileEntityPlatformEdge ? ((TileEntityPlatformEdge) entity).getSource() : null;
+			return source == null ? Blocks.PLATFORM.get().defaultBlockState() : source;
 		}
 		if (state.getBlock() instanceof BlockPlatform || anyWholeBlock && !state.isAir() && state.isCollisionShapeFullBlock(world, pos)) {
 			return state;
