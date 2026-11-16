@@ -181,6 +181,13 @@ public class BlockPSDTop extends BlockDirectionalMapper implements EntityBlockMa
 		public TileEntityPSDTop(BlockPos pos, BlockState state) {
 			super(BlockEntityTypes.PSD_TOP_TILE_ENTITY.get(), pos, state);
 		}
+
+		/**
+		 * For the curved screen doors (0.91.0), which have block entity types of their own
+		 */
+		protected TileEntityPSDTop(net.minecraft.world.level.block.entity.BlockEntityType<?> type, BlockPos pos, BlockState state) {
+			super(type, pos, state);
+		}
 	}
 
 	public static class TileEntityRouteBase extends BlockEntityMapper {

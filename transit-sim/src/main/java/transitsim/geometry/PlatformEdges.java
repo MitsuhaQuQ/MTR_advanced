@@ -308,4 +308,98 @@ public final class PlatformEdges {
 	public static double alongZ(int angleIndex) {
 		return Math.cos(angleIndex * 2 * Math.PI / ANGLES);
 	}
+
+	/**
+	 * @return which of the block's columns lie between the given depths behind the edge line, in sixteenths (0.91.0): the
+	 * shape of an ordinary screen door's part (glass, leaf, top) bent onto the line, as [x * 16 + z]
+	 */
+	public static boolean[] wallMask(int angleIndex, int cutIndex, int fromCells, int toCells) {
+		final boolean[] mask = new boolean[CELLS * CELLS];
+		final double angle = angleIndex * 2 * Math.PI / ANGLES;
+		final double towardsTrackX = Math.cos(angle);
+		final double towardsTrackZ = Math.sin(angle);
+		final double d = (double) (cutIndex - CUT_CENTRE) / CELLS;
+		for (int x = 0; x < CELLS; x++) {
+			for (int z = 0; z < CELLS; z++) {
+				final double behind = d - (((x + 0.5) / CELLS - 0.5) * towardsTrackX + ((z + 0.5) / CELLS - 0.5) * towardsTrackZ);
+				mask[x * CELLS + z] = behind >= (double) fromCells / CELLS && behind < (double) toCells / CELLS;
+			}
+		}
+		return mask;
+	}
+
+	/**
+	 * @return the bend of a block's piece of the edge line, null when the line crosses less than {@link #SHORTEST_WALL} of
+	 * the block
+	 */
+	public static Bend bend(int angleIndex, int cutIndex) {
+		final double[] segment = wallSegment(angleIndex, cutIndex);
+		return segment == null ? null : new Bend(segment, angleIndex);
+	}
+
+	/**
+	 * Bends what an ordinary screen door draws in its block onto a piece of the edge line (0.91.0). A point of the straight
+	 * door keeps its height and its depth back from the block side towards the track; its place across the block (along the
+	 * direction its facing turned a quarter clockwise) becomes its place along the piece. So a straight door on a straight
+	 * edge along the block side stays where it is.
+	 * <p>
+	 * Block coordinates go from 0 to 1. The facing is the straight door direction towards the track.
+	 */
+	public static final class Bend {
+
+		public final double startX, startZ, endX, endZ;
+		public final double towardsTrackX, towardsTrackZ;
+
+		private Bend(double[] segment, int angleIndex) {
+			startX = segment[0];
+			startZ = segment[1];
+			endX = segment[2];
+			endZ = segment[3];
+			towardsTrackX = Math.cos(angleIndex * 2 * Math.PI / ANGLES);
+			towardsTrackZ = Math.sin(angleIndex * 2 * Math.PI / ANGLES);
+		}
+
+		/**
+		 * @return where a point of the straight door goes, as {x, z}
+		 */
+		public double[] point(int facingX, int facingZ, double x, double z) {
+			final double back = 0.5 - ((x - 0.5) * facingX + (z - 0.5) * facingZ);
+			final double along = 0.5 + (x - 0.5) * -facingZ + (z - 0.5) * facingX;
+			return new double[]{startX + (endX - startX) * along - towardsTrackX * back, startZ + (endZ - startZ) * along - towardsTrackZ * back};
+		}
+
+		/**
+		 * @return where a horizontal direction of the straight door goes (not scaled to a unit), as {x, z}
+		 */
+		public double[] direction(int facingX, int facingZ, double x, double z) {
+			final double towardsTrack = x * facingX + z * facingZ;
+			final double along = x * -facingZ + z * facingX;
+			final double length = Math.hypot(endX - startX, endZ - startZ);
+			final double alongX = length == 0 ? 0 : (endX - startX) / length;
+			final double alongZ = length == 0 ? 0 : (endZ - startZ) / length;
+			return new double[]{alongX * along + towardsTrackX * towardsTrack, alongZ * along + towardsTrackZ * towardsTrack};
+		}
+
+		/**
+		 * @return a point just beyond the piece end on the left (against the line direction) or the right, in block
+		 * coordinates, to find the next block of the door along the line
+		 */
+		public double[] beyond(boolean left) {
+			final double length = Math.hypot(endX - startX, endZ - startZ);
+			final double stepX = length == 0 ? 0 : (endX - startX) / length * 0.05;
+			final double stepZ = length == 0 ? 0 : (endZ - startZ) / length * 0.05;
+			// A little back from the line too, on the platform side, so a line on a block edge picks the right block
+			final double backX = -towardsTrackX * 0.01;
+			final double backZ = -towardsTrackZ * 0.01;
+			return left ? new double[]{startX - stepX + backX, startZ - stepZ + backZ} : new double[]{endX + stepX + backX, endZ + stepZ + backZ};
+		}
+
+		/**
+		 * @return the horizontal direction towards the track of the four nearest the line, as {x, z}: the facing given to
+		 * the curved door block state for the rules of the straight one
+		 */
+		public int[] nearestFacing() {
+			return Math.abs(towardsTrackX) >= Math.abs(towardsTrackZ) ? new int[]{(int) Math.signum(towardsTrackX), 0} : new int[]{0, (int) Math.signum(towardsTrackZ)};
+		}
+	}
 }

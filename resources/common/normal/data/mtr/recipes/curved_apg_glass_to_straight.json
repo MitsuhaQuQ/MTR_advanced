@@ -1,0 +1,12 @@
+{
+	"type": "minecraft:crafting_shapeless",
+	"ingredients": [
+		{
+			"item": "mtr:curved_apg_glass"
+		}
+	],
+	"result": {
+		"item": "mtr:apg_glass",
+		"count": 1
+	}
+}

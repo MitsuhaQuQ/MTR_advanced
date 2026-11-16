@@ -71,7 +71,7 @@ public abstract class RenderRouteBase<T extends BlockPSDTop.TileEntityRouteBase>
 				final int leftBlocks = getTextureNumber(world, pos, facing, true);
 				final int rightBlocks = getTextureNumber(world, pos, facing, false);
 				final int color = getShadingColor(facing, ARGB_WHITE);
-				final RenderType renderType = getRenderType(world, pos.relative(facing.getCounterClockWise(), leftBlocks), state);
+				final RenderType renderType = getRenderType(world, mtr.block.CurvedPSD.walk(world, pos, true, leftBlocks), state);
 
 				if ((renderType == RenderType.ARROW || renderType == RenderType.ROUTE) && IBlock.getStatePropertySafe(state, SIDE_EXTENDED) != EnumSide.SINGLE) {
 					final float width = leftBlocks + rightBlocks + 1 - sidePadding * 2;
@@ -121,14 +121,18 @@ public abstract class RenderRouteBase<T extends BlockPSDTop.TileEntityRouteBase>
 
 	protected abstract void renderAdditional(StoredMatrixTransformations storedMatrixTransformations, long platformId, BlockState state, int leftBlocks, int rightBlocks, Direction facing, int color, int light);
 
+	/**
+	 * Counts the blocks of the run beside this one on a side. Since 0.91.0 the next block is found along the bent edge line
+	 * for a curved screen door ({@link mtr.block.CurvedPSD#walk}), and curved and straight blocks of one kind make one run.
+	 */
 	private int getTextureNumber(BlockGetter world, BlockPos pos, Direction facing, boolean searchLeft) {
 		int number = 0;
 		final Block thisBlock = world.getBlockState(pos).getBlock();
 
 		while (true) {
-			final BlockState state = world.getBlockState(pos.relative(searchLeft ? facing.getCounterClockWise() : facing.getClockWise(), number));
+			final BlockState state = world.getBlockState(mtr.block.CurvedPSD.walk(world, pos, searchLeft, number));
 
-			if (state.getBlock() == thisBlock) {
+			if (mtr.block.CurvedPSD.sameKind(state.getBlock(), thisBlock)) {
 				final boolean isLeft = isLeft(state);
 				final boolean isRight = isRight(state);
 

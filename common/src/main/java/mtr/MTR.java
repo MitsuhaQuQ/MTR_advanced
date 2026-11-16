@@ -265,6 +265,19 @@ public class MTR implements IPacket {
 			// Cut along a curved or diagonal track, put down by its own item (0.88.0)
 			registerBlock.accept("platform_edge", Blocks.PLATFORM_EDGE);
 			registerItem.accept("platform_edge", Items.PLATFORM_EDGE);
+			registerBlock.accept("curved_psd_glass", Blocks.CURVED_PSD_GLASS_1);
+			registerItem.accept("curved_psd_glass", Items.CURVED_PSD_GLASS_1);
+			registerBlock.accept("curved_psd_glass_2", Blocks.CURVED_PSD_GLASS_2);
+			registerItem.accept("curved_psd_glass_2", Items.CURVED_PSD_GLASS_2);
+			registerBlock.accept("curved_psd_door", Blocks.CURVED_PSD_DOOR_1);
+			registerItem.accept("curved_psd_door", Items.CURVED_PSD_DOOR_1);
+			registerBlock.accept("curved_psd_door_2", Blocks.CURVED_PSD_DOOR_2);
+			registerItem.accept("curved_psd_door_2", Items.CURVED_PSD_DOOR_2);
+			registerBlock.accept("curved_apg_glass", Blocks.CURVED_APG_GLASS);
+			registerItem.accept("curved_apg_glass", Items.CURVED_APG_GLASS);
+			registerBlock.accept("curved_apg_door", Blocks.CURVED_APG_DOOR);
+			registerItem.accept("curved_apg_door", Items.CURVED_APG_DOOR);
+			registerBlock.accept("curved_psd_top", Blocks.CURVED_PSD_TOP);
 			registerBlock.accept("edge_screen_door", Blocks.EDGE_SCREEN_DOOR);
 			registerItem.accept("edge_screen_door", Items.EDGE_SCREEN_DOOR);
 			registerBlockItem.accept("platform_na_1", Blocks.PLATFORM_NA_1, CreativeModeTabs.STATION_BUILDING_BLOCKS);
@@ -413,6 +426,13 @@ public class MTR implements IPacket {
 			registerBlockEntityType.accept("rail_node", BlockEntityTypes.RAIL_NODE_TILE_ENTITY);
 			registerBlockEntityType.accept("clock", BlockEntityTypes.CLOCK_TILE_ENTITY);
 			registerBlockEntityType.accept("platform_edge", BlockEntityTypes.PLATFORM_EDGE_TILE_ENTITY);
+			registerBlockEntityType.accept("curved_psd_glass", BlockEntityTypes.CURVED_PSD_GLASS_1_TILE_ENTITY);
+			registerBlockEntityType.accept("curved_psd_glass_2", BlockEntityTypes.CURVED_PSD_GLASS_2_TILE_ENTITY);
+			registerBlockEntityType.accept("curved_psd_door", BlockEntityTypes.CURVED_PSD_DOOR_1_TILE_ENTITY);
+			registerBlockEntityType.accept("curved_psd_door_2", BlockEntityTypes.CURVED_PSD_DOOR_2_TILE_ENTITY);
+			registerBlockEntityType.accept("curved_apg_glass", BlockEntityTypes.CURVED_APG_GLASS_TILE_ENTITY);
+			registerBlockEntityType.accept("curved_apg_door", BlockEntityTypes.CURVED_APG_DOOR_TILE_ENTITY);
+			registerBlockEntityType.accept("curved_psd_top", BlockEntityTypes.CURVED_PSD_TOP_TILE_ENTITY);
 			registerBlockEntityType.accept("edge_screen_door", BlockEntityTypes.EDGE_SCREEN_DOOR_TILE_ENTITY);
 			registerBlockEntityType.accept("psd_door_1", BlockEntityTypes.PSD_DOOR_1_TILE_ENTITY);
 			registerBlockEntityType.accept("psd_door_2", BlockEntityTypes.PSD_DOOR_2_TILE_ENTITY);

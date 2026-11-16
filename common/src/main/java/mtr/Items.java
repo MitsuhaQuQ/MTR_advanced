@@ -56,6 +56,12 @@ public interface Items {
 	RegistryObject<Item> RAIL_CONNECTOR_300 = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, false, RailType.DIAMOND));
 	RegistryObject<Item> RAIL_CONNECTOR_300_ONE_WAY = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, true, RailType.DIAMOND));
 	RegistryObject<Item> PLATFORM_EDGE = new RegistryObject<>(mtr.item.ItemPlatformEdge::new);
+	RegistryObject<Item> CURVED_PSD_GLASS_1 = new RegistryObject<>(() -> new mtr.item.ItemCurvedPSD(Blocks.CURVED_PSD_GLASS_1::get, Blocks.CURVED_PSD_GLASS_1::get, false, true));
+	RegistryObject<Item> CURVED_PSD_GLASS_2 = new RegistryObject<>(() -> new mtr.item.ItemCurvedPSD(Blocks.CURVED_PSD_GLASS_2::get, Blocks.CURVED_PSD_GLASS_2::get, false, true));
+	RegistryObject<Item> CURVED_PSD_DOOR_1 = new RegistryObject<>(() -> new mtr.item.ItemCurvedPSD(Blocks.CURVED_PSD_DOOR_1::get, Blocks.CURVED_PSD_GLASS_1::get, true, true));
+	RegistryObject<Item> CURVED_PSD_DOOR_2 = new RegistryObject<>(() -> new mtr.item.ItemCurvedPSD(Blocks.CURVED_PSD_DOOR_2::get, Blocks.CURVED_PSD_GLASS_2::get, true, true));
+	RegistryObject<Item> CURVED_APG_GLASS = new RegistryObject<>(() -> new mtr.item.ItemCurvedPSD(Blocks.CURVED_APG_GLASS::get, Blocks.CURVED_APG_GLASS::get, false, false));
+	RegistryObject<Item> CURVED_APG_DOOR = new RegistryObject<>(() -> new mtr.item.ItemCurvedPSD(Blocks.CURVED_APG_DOOR::get, Blocks.CURVED_APG_GLASS::get, true, false));
 	RegistryObject<Item> EDGE_SCREEN_DOOR = new RegistryObject<>(mtr.item.ItemEdgeScreenDoor::new);
 	RegistryObject<Item> RAIL_CONNECTOR_PLATFORM = new RegistryObject<>(() -> new ItemRailModifier(true, true, true, false, RailType.PLATFORM));
 	RegistryObject<Item> RAIL_CONNECTOR_SIDING = new RegistryObject<>(() -> new ItemRailModifier(true, true, true, false, RailType.SIDING));

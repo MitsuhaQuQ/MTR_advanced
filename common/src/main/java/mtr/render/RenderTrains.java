@@ -423,7 +423,9 @@ public class RenderTrains extends EntityRendererMapper<EntitySeat> implements IG
 		scheduleRender(resourceLocation, priority, QueuedRenderLayer.EXTERIOR, callback);
 	}
 
-	public static void scheduleRender(ResourceLocation resourceLocation, boolean priority, QueuedRenderLayer queuedRenderLayer, BiConsumer<PoseStack, VertexConsumer> callback) {
+	public static void scheduleRender(ResourceLocation resourceLocation, boolean priority, QueuedRenderLayer queuedRenderLayer, BiConsumer<PoseStack, VertexConsumer> callbackStraight) {
+		// Drawn for a curved screen door (0.91.0): bent onto its piece of the edge line when drawn
+		final BiConsumer<PoseStack, VertexConsumer> callback = BendingVertexConsumer.wrap(callbackStraight);
 		final Map<ResourceLocation, Set<BiConsumer<PoseStack, VertexConsumer>>> map = RENDERS.get(priority ? 1 : 0).get(queuedRenderLayer.ordinal());
 		if (!map.containsKey(resourceLocation)) {
 			map.put(resourceLocation, new HashSet<>());

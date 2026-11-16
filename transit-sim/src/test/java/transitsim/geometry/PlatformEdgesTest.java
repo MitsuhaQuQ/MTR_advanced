@@ -135,4 +135,51 @@ class PlatformEdgesTest {
 		final int far = PlatformEdges.cutOf(0, 0, -0.8, 0.5, 1, 0);
 		assertTrue(far == PlatformEdges.FULL || PlatformEdges.wallSegment(PlatformEdges.angleOf(far), PlatformEdges.cutOfPacked(far)) == null);
 	}
+
+	@Test
+	void aStraightDoorOnAStraightEdgeAlongTheBlockSideStaysWhereItIs() {
+		// The edge on the block west side, the track to the west, a door facing west
+		final int cut = PlatformEdges.cutOf(0, 0, 0, 0.5, 1, 0);
+		final PlatformEdges.Bend bend = PlatformEdges.bend(PlatformEdges.angleOf(cut), PlatformEdges.cutOfPacked(cut));
+		assertNotNull(bend);
+		for (final double[] point : new double[][]{{0.125, 0.2}, {0.25, 0.9}, {0, 0}, {0.375, 1}}) {
+			final double[] bent = bend.point(-1, 0, point[0], point[1]);
+			assertEquals(point[0], bent[0], 1E-9);
+			assertEquals(point[1], bent[1], 1E-9);
+		}
+		final double[] direction = bend.direction(-1, 0, 0, 1);
+		assertEquals(0, direction[0], 1E-9);
+		assertEquals(1, direction[1], 1E-9);
+		assertArrayEquals(new int[]{-1, 0}, bend.nearestFacing());
+	}
+
+	@Test
+	void aDoorOnADiagonalEdgeLiesAlongIt() {
+		// The edge at 45 degrees through the block centre, the track to the north west
+		final int cut = PlatformEdges.cutOf(0, 0, 0.5, 0.5, 1, 1);
+		final PlatformEdges.Bend bend = PlatformEdges.bend(PlatformEdges.angleOf(cut), PlatformEdges.cutOfPacked(cut));
+		assertNotNull(bend);
+		// The straight door face towards the track, at depth 0, goes onto the line x + z = 1
+		for (final double across : new double[]{0, 0.3, 1}) {
+			final double[] bent = bend.point(0, -1, across, 0);
+			assertEquals(1, bent[0] + bent[1], 1E-6);
+		}
+		// Two sixteenths back goes two sixteenths behind the line, towards the platform
+		final double[] back = bend.point(0, -1, 0.5, 0.125);
+		assertEquals(0.125, (back[0] + back[1] - 1) / Math.sqrt(2), 1E-6);
+		// The next block along is found beyond each end
+		final double[] left = bend.beyond(true);
+		final double[] right = bend.beyond(false);
+		assertTrue(left[0] < 0 || left[0] > 1 || left[1] < 0 || left[1] > 1);
+		assertTrue(right[0] < 0 || right[0] > 1 || right[1] < 0 || right[1] > 1);
+	}
+
+	@Test
+	void aWallMaskBetweenDepths() {
+		final int cut = PlatformEdges.cutOf(10, 3, 10.5, 3.2, 1, 0);
+		final boolean[] mask = PlatformEdges.wallMask(PlatformEdges.angleOf(cut), PlatformEdges.cutOfPacked(cut), 2, 4);
+		for (int x = 0; x < 16; x++) {
+			assertEquals(x >= 10 && x < 12, mask[x * 16 + 7], "column " + x);
+		}
+	}
 }

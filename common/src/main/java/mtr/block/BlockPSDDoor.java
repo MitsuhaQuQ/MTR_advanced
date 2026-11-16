@@ -31,5 +31,12 @@ public class BlockPSDDoor extends BlockPSDAPGDoorBase {
 		public TileEntityPSDDoor(int style, BlockPos pos, BlockState state) {
 			super(style == 0 ? BlockEntityTypes.PSD_DOOR_1_TILE_ENTITY.get() : BlockEntityTypes.PSD_DOOR_2_TILE_ENTITY.get(), pos, state);
 		}
+
+		/**
+		 * For the curved screen doors (0.91.0), which have block entity types of their own
+		 */
+		protected TileEntityPSDDoor(net.minecraft.world.level.block.entity.BlockEntityType<?> type, BlockPos pos, BlockState state) {
+			super(type, pos, state);
+		}
 	}
 }

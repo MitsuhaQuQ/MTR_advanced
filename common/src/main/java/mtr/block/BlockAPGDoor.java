@@ -24,5 +24,12 @@ public class BlockAPGDoor extends BlockPSDAPGDoorBase {
 		public TileEntityAPGDoor(BlockPos pos, BlockState state) {
 			super(BlockEntityTypes.APG_DOOR_TILE_ENTITY.get(), pos, state);
 		}
+
+		/**
+		 * For the curved screen doors (0.91.0), which have block entity types of their own
+		 */
+		protected TileEntityAPGDoor(net.minecraft.world.level.block.entity.BlockEntityType<?> type, BlockPos pos, BlockState state) {
+			super(type, pos, state);
+		}
 	}
 }

@@ -64,6 +64,13 @@ public interface Blocks {
 	RegistryObject<Block> PIDS_POLE = new RegistryObject<>(() -> new BlockPIDSPole(Material.properties(Material.METAL).requiresCorrectToolForDrops().strength(1)));
 	RegistryObject<Block> PLATFORM = new RegistryObject<>(() -> new BlockPlatform(Material.properties(Material.METAL, MaterialColor.COLOR_YELLOW).requiresCorrectToolForDrops().strength(2), false));
 	RegistryObject<Block> PLATFORM_EDGE = new RegistryObject<>(() -> new mtr.block.BlockPlatformEdge(Material.properties(Material.METAL, MaterialColor.COLOR_YELLOW).requiresCorrectToolForDrops().strength(2).noOcclusion()));
+	RegistryObject<Block> CURVED_PSD_GLASS_1 = new RegistryObject<>(() -> new mtr.block.BlockCurvedPSD.PSDGlass(0));
+	RegistryObject<Block> CURVED_PSD_GLASS_2 = new RegistryObject<>(() -> new mtr.block.BlockCurvedPSD.PSDGlass(1));
+	RegistryObject<Block> CURVED_PSD_DOOR_1 = new RegistryObject<>(() -> new mtr.block.BlockCurvedPSD.PSDDoor(0));
+	RegistryObject<Block> CURVED_PSD_DOOR_2 = new RegistryObject<>(() -> new mtr.block.BlockCurvedPSD.PSDDoor(1));
+	RegistryObject<Block> CURVED_PSD_TOP = new RegistryObject<>(mtr.block.BlockCurvedPSD.PSDTop::new);
+	RegistryObject<Block> CURVED_APG_GLASS = new RegistryObject<>(mtr.block.BlockCurvedPSD.APGGlass::new);
+	RegistryObject<Block> CURVED_APG_DOOR = new RegistryObject<>(mtr.block.BlockCurvedPSD.APGDoor::new);
 	RegistryObject<Block> EDGE_SCREEN_DOOR = new RegistryObject<>(() -> new mtr.block.BlockEdgeScreenDoor(Material.properties(Material.METAL, MaterialColor.COLOR_GRAY).requiresCorrectToolForDrops().strength(2).noOcclusion()));
 	RegistryObject<Block> PLATFORM_INDENTED = new RegistryObject<>(() -> new BlockPlatform(Material.properties(Material.METAL, MaterialColor.COLOR_YELLOW).requiresCorrectToolForDrops().strength(2).noOcclusion(), true));
 	RegistryObject<Block> PLATFORM_NA_1 = new RegistryObject<>(() -> new BlockPlatform(Material.properties(Material.METAL, MaterialColor.COLOR_YELLOW).requiresCorrectToolForDrops().strength(2), false));

@@ -112,6 +112,14 @@ public class MTRClient implements IPacket {
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.BOAT_NODE_TILE_ENTITY.get(), RenderBoatNode::new);
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.PLATFORM_EDGE_TILE_ENTITY.get(), mtr.render.RenderPlatformEdge::new);
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.EDGE_SCREEN_DOOR_TILE_ENTITY.get(), mtr.render.RenderEdgeScreenDoor::new);
+			// Curved screen doors and gates (0.91.0): the straight blocks' drawing, bent
+			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.CURVED_PSD_GLASS_1_TILE_ENTITY.get(), dispatcher -> new mtr.render.RenderCurvedPSD<>(dispatcher, null));
+			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.CURVED_PSD_GLASS_2_TILE_ENTITY.get(), dispatcher -> new mtr.render.RenderCurvedPSD<>(dispatcher, null));
+			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.CURVED_PSD_DOOR_1_TILE_ENTITY.get(), dispatcher -> new mtr.render.RenderCurvedPSD<>(dispatcher, new RenderPSDAPGDoor<>(dispatcher, 0)));
+			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.CURVED_PSD_DOOR_2_TILE_ENTITY.get(), dispatcher -> new mtr.render.RenderCurvedPSD<>(dispatcher, new RenderPSDAPGDoor<>(dispatcher, 1)));
+			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.CURVED_PSD_TOP_TILE_ENTITY.get(), dispatcher -> new mtr.render.RenderCurvedPSD<>(dispatcher, new RenderPSDTop(dispatcher)));
+			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.CURVED_APG_GLASS_TILE_ENTITY.get(), dispatcher -> new mtr.render.RenderCurvedPSD<>(dispatcher, new RenderAPGGlass(dispatcher)));
+			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.CURVED_APG_DOOR_TILE_ENTITY.get(), dispatcher -> new mtr.render.RenderCurvedPSD<>(dispatcher, new RenderPSDAPGDoor<>(dispatcher, 2)));
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.RAIL_NODE_TILE_ENTITY.get(), RenderNode::new);
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.CLOCK_TILE_ENTITY.get(), RenderClock::new);
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.PSD_DOOR_1_TILE_ENTITY.get(), dispatcher -> new RenderPSDAPGDoor<>(dispatcher, 0));

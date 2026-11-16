@@ -38,7 +38,7 @@ public abstract class BlockPSDAPGDoorBase extends BlockPSDAPGBase implements Ent
 
 	@Override
 	public BlockState updateShape(BlockState state, Direction direction, BlockState newState, LevelAccessor world, BlockPos pos, BlockPos posFrom) {
-		if (IBlock.getSideDirection(state) == direction && !newState.is(this)) {
+		if (followsLeafBeside() && IBlock.getSideDirection(state) == direction && !newState.is(this)) {
 			return Blocks.AIR.defaultBlockState();
 		} else {
 			final BlockState superState = super.updateShape(state, direction, newState, world, pos, posFrom);
@@ -57,11 +57,25 @@ public abstract class BlockPSDAPGDoorBase extends BlockPSDAPGBase implements Ent
 		if (IBlock.getStatePropertySafe(state, HALF) == DoubleBlockHalf.UPPER) {
 			offsetPos = offsetPos.below();
 		}
-		if (IBlock.getStatePropertySafe(state, SIDE) == EnumSide.RIGHT) {
-			offsetPos = offsetPos.relative(IBlock.getSideDirection(state));
-		}
+		offsetPos = getLeftLeafPos(world, offsetPos, state);
 		IBlock.onBreakCreative(world, player, offsetPos);
 		super.playerWillDestroy(world, pos, state, player);
+	}
+
+	/**
+	 * @return the lower block of the left leaf of the door a leaf belongs to: beside the right leaf on its facing side;
+	 * along the edge line for a curved screen door (0.91.0)
+	 */
+	protected BlockPos getLeftLeafPos(Level world, BlockPos lowerPos, BlockState state) {
+		return IBlock.getStatePropertySafe(state, SIDE) == EnumSide.RIGHT ? lowerPos.relative(IBlock.getSideDirection(state)) : lowerPos;
+	}
+
+	/**
+	 * @return whether a leaf goes when the block beside it on its facing side is no longer its other leaf; a curved screen
+	 * door (0.91.0) has its other leaf along the edge line instead and removes it itself
+	 */
+	protected boolean followsLeafBeside() {
+		return true;
 	}
 
 	@Override

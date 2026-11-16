@@ -55,5 +55,12 @@ public class BlockAPGGlass extends BlockPSDAPGGlassBase implements EntityBlockMa
 		public TileEntityAPGGlass(BlockPos pos, BlockState state) {
 			super(BlockEntityTypes.APG_GLASS_TILE_ENTITY.get(), pos, state);
 		}
+
+		/**
+		 * For the curved screen doors (0.91.0), which have block entity types of their own
+		 */
+		protected TileEntityAPGGlass(net.minecraft.world.level.block.entity.BlockEntityType<?> type, BlockPos pos, BlockState state) {
+			super(type, pos, state);
+		}
 	}
 }
