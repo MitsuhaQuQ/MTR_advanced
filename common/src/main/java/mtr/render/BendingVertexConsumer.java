@@ -2,12 +2,15 @@ package mtr.render;
 
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.MultiBufferSource;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import org.joml.Matrix3f;
 import org.joml.Matrix4f;
 import org.joml.Vector3f;
 import org.joml.Vector4f;
+import net.minecraft.world.phys.Vec3;
 import transitsim.geometry.PlatformEdges;
 
 import java.util.function.BiConsumer;
@@ -49,11 +52,13 @@ public class BendingVertexConsumer implements VertexConsumer {
 	}
 
 	/**
-	 * @return the callback, bent when queued while a curved block is drawn
+	 * @return the callback, bent when queued while a curved block is drawn. The queue is drawn later, maybe in another
+	 * frame with the camera moved (0.91.2: text on the tops flickered as the camera moved), so the block's matrices are
+	 * worked out again from the matrices the queue is drawn with, as the queued drawing itself places the block.
 	 */
 	public static BiConsumer<PoseStack, VertexConsumer> wrap(BiConsumer<PoseStack, VertexConsumer> callback) {
 		final Context context = current;
-		return context == null ? callback : (matrices, vertexConsumer) -> callback.accept(matrices, new BendingVertexConsumer(vertexConsumer, context));
+		return context == null ? callback : (matrices, vertexConsumer) -> callback.accept(matrices, new BendingVertexConsumer(vertexConsumer, context.drawnWith(matrices)));
 	}
 
 	/**
@@ -133,21 +138,41 @@ public class BendingVertexConsumer implements VertexConsumer {
 	public static final class Context {
 
 		private final PlatformEdges.Bend bend;
+		private final Direction facing;
 		private final int facingX;
 		private final int facingZ;
+		private final BlockPos pos;
 		private final Matrix4f toView;
 		private final Matrix4f toBlock;
 		private final Matrix3f normalToView;
 		private final Matrix3f normalToBlock;
 
-		public Context(PlatformEdges.Bend bend, Direction facing, PoseStack.Pose blockPose) {
+		/**
+		 * @param blockPose the render matrices at the block's corner, as a block entity renderer gets them
+		 */
+		public Context(PlatformEdges.Bend bend, Direction facing, BlockPos pos, PoseStack.Pose blockPose) {
+			this(bend, facing, pos, blockPose.pose(), blockPose.normal());
+		}
+
+		private Context(PlatformEdges.Bend bend, Direction facing, BlockPos pos, Matrix4f pose, Matrix3f normal) {
 			this.bend = bend;
+			this.facing = facing;
 			facingX = facing.getStepX();
 			facingZ = facing.getStepZ();
-			toView = new Matrix4f(blockPose.pose());
-			toBlock = new Matrix4f(blockPose.pose()).invert();
-			normalToView = new Matrix3f(blockPose.normal());
-			normalToBlock = new Matrix3f(blockPose.normal()).invert();
+			this.pos = pos;
+			toView = new Matrix4f(pose);
+			toBlock = new Matrix4f(pose).invert();
+			normalToView = new Matrix3f(normal);
+			normalToBlock = new Matrix3f(normal).invert();
+		}
+
+		/**
+		 * @return the same block with its matrices worked out from matrices originating at the camera, now
+		 */
+		private Context drawnWith(PoseStack matrices) {
+			final Vec3 camera = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
+			final Matrix4f pose = new Matrix4f(matrices.last().pose()).translate((float) (pos.getX() - camera.x), (float) (pos.getY() - camera.y), (float) (pos.getZ() - camera.z));
+			return new Context(bend, facing, pos, pose, matrices.last().normal());
 		}
 	}
 }

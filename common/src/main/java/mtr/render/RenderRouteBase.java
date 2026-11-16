@@ -125,12 +125,24 @@ public abstract class RenderRouteBase<T extends BlockPSDTop.TileEntityRouteBase>
 	 * Counts the blocks of the run beside this one on a side. Since 0.91.0 the next block is found along the bent edge line
 	 * for a curved screen door ({@link mtr.block.CurvedPSD#walk}), and curved and straight blocks of one kind make one run.
 	 */
+	private static final int MOST_BLOCKS_IN_RUN = 256;
+
 	private int getTextureNumber(BlockGetter world, BlockPos pos, Direction facing, boolean searchLeft) {
 		int number = 0;
 		final Block thisBlock = world.getBlockState(pos).getBlock();
+		// Step by step, never past a block already counted (0.91.2: along a bent line two blocks could each find the other
+		// as the next one, and the count ran on for ever on the render thread)
+		final java.util.Set<BlockPos> visited = new java.util.HashSet<>();
+		BlockPos current = pos;
 
-		while (true) {
-			final BlockState state = world.getBlockState(mtr.block.CurvedPSD.walk(world, pos, searchLeft, number));
+		while (number < MOST_BLOCKS_IN_RUN) {
+			if (number > 0) {
+				current = mtr.block.CurvedPSD.neighbour(world, current, searchLeft);
+			}
+			if (!visited.add(current)) {
+				break;
+			}
+			final BlockState state = world.getBlockState(current);
 
 			if (mtr.block.CurvedPSD.sameKind(state.getBlock(), thisBlock)) {
 				final boolean isLeft = isLeft(state);

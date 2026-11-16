@@ -657,9 +657,8 @@
   "block.mtr.curved_apg_door": "曲线安全门",
   "item.mtr.curved_apg_door": "曲线安全门",
   "block.mtr.curved_psd_top": "曲线屏蔽门顶部",
-  "tooltip.mtr.curved_psd_glass": "立在下方站台边线上（按精确站台边，没有就按最近的站台）。潜行右键铺满这一侧。",
+  "tooltip.mtr.curved_psd_glass": "立在下方站台边线上（按精确站台边，没有就按最近的站台）。",
   "tooltip.mtr.curved_psd_door": "沿站台边线放一对门扇。右键同种的曲线玻璃，可把那里换成门。",
   "gui.mtr.curved_psd_no_edge": "站台边线不经过这一格",
-  "gui.mtr.curved_psd_no_room": "这里放不下门",
-  "gui.mtr.curved_psd_laid": "铺了 %s 列玻璃"
+  "gui.mtr.curved_psd_no_room": "这里放不下门"
 }

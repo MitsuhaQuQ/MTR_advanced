@@ -22,23 +22,17 @@ import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.DoubleBlockHalf;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Supplier;
 
 /**
  * Puts down curved screen door or gate glass or doors (0.91.0, {@link CurvedPSD}), as the straight item does but on the
  * platform's edge line: glass one column at a time, a door as two leaves side by side along the line, a screen door with
- * its top above; the edge line is that of the platform edge block below, else of the nearest platform. Glass used
- * sneaking lays the whole side along the line; a door used on curved glass of its kind puts the door there instead, so
- * doors can be set where the cars' doors stop.
+ * its top above; the edge line is that of the platform edge block below, else of the nearest platform. A door used on
+ * curved glass of its kind puts the door there instead, so doors can be set where the cars' doors stop. (Laying a whole
+ * side by sneaking was taken out in 0.91.2, at the user's word.)
  */
 public class ItemCurvedPSD extends ItemWithCreativeTabBase {
-
-	/**
-	 * The most columns laid along a side at once, each way
-	 */
-	private static final int MOST_LAID = 512;
 
 	private final Supplier<Block> block;
 	private final Supplier<Block> glass;
@@ -98,13 +92,6 @@ public class ItemCurvedPSD extends ItemWithCreativeTabBase {
 				message(player, "gui.mtr.curved_psd_no_room");
 				return InteractionResult.FAIL;
 			}
-		} else if (player != null && player.isShiftKeyDown()) {
-			final int placed = laySide(world, pos, creative ? Integer.MAX_VALUE : stack.getCount());
-			if (!creative) {
-				stack.shrink(placed);
-			}
-			player.displayClientMessage(Text.translatable("gui.mtr.curved_psd_laid", placed), true);
-			return InteractionResult.SUCCESS;
 		} else {
 			if (!isFree(world, pos)) {
 				return InteractionResult.FAIL;
@@ -153,44 +140,6 @@ public class ItemCurvedPSD extends ItemWithCreativeTabBase {
 			CurvedPSD.connectGlass(world, glassPos);
 		}
 		return true;
-	}
-
-	/**
-	 * Lays glass on every free column along the edge line both ways from the place, while there is floor under the line
-	 *
-	 * @return how many columns were laid
-	 */
-	private int laySide(Level world, BlockPos start, int most) {
-		final List<BlockPos> laid = new ArrayList<>();
-		if (isFree(world, start) && placeColumn(world, start, CurvedPSD.lineAt(world, start), block.get().defaultBlockState(), null)) {
-			laid.add(start);
-		}
-		for (final boolean left : new boolean[]{false, true}) {
-			BlockPos current = start;
-			for (int i = 0; i < MOST_LAID && laid.size() < most; i++) {
-				final int line = CurvedPSD.lineAt(world, current);
-				if (line < 0) {
-					break;
-				}
-				final transitsim.geometry.PlatformEdges.Bend bend = transitsim.geometry.PlatformEdges.bend(transitsim.geometry.PlatformEdges.angleOf(line), transitsim.geometry.PlatformEdges.cutOfPacked(line));
-				final double[] point = bend.beyond(left);
-				final BlockPos next = new BlockPos((int) Math.floor(current.getX() + point[0]), current.getY(), (int) Math.floor(current.getZ() + point[1]));
-				if (next.equals(current) || world.getBlockState(next.below()).isAir()) {
-					break;
-				}
-				current = next;
-				final int nextLine = CurvedPSD.lineAt(world, current);
-				if (nextLine >= 0 && isFree(world, current) && placeColumn(world, current, nextLine, block.get().defaultBlockState(), null)) {
-					laid.add(current);
-				} else if (!(world.getBlockState(current).getBlock() instanceof BlockPSDAPGBase)) {
-					break;
-				}
-			}
-		}
-		for (final BlockPos pos : laid) {
-			CurvedPSD.connectGlass(world, pos);
-		}
-		return laid.size();
 	}
 
 	/**

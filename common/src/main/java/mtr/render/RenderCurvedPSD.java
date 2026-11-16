@@ -55,7 +55,7 @@ public class RenderCurvedPSD<T extends BlockEntityMapper> extends BlockEntityRen
 		if (bend == null || !state.hasProperty(BlockStateProperties.HORIZONTAL_FACING)) {
 			return;
 		}
-		final BendingVertexConsumer.Context context = new BendingVertexConsumer.Context(bend, state.getValue(BlockStateProperties.HORIZONTAL_FACING), matrices.last());
+		final BendingVertexConsumer.Context context = new BendingVertexConsumer.Context(bend, state.getValue(BlockStateProperties.HORIZONTAL_FACING), entity.getBlockPos(), matrices.last());
 		final BlockState straightState = CurvedPSD.straightState(state);
 		drawModel(straightState, matrices, new BendingVertexConsumer(vertexConsumers.getBuffer(RenderType.entityCutoutNoCull(TextureAtlas.LOCATION_BLOCKS)), context), light);
 		if (straight != null) {

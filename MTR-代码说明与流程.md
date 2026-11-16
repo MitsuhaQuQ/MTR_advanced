@@ -87,6 +87,8 @@
 
 0.89.0 精确站台边跟随站台样式（用户 2026-11-16 选“放下时记住旁边站台的样式”）：`BlockPlatformEdge.TileEntityPlatformEdge` 改为 `BlockEntityClientSerializableMapper`，存 `source`（方块状态，`NbtUtils`），随方块数据发给玩家。`BlockPlatformEdge.sourceFor`：点击的方块是站台或站台边（取其 source）就用它，否则四周的站台/站台边，否则四周任一整格方块；都没有为 null（画默认港式站台）。`ItemPlatformEdge` 单放和铺边都设置，铺边整条用同一个来源。`RenderPlatformEdge` 从来源方块的模型取贴图（`getQuads` 向上的第一个面为顶面，其余向上的面为顶层标线，北面为侧面），按模型缓存（`WeakHashMap`，资源重载后换新），用方块图集画；顶层标线沿切口铺：横向从切口处 v=1 到一格内 v=0，纵向沿切口居中，超出一格的部分裁掉。组件 `PlatformEdges.CUT_CENTRE` 改为 28（±1.75 格），`MARKING_REACH` 1：离边一格内的整格方块也保留切线方向，好画标线，再往里才 `FULL`。方块实体存档多了内容，升第二位。
 
+0.91.2 曲线门头字闪、客户端卡死，去掉潜行整侧铺设（用户 2026-11-17）：① 门头线路图、箭头是原版渲染器排进 `RenderTrains` 队列稍后画的，0.91.1 用画方块实体时记下的矩阵换算，队列在别的时刻画（视角已变）就偏一帧，随视角闪。`BendingVertexConsumer.wrap` 改为在队列真正画时用当时的矩阵（加上方块相对相机的平移）重算这一格的矩阵（`Context.drawnWith`）。② `RenderRouteBase.getTextureNumber` 数一排有几格，0.91.0 每次从头 `walk` n 步，沿弯曲边线两格互相找到对方或找回自己时 n 无限增长，渲染线程卡死。改为逐格前进、记下走过的格、重复就停，最多 256 格。③ 用户要求去掉曲线屏蔽门潜行右键整侧铺设：`ItemCurvedPSD.laySide` 删除，提示文字和 `gui.mtr.curved_psd_laid` 一并删。服务端物品逻辑也改了，但不改数据包和存档，仍升第三位。
+
 0.91.1 曲线屏蔽门画歪（用户 2026-11-17 截图：玻璃整块斜着）：1.20.1 传给方块实体渲染器和排队绘制的矩阵已带相机旋转，`BendingVertexConsumer` 原来只按相机位置换回方块坐标，在旋转后的坐标里弯，随视角歪斜。改为 `Context` 记下这一格当帧的渲染矩阵（`matrices.last()`）和逆矩阵，顶点和法线先用逆矩阵回到方块坐标、按 `Bend` 弯、再乘回去。只改客户端，升第三位。
 
 0.91.0 曲线屏蔽门与安全门：沿用原版直线门的全部逻辑，只适配弯曲（用户 2026-11-17：原版每种屏蔽门各一个曲线方块、门也分开、直接沿用原版直线屏蔽门逻辑、要适配精确站台边）。
@@ -94,7 +96,7 @@
 - 弯曲信息：方块实体存边线角度和切距（`CurvedPSD.BendHolder`，NBT `bend_angle`/`bend_cut`），不放方块状态；门头和安全门玻璃原版不同步方块实体，曲线版自己发（`getUpdateTag`/`getUpdatePacket`）。方块状态的 `FACING` 取最接近边线朝轨道方向的四向（`CurvedPSD.facingOf`），给原版逻辑和开门扫描第 4 格用。边线来源 `CurvedPSD.lineAt`：下方是精确站台边就用它的 `ANGLE`/`CUT`，否则按最近站台算（同站台边）。
 - 画法：`RenderCurvedPSD` 先画对应原版方块状态的烘焙模型（`CurvedPSD.straightState` 复制属性），再调用原版渲染器（门扇 `RenderPSDAPGDoor`、门头 `RenderPSDTop`、安全门玻璃 `RenderAPGGlass`），全部经过 `BendingVertexConsumer`：每个顶点从相机坐标换回方块坐标，按组件 `PlatformEdges.Bend.point` 映射（离轨道一侧的深度和高度不变，横向位置变成沿边线段的位置），法线一起转。原版渲染器排进 `RenderTrains.scheduleRender` 的绘制也被包上（`BendingVertexConsumer.current` 在画曲线块时设置）。
 - 连成一排：`RenderRouteBase.getTextureNumber` 改用 `CurvedPSD.walk`/`sameKind`，曲线块沿边线数，直线块照旧；同种的曲线块和直线块算一排，线路图跨两者画。`CurvedPSD.connectGlass` 按边线邻格给玻璃设两端（放下、刷子时），旁边的直线玻璃也去掉这一侧的框。
-- 物品 `ItemCurvedPSD`（6 种）：玻璃右键放一列（屏蔽门连门头），潜行右键沿边线两头铺满（`laySide`，脚下没方块就停，每头最多 512）；门放两列一对，右扇在沿线的下一格；门对着同种曲线玻璃右键就把那里和沿线下一格换成门（手工对准车门）。配方：原版物品 ↔ 曲线物品 1:1。
+- 物品 `ItemCurvedPSD`（6 种）：玻璃右键放一列（屏蔽门连门头）（0.91.0 的潜行整侧铺设 0.91.2 已按用户要求删去）；门放两列一对，右扇在沿线的下一格；门对着同种曲线玻璃右键就把那里和沿线下一格换成门（手工对准车门）。配方：原版物品 ↔ 曲线物品 1:1。
 - 0.90.0 的 `edge_screen_door` 保留可用，名字加“（旧）”。新方块、方块实体，存档和数据包都加内容，升第二位；资源包升 1.0.12。
 
 0.90.0 曲线屏蔽门初版（第三档的第一步，用户 2026-11-17 选“逐格切形门”，不建门线表）：新方块 `BlockEdgeScreenDoor`（`edge_screen_door`），方块状态沿用 `BlockPlatformEdge.ANGLE`/`CUT`，表示站台边线穿过这一格的位置；方块实体 `TileEntityEdgeScreenDoor` 存样式（屏蔽门 1/2）、部件（玻璃、逆线方向滑开的门扇、顺线方向滑开的门扇）和开度，随方块数据发给玩家。`stateAt` 和站台边一样取最近站台的轨道、停站车长车宽、矢高，算边线；边线不经过这一格（组件 `PlatformEdges.wallSegment` 为 null）就不放。形状：组件 `wallMask` 的柱（边线后 3/16），看的形状一格高，碰撞一格半高（跳不过），门扇开着时碰撞为空。开门：`Train.isDoorScanned` 对它在整个 4 格范围内只看朝向（`facesCar`：朝轨道方向与车往外方向点积 < −0.5），`TrainServer.openDoors` 给门扇设开度并排方块刻，方块刻关门（同普通屏蔽门）；玻璃不动。物品 `ItemEdgeScreenDoor`：右键放一格玻璃；潜行右键沿这一侧站台按轨道顺序铺满这一高度，按累计边线长度每 `车长/4` 一扇两格宽的门，前半扇逆着轨道方向滑、后半扇顺着滑；对已放的门右键换部件，潜行右键把相连（同高八邻）的整排换样式。画面 `RenderEdgeScreenDoor`：沿 `wallSegment` 画两格高的薄墙（厚 2/16），正面朝轨道用 `psd_glass_*`/`psd_door_*` 贴图（门扇贴图取 36×18 布局里正面、背面那一块），背面用 `*_back`；门扇按开度沿线滑走，只画在本格内；顶面和两端黑色。新资源：方块状态、方块模型（粒子）、物品模型、掉落物、配方（1 屏蔽门玻璃 → 1 曲线屏蔽门）、四种语言，资源包升 1.0.11。新方块和方块实体，升第二位。门洞还不对准车门。
