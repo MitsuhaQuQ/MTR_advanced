@@ -11,24 +11,26 @@
   - 曲线：`x = h + r·cos(T/r)`，`z = k + r·sin(T/r)`（T 为弧长参数）；
   - 直线（|h|、|k| 都 ≥ 0.5 时）：`x = h·T`，`z = k·T + h·r`；其它直线：`x = h·T + k·r`，`z = k·T + h·r`。
   - 实际位置再加 0.5（方块中心）。
-- `mapShape` / `mapShapeDone`：地图粗略形状的惰性缓存（轨道总是重建而不修改）。
+- `mapShape` / `mapShapeDone`：地图粗略形状的惰性缓存（平面形状总是重建而不修改）。
+- 坡度（0.87.0）：`hasGrades`、`gradeStart`、`gradeEnd`（沿轨道方向的坡度，升高/水平长度）、`verticalRadiusStart`、`verticalRadiusEnd`（两端竖曲线半径，默认 500 格）、`verticalProfile`（组件 `transitsim.geometry.VerticalProfile`）。没有坡度的是 0.87.0 以前的轨道，高度仍用旧公式；新连的轨道由 `RailGrades` 给坡度。节点坡度改变时就地改（`setGrades`），平面形状和长度不变。缆车轨道不设坡度。
 
 ### 常量
 - `ACCEPT_THRESHOLD = 1E-4`、`ANGLE_THRESHOLD = 1E-9`、`MIN_RADIUS = 2`。
 - `MAX_TURN_BACK_DWELL = 7200`（public，半秒）。
 - `TURN_BACK_CHECK_STEPS = 256`、`TURN_BACK_TOLERANCE = 0.5`：`turnsBack` 的取样。
 - `CABLE_CURVATURE_SCALE = 1000`、`MAX_CABLE_DIP = 8`：缆车下垂。
-- 存档键：`h_1, k_1, h_2, k_2, r_1, r_2, t_start_1, t_end_1, t_start_2, t_end_2, y_start, y_end, reverse_t_1, is_straight_1, reverse_t_2, is_straight_2, rail_type, transport_mode, turn_back_dwell`（19 个）。
+- 存档键：`h_1, k_1, h_2, k_2, r_1, r_2, t_start_1, t_end_1, t_start_2, t_end_2, y_start, y_end, reverse_t_1, is_straight_1, reverse_t_2, is_straight_2, rail_type, transport_mode, turn_back_dwell`（19 个）；有坡度时再加 `grade_start, grade_end, vertical_radius_start, vertical_radius_end`（共 23 个）。
 - 只读的 ANTE 键：`path_mode`、`pos_start`、`facing_start`、`pos_end`、`facing_end`。
 
 ### `public Rail(BlockPos posStart, RailAngle facingStart, BlockPos posEnd, RailAngle facingEnd, RailType railType, TransportMode transportMode)`
 - 作用：由两端位置与朝向求形状。把终点差向量旋转到起点朝向坐标系（`deltaForward`、`deltaSide`）：
+  0. 斜向直线（0.87.0）：两朝向平行、终点不正好在起点朝向的轴上，但两点连线的角度按 0.1° 取整后与朝向平行时，沿连线的精确方向建一段直线，两端正好落在节点上。以前这种情况会做成两段半径极大的反向圆弧（用户 2026-11-05 反馈“斜向连直线两端总留一点弯”）。节点角度不变，与相邻轨道的接角小于 0.05°。
   1. 两朝向平行：在同一直线上用一段直线；否则横向偏移非零时用两段等半径反向圆弧（`r = (dv² + dp²)/(4dv)`）；横向偏移为零（节点垂直于连线）为无效轨道（全 0）。
   2. 不平行：必要时把起/终朝向取反使其指向对方；若"先直线后圆弧"可行（同侧、半径 ≥ 2）用之；否则若"先圆弧后直线"可行（同侧、半径 ≥ 2，且圆弧不会越过终点使直线部分倒回）用之；否则用 `Biarc`（两段相切圆弧，方向相反或超出单圆范围）。
 - 调用者：`CompoundCreator.java:183`、`RailwayData` 铺轨、`rotateNode` 等。
 
 ### `public Rail(Map<String, Value> map)`
-- 作用：读存档。ANTE 保存的贝塞尔轨道（`fromAnteBezier` 非空）改用其两端与角度求出的 MTR 形状；`turnBackDwell` 读取；朝向由形状重新计算。
+- 作用：读存档。ANTE 保存的贝塞尔轨道（`fromAnteBezier` 非空）改用其两端与角度求出的 MTR 形状；`turnBackDwell` 读取；朝向由形状重新计算；有 `grade_start`/`grade_end` 时读坡度和半径（`setGrades`）。
 
 ### `private static Rail fromAnteBezier(MessagePackHelper messagePackHelper, Map<String, Value> map, RailType railType, TransportMode transportMode)`
 - 作用：ANTE 可把轨道设为两节点间的贝塞尔曲线（`path_mode == 1`），并另存两端与角度（弧度）。读回时若这些键齐全，用同样的两端与角度构造 MTR 形状（直线加圆弧或两段圆弧），有效则返回，否则 `null`（保留存档的形状）。
@@ -37,10 +39,16 @@
 - 读旧 NBT（无 `turnBackDwell`）。
 
 ### `public Rail(FriendlyByteBuf packet)` / `public void writePacket(FriendlyByteBuf packet)`
-- 包字段顺序：`double h1, k1, h2, k2, r1, r2, tStart1, tEnd1, tStart2, tEnd2; int yStart, yEnd; boolean reverseT1, isStraight1, reverseT2, isStraight2; String railType, String transportMode; int turnBackDwell`。
+- 包字段顺序：`double h1, k1, h2, k2, r1, r2, tStart1, tEnd1, tStart2, tEnd2; int yStart, yEnd; boolean reverseT1, isStraight1, reverseT2, isStraight2; String railType, String transportMode; int turnBackDwell; boolean hasGrades`，为真时再接 `double gradeStart, gradeEnd, verticalRadiusStart, verticalRadiusEnd`（0.87.0，协议变化）。都在 ANTE mixin 于构造/写包末尾读写的字段之前。
 
-### `toMessagePack(MessagePacker)` / `messagePackLength()`（= 19）
+### `toMessagePack(MessagePacker)` / `messagePackLength()`（= 19，有坡度时 23）
 - 按存档键写出。
+
+### 坡度（0.87.0）
+- `hasGrades()`；`getGradeStart()`/`getGradeEnd()`（无坡度时 0）；`getVerticalRadiusStart()`/`getVerticalRadiusEnd()`；`getVerticalProfile()`（无坡度时 null）。
+- `setGrades(gradeStart, gradeEnd, radiusStart, radiusEnd)`：设坡度（夹在 ±1、半径夹在 10…20000），按当前长度重算纵断面；缆车轨道不处理。`setGradeStart`/`setGradeEnd` 只改一端。ANTE `RailMixin` 在其末尾清掉按包内容算的 `equals`/`hashCode` 缓存。
+- `copyGrades(rail, reversed)`：照搬另一条同两节点轨道的坡度；`reversed` 为反向轨道（两端互换、坡度取负）。`rotateNode` 和 ANTE `getTransposition` 用。
+- `getGradedY(value)`：按坡度的高度，给 ANTE `RailMixin.onGetPositionY`（它在 `getPositionY` 开头接管高度，有坡度的轨道改走这里，再加侧倾偏移）。
 
 ### `public int getTurnBackDwellTime()`
 - 返回：`max(turnBackDwell, 1)`——路径停站时间须大于 0 列车才会停车折返。
@@ -60,7 +68,7 @@
 - 作用：按约 1 方块步长把两段分别切成四边形回调（`renderSegment`），用于渲染轨道带。
 
 ### `public static RotatedNode rotateNode(Map<BlockPos, Map<BlockPos, Rail>> rails, BlockPos pos, RailAngle angle)`
-- 作用：为节点的新角度重建其所有轨道（另一端保持不变），服务端刷子设定和客户端刷子界面预览共用。参考朝向为 `getNodeFacing`；每条轨道保持从原来那一侧离开（`getRotatedFacing`）。失败原因：缺少反向轨道或形状无效 → `gui.mtr.invalid_orientation`；半径过小 → `gui.mtr.radius_too_small`；原来不回折的轨道变成回折（超过四分之一圈，如道岔或气球线）→ `gui.mtr.rail_would_loop`。新轨道沿用原折返停留时间。
+- 作用：为节点的新角度重建其所有轨道（另一端保持不变），服务端刷子设定和客户端刷子界面预览共用。参考朝向为 `getNodeFacing`；每条轨道保持从原来那一侧离开（`getRotatedFacing`）。失败原因：缺少反向轨道或形状无效 → `gui.mtr.invalid_orientation`；半径过小 → `gui.mtr.radius_too_small`；原来不回折的轨道变成回折（超过四分之一圈，如道岔或气球线）→ `gui.mtr.rail_would_loop`。新轨道沿用原折返停留时间和坡度（`copyGrades`，按新长度重算；服务端随后 `RailwayData.refreshNodeGrades` 重算各节点坡度）。
 - 返回：`RotatedNode`（失败时含已建的轨道，最后一条为失败的那条）。
 - 调用者：`RailwayData.java:944`、`NodeAnglePreview.java:111`。
 
@@ -84,7 +92,7 @@
 - 形状参数不全为 0，且保存的两端朝向与按形状计算的一致。调用者：`CompoundCreator.java:187`、`ItemRailModifier.java:90`。
 
 ### `private double getPositionY(double value)`
-- 作用：缆车（`RailSlopeStyle.CABLE`）：两端各 0.5 方块平坦，中间线性插值加抛物线下垂（下垂量随长度增大，超过 `MAX_CABLE_DIP` 时按比例缩小）；其它：前半与后半各一段二次曲线（S 形坡度）。
+- 作用：缆车（`RailSlopeStyle.CABLE`）：两端各 0.5 方块平坦，中间线性插值加抛物线下垂（下垂量随长度增大，超过 `MAX_CABLE_DIP` 时按比例缩小）；有坡度的轨道（0.87.0）：`VerticalProfile.getY`（竖曲线 + 直坡 + 竖曲线）；其它：前半与后半各一段二次曲线（S 形坡度，两端水平）。
 
 ### `private static Vec3 getPositionXZ(double h, double k, double r, double t, double radiusOffset, boolean isStraight)`
 - 按上述参数方程求平面位置（`radiusOffset` 为横向偏移，用于渲染宽度）。

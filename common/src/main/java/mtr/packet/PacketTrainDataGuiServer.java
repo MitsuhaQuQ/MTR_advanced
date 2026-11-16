@@ -1204,8 +1204,10 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		final float angle = packet.readFloat();
 		final boolean isKeyNode = packet.readBoolean();
 		final int turnBackDwell = packet.readInt();
+		final float grade = packet.readFloat();
+		final float verticalRadius = packet.readFloat();
 		PacketGuard.execute(minecraftServer, () -> {
-			if (!canEditBlock(player, pos) || !Float.isFinite(angle)) {
+			if (!canEditBlock(player, pos) || !Float.isFinite(angle) || Float.isInfinite(grade) || !Float.isFinite(verticalRadius)) {
 				return;
 			}
 			final Level world = Compat.getLevel(player);
@@ -1213,6 +1215,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			final RailwayData railwayData = RailwayData.getInstance(world);
 			if (railwayData != null && state.getBlock() instanceof BlockNode.BlockFreeAngleNode) {
 				railwayData.setKeyNode(pos, isKeyNode);
+				BlockNode.setGrade(world, pos, grade, verticalRadius);
 				// Setting only the key node option must not touch the rails
 				final RailAngle newAngle = RailAngle.fromAngle(angle);
 				final String error = railwayData.isNodeFacing(pos, newAngle) ? null : railwayData.rotateNodeRails(player, pos, newAngle);
@@ -1226,6 +1229,8 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 				if (turnBackDwell >= 0) {
 					railwayData.setTurnBackDwell(pos, Math.min(turnBackDwell, Rail.MAX_TURN_BACK_DWELL));
 				}
+				// Grades go the way the node faces, which is only saved after the rails have turned
+				railwayData.refreshNodeGrades(Collections.singletonList(pos));
 			}
 		});
 	}

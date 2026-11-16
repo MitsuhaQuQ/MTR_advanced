@@ -10,6 +10,7 @@ import mtr.compat.ScreenBase;
 import mtr.data.IGui;
 import mtr.data.Rail;
 import mtr.data.RailAngle;
+import mtr.data.RailGrades;
 import mtr.data.RailType;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
@@ -22,11 +23,13 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import transitsim.network.Boundaries;
 import transitsim.network.RegionData;
+import transitsim.geometry.VerticalProfile;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import net.minecraft.util.FormattedCharSequence;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public class NodeAngleScreen extends ScreenBase implements IGui {
@@ -48,6 +51,18 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	private boolean draggingPreview;
 	private final Button buttonSet;
 	private final Button buttonCancel;
+	// The vertical tab: the node's grade, worked out from its rails or set, and the radius of the vertical curves here
+	private final Button buttonTabPlan;
+	private final Button buttonTabVertical;
+	private boolean verticalTab;
+	private final WidgetBetterCheckbox checkboxGradeAuto;
+	private final WidgetBetterTextField textFieldGrade = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.SIGNED_DECIMAL, "", MAX_VALUE_LENGTH);
+	private final WidgetBetterTextField textFieldVerticalRadius = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.POSITIVE_INTEGER, "", MAX_VALUE_LENGTH);
+	private final NodeGradePreview gradePreview;
+	private final double autoGrade;
+	private final float savedGrade;
+	private final float savedVerticalRadius;
+	private final boolean hasOldRails;
 
 	private static final int MAX_VALUE_LENGTH = 6;
 	private static final int LABEL_WIDTH = 150;
@@ -61,6 +76,12 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	private static final int ROW_TURN_BACK = 6;
 	private static final int ROW_BOUNDARY = 7;
 	private static final int ROW_SEGMENTS = 8;
+	private static final int ROW_GRADE_AUTO = 0;
+	private static final int ROW_GRADE = 1;
+	private static final int ROW_GRADE_RULE = 2;
+	private static final int ROW_VERTICAL_RADIUS = 3;
+	private static final int ROW_GRADE_NOTES = 4;
+	private static final int PER_MILLE = 1000;
 	private static final int MIN_PREVIEW_SIZE = 64;
 	private static final int MAX_PREVIEW_SIZE = 240;
 	private static final Component LABEL_ANGLE = Text.translatable("gui.mtr.node_angle");
@@ -68,6 +89,9 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	private static final Component LABEL_ANGLE_RULE = Text.translatable("gui.mtr.node_angle_rule");
 	private static final Component LABEL_TRANSITION = Text.translatable("gui.mtr.node_transition");
 	private static final Component LABEL_TURN_BACK = Text.translatable("gui.mtr.node_turn_back");
+	private static final Component LABEL_GRADE = Text.translatable("gui.mtr.node_grade");
+	private static final Component LABEL_GRADE_RULE = Text.translatable("gui.mtr.node_grade_rule");
+	private static final Component LABEL_VERTICAL_RADIUS = Text.translatable("gui.mtr.node_vertical_radius");
 
 	public NodeAngleScreen(BlockPos pos) {
 		super(Text.literal(""));
@@ -86,6 +110,14 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		preview = new NodeAnglePreview(pos);
 		buttonSet = UtilitiesClient.newButton(Text.translatable("gui.mtr.node_set"), button -> onSet());
 		buttonCancel = UtilitiesClient.newButton(Text.translatable("gui.cancel"), button -> onClose());
+		buttonTabPlan = UtilitiesClient.newButton(Text.translatable("gui.mtr.node_tab_plan"), button -> setVerticalTab(false));
+		buttonTabVertical = UtilitiesClient.newButton(Text.translatable("gui.mtr.node_tab_vertical"), button -> setVerticalTab(true));
+		checkboxGradeAuto = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.node_grade_auto"), this::setGradeAuto);
+		gradePreview = new NodeGradePreview(pos, RailAngle.fromAngle(world == null ? angle : BlockNode.getAngle(world, pos, world.getBlockState(pos))));
+		autoGrade = world == null ? 0 : RailGrades.getAutoGrade(world, ClientData.RAILS, pos);
+		savedGrade = world == null ? Float.NaN : BlockNode.getGrade(world, pos);
+		savedVerticalRadius = world == null ? (float) VerticalProfile.DEFAULT_RADIUS : BlockNode.getVerticalRadius(world, pos);
+		hasOldRails = RailGrades.hasOldRails(ClientData.RAILS, pos);
 	}
 
 	@Override
@@ -107,10 +139,20 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		}
 		// The map to the right of everything else, as large as fits
 		final int previewX = fieldX + PANEL_WIDTH / 2 + SQUARE_SIZE;
-		final int previewSize = Math.min(MAX_PREVIEW_SIZE, Math.min(width - previewX - SQUARE_SIZE, height - SQUARE_SIZE * 3));
-		preview.setBounds(previewX, SQUARE_SIZE, previewSize >= MIN_PREVIEW_SIZE ? previewSize : 0);
+		final int previewSize = Math.min(MAX_PREVIEW_SIZE, Math.min(width - previewX - SQUARE_SIZE, height - getRowY(0) - SQUARE_SIZE * 2));
+		preview.setBounds(previewX, getRowY(0), previewSize >= MIN_PREVIEW_SIZE ? previewSize : 0);
 		IDrawing.setPositionAndWidth(buttonSet, SQUARE_SIZE, getRowY(getButtonsRow()), PANEL_WIDTH / 2);
 		IDrawing.setPositionAndWidth(buttonCancel, SQUARE_SIZE + PANEL_WIDTH / 2, getRowY(getButtonsRow()), PANEL_WIDTH / 2);
+		IDrawing.setPositionAndWidth(buttonTabPlan, SQUARE_SIZE, SQUARE_SIZE, PANEL_WIDTH / 2);
+		IDrawing.setPositionAndWidth(buttonTabVertical, SQUARE_SIZE + PANEL_WIDTH / 2, SQUARE_SIZE, PANEL_WIDTH / 2);
+		IDrawing.setPositionAndWidth(checkboxGradeAuto, SQUARE_SIZE, getRowY(ROW_GRADE_AUTO), PANEL_WIDTH + LABEL_WIDTH);
+		IDrawing.setPositionAndWidth(textFieldGrade, fieldX, getRowY(ROW_GRADE) + TEXT_FIELD_PADDING / 2, PANEL_WIDTH / 2 - TEXT_FIELD_PADDING);
+		IDrawing.setPositionAndWidth(textFieldVerticalRadius, fieldX, getRowY(ROW_VERTICAL_RADIUS) + TEXT_FIELD_PADDING / 2, PANEL_WIDTH / 2 - TEXT_FIELD_PADDING);
+		gradePreview.setBounds(previewX, getRowY(0), previewSize >= MIN_PREVIEW_SIZE ? previewSize : 0);
+		checkboxGradeAuto.setChecked(Float.isNaN(savedGrade));
+		textFieldGrade.setValue(formatPerMille(Float.isNaN(savedGrade) ? autoGrade : savedGrade));
+		textFieldGrade.setEditable(!Float.isNaN(savedGrade));
+		textFieldVerticalRadius.setValue(String.valueOf(Math.round(savedVerticalRadius)));
 
 		textFieldAngle.setValue(BlockNode.getAngleValue(angle));
 		textFieldTransition.setValue("0");
@@ -126,18 +168,47 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		checkboxSegments.forEach(this::addDrawableChild);
 		addDrawableChild(buttonSet);
 		addDrawableChild(buttonCancel);
+		addDrawableChild(buttonTabPlan);
+		addDrawableChild(buttonTabVertical);
+		addDrawableChild(checkboxGradeAuto);
+		addDrawableChild(textFieldGrade);
+		addDrawableChild(textFieldVerticalRadius);
+		setVerticalTab(verticalTab);
 	}
 
 	@Override
 	public void tick() {
 		textFieldAngle.tick();
 		textFieldTurnBack.tick();
+		textFieldGrade.tick();
+		textFieldVerticalRadius.tick();
+	}
+
+	private void setVerticalTab(boolean verticalTab) {
+		this.verticalTab = verticalTab;
+		buttonTabPlan.active = verticalTab;
+		buttonTabVertical.active = !verticalTab;
+		textFieldAngle.visible = textFieldTransition.visible = checkboxKeyNode.visible = textFieldTurnBack.visible = checkboxBoundary.visible = !verticalTab;
+		checkboxSegments.forEach(checkbox -> checkbox.visible = !verticalTab);
+		checkboxGradeAuto.visible = textFieldGrade.visible = textFieldVerticalRadius.visible = verticalTab;
+	}
+
+	private void setGradeAuto(boolean auto) {
+		textFieldGrade.setEditable(!auto);
+		if (auto) {
+			textFieldGrade.setValue(formatPerMille(autoGrade));
+		}
 	}
 
 	@Override
 	public void render(PoseStack matrices, int mouseX, int mouseY, float delta) {
 		try {
 			renderBackground(matrices);
+			if (verticalTab) {
+				renderVertical(matrices);
+				super.render(matrices, mouseX, mouseY, delta);
+				return;
+			}
 			GuiCompat.draw(matrices, font, LABEL_ANGLE, SQUARE_SIZE, getRowY(ROW_ANGLE) + TEXT_PADDING, ARGB_WHITE);
 			GuiCompat.draw(matrices, font, getAngleDirectionText(), SQUARE_SIZE, getRowY(ROW_ANGLE_DIRECTION) + TEXT_PADDING, ARGB_LIGHT_GRAY);
 			final List<FormattedCharSequence> ruleLines = font.split(LABEL_ANGLE_RULE, LABEL_WIDTH + PANEL_WIDTH / 2);
@@ -166,8 +237,79 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		}
 	}
 
+	/**
+	 * The vertical tab: the grade and radius fields, what the grade means, why it can't be had, and the side view.
+	 */
+	private void renderVertical(PoseStack matrices) {
+		GuiCompat.draw(matrices, font, LABEL_GRADE, SQUARE_SIZE, getRowY(ROW_GRADE) + TEXT_PADDING, ARGB_WHITE);
+		GuiCompat.draw(matrices, font, LABEL_GRADE_RULE, SQUARE_SIZE, getRowY(ROW_GRADE_RULE) + TEXT_PADDING, ARGB_LIGHT_GRAY);
+		GuiCompat.draw(matrices, font, LABEL_VERTICAL_RADIUS, SQUARE_SIZE, getRowY(ROW_VERTICAL_RADIUS) + TEXT_PADDING, ARGB_WHITE);
+		final double radius = getTypedVerticalRadius();
+		final double grade = getTypedGrade();
+		final NodeGradePreview.Side tooShort = gradePreview.render(matrices, font, grade, radius);
+		int line = 0;
+		if (hasOldRails) {
+			line = drawNote(matrices, Text.translatable("gui.mtr.node_grade_old_rails"), line, ARGB_LIGHT_GRAY);
+		}
+		if (tooShort != null) {
+			drawNote(matrices, Text.translatable("gui.mtr.node_vertical_radius_too_large", tooShort.posEnd.getX(), tooShort.posEnd.getY(), tooShort.posEnd.getZ(), Math.round(tooShort.getFittingRadius(grade, radius))), line, 0xFFFF4040);
+		}
+		if (gradePreview.getSize() > 0) {
+			final Component hint = Text.translatable("gui.mtr.node_grade_preview_hint", String.format(Locale.ENGLISH, "%.1f", gradePreview.getStretch()));
+			final List<FormattedCharSequence> hintLines = font.split(hint, Math.max(gradePreview.getSize(), width - gradePreview.getX() - TEXT_PADDING));
+			for (int i = 0; i < hintLines.size(); i++) {
+				GuiCompat.draw(matrices, font, hintLines.get(i), gradePreview.getX(), gradePreview.getY() + gradePreview.getSize() + TEXT_PADDING + i * (TEXT_HEIGHT + 2), ARGB_LIGHT_GRAY);
+			}
+		}
+	}
+
+	/**
+	 * @return the line after the note
+	 */
+	private int drawNote(PoseStack matrices, Component note, int line, int color) {
+		for (final FormattedCharSequence noteLine : font.split(note, LABEL_WIDTH + PANEL_WIDTH / 2)) {
+			GuiCompat.draw(matrices, font, noteLine, SQUARE_SIZE, getRowY(ROW_GRADE_NOTES) + TEXT_PADDING + line * (TEXT_HEIGHT + 2), color);
+			line++;
+		}
+		return line;
+	}
+
+	/**
+	 * @return the grade typed, or the one worked out from the rails when that is ticked or nothing is typed
+	 */
+	private double getTypedGrade() {
+		if (checkboxGradeAuto.selected()) {
+			return autoGrade;
+		}
+		try {
+			return VerticalProfile.clampGrade(Double.parseDouble(textFieldGrade.getValue()) / PER_MILLE);
+		} catch (NumberFormatException e) {
+			return autoGrade;
+		}
+	}
+
+	private double getTypedVerticalRadius() {
+		try {
+			return VerticalProfile.clampRadius(Double.parseDouble(textFieldVerticalRadius.getValue()));
+		} catch (NumberFormatException e) {
+			return savedVerticalRadius;
+		}
+	}
+
+	private static String formatPerMille(double grade) {
+		return String.format(Locale.ENGLISH, "%.1f", grade * PER_MILLE);
+	}
+
 	@Override
 	public boolean mouseClicked(double mouseX, double mouseY, int button) {
+		if (verticalTab) {
+			if (button == 0 && gradePreview.isInside(mouseX, mouseY)) {
+				draggingPreview = true;
+				setGradeFromPreview(mouseX, mouseY);
+				return true;
+			}
+			return super.mouseClicked(mouseX, mouseY, button);
+		}
 		if (button == 0 && preview.isInside(mouseX, mouseY)) {
 			draggingPreview = true;
 			setAngleFromPreview(mouseX, mouseY);
@@ -179,7 +321,11 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	@Override
 	public boolean mouseDragged(double mouseX, double mouseY, int button, double deltaX, double deltaY) {
 		if (draggingPreview) {
-			setAngleFromPreview(mouseX, mouseY);
+			if (verticalTab) {
+				setGradeFromPreview(mouseX, mouseY);
+			} else {
+				setAngleFromPreview(mouseX, mouseY);
+			}
 			return true;
 		}
 		return super.mouseDragged(mouseX, mouseY, button, deltaX, deltaY);
@@ -198,6 +344,15 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		textFieldAngle.setValue(BlockNode.getAngleValue(preview.getAngle(mouseX, mouseY, hasShiftDown())));
 	}
 
+	/**
+	 * Sets the grade to the line from the node to the mouse, which is then no longer worked out from the rails.
+	 */
+	private void setGradeFromPreview(double mouseX, double mouseY) {
+		checkboxGradeAuto.setChecked(false);
+		textFieldGrade.setEditable(true);
+		textFieldGrade.setValue(formatPerMille(VerticalProfile.clampGrade(gradePreview.getGradePerMille(mouseX, mouseY) / PER_MILLE)));
+	}
+
 	@Override
 	public boolean isPauseScreen() {
 		return false;
@@ -207,7 +362,8 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		try {
 			final String turnBackText = textFieldTurnBack.getValue();
 			final int turnBackDwell = turnBackRail == null ? -1 : turnBackText.isEmpty() ? 0 : Integer.parseInt(turnBackText) * 2;
-			PacketTrainDataGuiClient.sendNodeAngleC2S(pos, Float.parseFloat(textFieldAngle.getValue()), checkboxKeyNode.selected(), turnBackDwell);
+			final float grade = checkboxGradeAuto.selected() ? Float.NaN : (float) VerticalProfile.clampGrade(Double.parseDouble(textFieldGrade.getValue()) / PER_MILLE);
+			PacketTrainDataGuiClient.sendNodeAngleC2S(pos, Float.parseFloat(textFieldAngle.getValue()), checkboxKeyNode.selected(), turnBackDwell, grade, (float) getTypedVerticalRadius());
 			final Boundaries boundaries = ClientData.PATH_REGIONS.boundaries;
 			if (checkboxBoundary.selected() != boundaries.nodes.contains(pos.asLong())) {
 				PacketTrainDataGuiClient.sendPathBoundaryC2S(pos, null, checkboxBoundary.selected());
@@ -274,7 +430,10 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		return regionData.boundaries.isEmpty() ? null : Text.translatable("gui.mtr.node_regions", regionData.regionCount).getString();
 	}
 
+	/**
+	 * Rows start under the tab buttons.
+	 */
 	private static int getRowY(int row) {
-		return SQUARE_SIZE + ROW_HEIGHT * row;
+		return SQUARE_SIZE + ROW_HEIGHT * (row + 1);
 	}
 }

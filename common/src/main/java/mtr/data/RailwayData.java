@@ -1040,7 +1040,28 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			PacketTrainDataGuiServer.createRailS2C(world, newRail.transportMode, pos, posEnd, newRail, newBackwardsRail, 0);
 		});
 		railwayDataLoggingModule.addEvent((ServerPlayer) player, BlockNode.class, new ArrayList<>(), Collections.singletonList(String.format("angle:%s", angle.angleDegrees)), pos);
+		// The rails' lengths changed, and with them the mean grades the nodes work theirs out from
+		final List<BlockPos> nodes = new ArrayList<>(rotatedNode.rails.keySet());
+		nodes.add(pos);
+		refreshNodeGrades(nodes);
 		return null;
+	}
+
+	/**
+	 * Works the grades of the nodes out again and sets them on their rails ({@link RailGrades}), sending the rails that
+	 * changed to the players.
+	 */
+	public void refreshNodeGrades(Collection<BlockPos> nodes) {
+		for (final BlockPos pos : nodes) {
+			for (final BlockPos posEnd : RailGrades.refreshNode(world, rails, pos)) {
+				final Rail rail = DataCache.tryGet(rails, pos, posEnd);
+				final Rail backwardsRail = DataCache.tryGet(rails, posEnd, pos);
+				if (rail != null && backwardsRail != null) {
+					railwayDataFileSaveModule.markRailsChanged(Arrays.asList(pos, posEnd));
+					PacketTrainDataGuiServer.createRailS2C(world, rail.transportMode, pos, posEnd, rail, backwardsRail, 0);
+				}
+			}
+		}
 	}
 
 	public void setTurnBackDwell(BlockPos pos, int turnBackDwell) {
@@ -1070,6 +1091,8 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		changed.add(pos);
 		railwayDataFileSaveModule.markRailsChanged(changed);
 		removeNode(world, rails, pos, railNodeRepair::isKept);
+		changed.remove(pos);
+		refreshNodeGrades(changed);
 		setKeyNode(pos, false);
 		// A boundary on a rail that was only taken away stays, as the rail is often laid again, but nothing is left of a node
 		pathBoundaries.nodes.remove(pos.asLong());
@@ -1408,6 +1431,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 
 		removeRailConnection(world, rails, pos1, pos2, railNodeRepair::isKept);
 		railwayDataFileSaveModule.markRailsChanged(Arrays.asList(pos1, pos2));
+		refreshNodeGrades(Arrays.asList(pos1, pos2));
 		validateData();
 		final FriendlyByteBuf packet = signalBlocks.getValidationPacket(rails);
 		if (packet != null) {

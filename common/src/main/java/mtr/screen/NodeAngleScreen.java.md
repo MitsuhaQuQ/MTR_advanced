@@ -1,6 +1,6 @@
 # NodeAngleScreen.java（本分支新增）
 
-客户端界面：用刷子点轨道节点后打开的节点设置——节点角度（可在右侧俯视图 `NodeAnglePreview` 上拖动设置）、过渡（目前固定 0，不可编辑）、关键节点、折返停留时间（节点有折返轨时）、寻路边界（整个节点或其某条轨道）。打开：`common/src/main/java/mtr/packet/PacketTrainDataGuiClient.java:200`。
+客户端界面：用刷子点轨道节点后打开的节点设置——节点角度（可在右侧俯视图 `NodeAnglePreview` 上拖动设置）、过渡（目前固定 0，不可编辑）、关键节点、折返停留时间（节点有折返轨时）、寻路边界（整个节点或其某条轨道）。0.87.0 起顶部有“平面”“纵向”两个选项卡：平面为以上内容；纵向为节点坡度（自动或固定，‰）、竖曲线半径和右侧侧视图 `NodeGradePreview`（可拖动设坡度）。打开：`common/src/main/java/mtr/packet/PacketTrainDataGuiClient.java:200`。
 
 ## 类 `NodeAngleScreen`（extends `ScreenBase`，implements `IGui`）
 
@@ -9,6 +9,7 @@
 - `textFieldAngle`（有符号小数）、`textFieldTransition`（只读 0）、`checkboxKeyNode`、`textFieldTurnBack`（正整数）、`turnBackRail`（与该节点相连、任一方向为 `RailType.TURN_BACK` 的轨道）。
 - `checkboxBoundary`（节点为寻路边界）、`connectedNodes` 与 `checkboxSegments`（每条相连轨道单独作为边界，按距离排序）。
 - `preview`、`draggingPreview`、`buttonSet`、`buttonCancel`。
+- 纵向选项卡（0.87.0）：`buttonTabPlan`、`buttonTabVertical`、`verticalTab`、`checkboxGradeAuto`、`textFieldGrade`（有符号小数，‰）、`textFieldVerticalRadius`（正整数，格）、`gradePreview`、`autoGrade`（`RailGrades.getAutoGrade`）、`savedGrade`/`savedVerticalRadius`（节点方块实体里存的，NaN 为自动）、`hasOldRails`（`RailGrades.hasOldRails`）。行号：自动 0、坡度 1、说明 2、半径 3、提示从 4 起；所有行从选项卡按钮下一行开始（`getRowY(row)` = `SQUARE_SIZE + ROW_HEIGHT × (row + 1)`）。
 - `MAX_VALUE_LENGTH = 6`、`LABEL_WIDTH = 150`、`ROW_HEIGHT`、行号常量（角度 0、方向说明 1、规则说明 2、过渡 4、关键节点 5、折返 6、边界 7、轨道边界从 8 起）、预览尺寸 64…240、标签文字。
 
 ### 构造函数 `NodeAngleScreen(BlockPos pos)`
@@ -32,8 +33,13 @@
 ### `boolean isPauseScreen()`
 - false。
 
+### 纵向选项卡（0.87.0）
+- `setVerticalTab`：切换选项卡，当前选项卡按钮置灰，另一选项卡的控件隐藏。`setGradeAuto`：勾选自动时坡度框填自动值且不可编辑。
+- `renderVertical`：坡度、说明（沿节点方向即蓝线上坡为正）、半径标签；侧视图；有旧轨道时灰字提示 `gui.mtr.node_grade_old_rails`，有轨道放不下半径时红字 `gui.mtr.node_vertical_radius_too_large`（到哪个节点、实际半径）；侧视图下方说明和高度放大倍数。
+- `getTypedGrade`（勾自动或输入无效时取自动值）、`getTypedVerticalRadius`、`setGradeFromPreview`（在侧视图里拖动：取消自动，坡度为节点到鼠标的连线，0.5‰ 一档）。
+
 ### `private void onSet()`
-- 发 `sendNodeAngleC2S(pos, 角度, 关键节点, 折返停留)`（无折返轨为 −1，空为 0，否则秒 × 2）；节点边界有变化时发 `sendPathBoundaryC2S(pos, null, 选中)`；每条轨道边界有变化时发 `sendPathBoundaryC2S(pos, 另一端, 选中)`；关闭。数字格式错误时不做任何事。
+- 发 `sendNodeAngleC2S(pos, 角度, 关键节点, 折返停留, 坡度（自动为 NaN，否则 ‰/1000）, 竖曲线半径)`（无折返轨为 −1，空为 0，否则秒 × 2）；节点边界有变化时发 `sendPathBoundaryC2S(pos, null, 选中)`；每条轨道边界有变化时发 `sendPathBoundaryC2S(pos, 另一端, 选中)`；关闭。数字格式错误时不做任何事。
 
 ### `private Component getAngleDirectionText()`
 - `gui.mtr.node_angle_direction`(输入角度对应的方向 `BlockNode.getAngleDirection`, 玩家当前朝向 `BlockNode.getAngleText(getPlayerAngle)`)，输入无效时方向为 "-"。

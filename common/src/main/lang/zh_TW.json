@@ -618,5 +618,17 @@
   "block.mtr.platform_end_psd_2": "高月台端頭門（無外側把手）",
   "item.mtr.platform_end_apg_2": "低月台端頭門（無外側把手）",
   "block.mtr.platform_end_apg_2": "低月台端頭門（無外側把手）",
-  "tooltip.mtr.platform_end_door": "右鍵手動開關月台端頭門，不隨列車聯動。"
+  "tooltip.mtr.platform_end_door": "右鍵手動開關月台端頭門，不隨列車聯動。",
+  "gui.mtr.node_tab_plan": "平面",
+  "gui.mtr.node_tab_vertical": "縱向",
+  "gui.mtr.node_grade_auto": "自動坡度（取兩側相連軌道平均坡度的均值）",
+  "gui.mtr.node_grade": "坡度 (‰)",
+  "gui.mtr.node_grade_rule": "沿節點方向（藍線）上坡為正",
+  "gui.mtr.node_vertical_radius": "豎曲線半徑 (格)",
+  "gui.mtr.node_grade_old_rails": "這裡有 0.87.0 以前鋪的軌道，它在本節點保持水平，所以自動坡度為 0；拆掉重連後才會跟隨坡度",
+  "gui.mtr.node_vertical_radius_too_large": "到 %s, %s, %s 的軌道太短，放不下這個半徑，這裡的豎曲線實際為 %s 格",
+  "gui.mtr.node_grade_preview_hint": "側視圖：節點方向朝右，高度放大 %s 倍。灰線為現狀，黃線為設定後（半徑放不下時為紅色）。拖動可設坡度",
+  "gui.mtr.node_grade_forward": "節點方向 →",
+  "gui.mtr.node_grade_text": "坡度 %s‰",
+  "gui.mtr.node_grade_text_auto": "坡度 %s‰（自動）"
 }

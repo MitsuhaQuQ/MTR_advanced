@@ -617,5 +617,17 @@
   "block.mtr.platform_end_psd_2": "高站台端头门（无外侧把手）",
   "item.mtr.platform_end_apg_2": "低站台端头门（无外侧把手）",
   "block.mtr.platform_end_apg_2": "低站台端头门（无外侧把手）",
-  "tooltip.mtr.platform_end_door": "右键手动开关站台端头门，不随列车联动。"
+  "tooltip.mtr.platform_end_door": "右键手动开关站台端头门，不随列车联动。",
+  "gui.mtr.node_tab_plan": "平面",
+  "gui.mtr.node_tab_vertical": "纵向",
+  "gui.mtr.node_grade_auto": "自动坡度（取两侧相连轨道平均坡度的均值）",
+  "gui.mtr.node_grade": "坡度 (‰)",
+  "gui.mtr.node_grade_rule": "沿节点方向（蓝线）上坡为正",
+  "gui.mtr.node_vertical_radius": "竖曲线半径 (格)",
+  "gui.mtr.node_grade_old_rails": "这里有 0.87.0 以前铺的轨道，它在本节点保持水平，所以自动坡度为 0；拆掉重连后才会跟随坡度",
+  "gui.mtr.node_vertical_radius_too_large": "到 %s, %s, %s 的轨道太短，放不下这个半径，这里的竖曲线实际为 %s 格",
+  "gui.mtr.node_grade_preview_hint": "侧视图：节点方向朝右，高度放大 %s 倍。灰线为现状，黄线为设定后（半径放不下时为红色）。拖动可设坡度",
+  "gui.mtr.node_grade_forward": "节点方向 →",
+  "gui.mtr.node_grade_text": "坡度 %s‰",
+  "gui.mtr.node_grade_text_auto": "坡度 %s‰（自动）"
 }

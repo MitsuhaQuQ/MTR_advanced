@@ -383,12 +383,18 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		minecraftClient.execute(() -> ClientData.TIMETABLE_CONFLICTS.put(routeId, new TimetableConflicts.Result(conflicts, uncheckedRoutes)));
 	}
 
-	public static void sendNodeAngleC2S(BlockPos pos, float angle, boolean isKeyNode, int turnBackDwell) {
+	/**
+	 * @param grade          the node's grade going the way it faces, or NaN to work it out from its rails
+	 * @param verticalRadius the radius of the vertical curves at the node
+	 */
+	public static void sendNodeAngleC2S(BlockPos pos, float angle, boolean isKeyNode, int turnBackDwell, float grade, float verticalRadius) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeBlockPos(pos);
 		packet.writeFloat(angle);
 		packet.writeBoolean(isKeyNode);
 		packet.writeInt(turnBackDwell);
+		packet.writeFloat(grade);
+		packet.writeFloat(verticalRadius);
 		RegistryClient.sendToServer(PACKET_UPDATE_NODE_ANGLE, packet);
 	}
 

@@ -212,6 +212,7 @@ public abstract class RailMixin implements RailExtraSupplier {
     public Rail getTransposition(RailType railType) {
         if (railType != RailType.NONE) railType = this.railType;
         Rail result = new Rail(posEnd, facingEnd, posStart, facingStart, railType, transportMode);
+        result.copyGrades((Rail) (Object) this, true);
         RailExtraSupplier extra = (RailExtraSupplier) (Object) result;
         extra.setModelKey(modelKey);
         extra.setRenderReversed(!isSecondaryDir);
@@ -458,7 +459,8 @@ public abstract class RailMixin implements RailExtraSupplier {
         }
         final double[] key = {h1, k1, r1, tStart1, tEnd1, h2, k2, r2, tStart2, tEnd2,
                 yStart, yEnd, reverseT1 ? 1 : 0, reverseT2 ? 1 : 0, isStraight1 ? 1 : 0, isStraight2 ? 1 : 0,
-                verticalCurveRadius, rollingOffset, isSecondaryDir ? 1 : 0, railType.ordinal(), count, offsetRadius1, offsetRadius2};
+                verticalCurveRadius, rollingOffset, isSecondaryDir ? 1 : 0, railType.ordinal(), count, offsetRadius1, offsetRadius2,
+                rail.hasGrades() ? 1 : 0, rail.getGradeStart(), rail.getGradeEnd(), rail.getVerticalRadiusStart(), rail.getVerticalRadiusEnd()};
         final float[] points = mtrGeometryCache.get(key, rollAngleMap, () -> {
             final double increment = count / Math.round(count);
             final int capacity = (int) Math.ceil(count) + 1;
@@ -503,6 +505,11 @@ public abstract class RailMixin implements RailExtraSupplier {
     @Inject(method = "getPositionY", at = @At("HEAD"), cancellable = true, remap = false)
     private void onGetPositionY(double rawValue, CallbackInfoReturnable<Double> cir) {
         if (((Rail)(Object)this).railType.railSlopeStyle == RailType.RailSlopeStyle.CABLE) return;
+        if (((Rail)(Object)this).hasGrades()) {
+            // Rails with grades at their ends (0.87.0) have the height of their own vertical curves, not ANTE's radius
+            cir.setReturnValue(((Rail)(Object)this).getGradedY(rawValue) + rollingYOffset(rawValue));
+            return;
+        }
         double H = Math.abs(yEnd - yStart);
         double L = ((Rail)(Object)this).getLength();
         int sign = yStart < yEnd ? 1 : -1;
@@ -565,6 +572,12 @@ public abstract class RailMixin implements RailExtraSupplier {
     public int hashCode() {
         if (dataBytes == null) createDataBytes();
         return hashCode;
+    }
+
+    // Grades are set again in place when a node's grade changes, so what was worked out from the old ones goes
+    @Inject(method = "setGrades", at = @At("TAIL"), remap = false)
+    private void onSetGrades(double gradeStart, double gradeEnd, double radiusStart, double radiusEnd, CallbackInfo ci) {
+        dataBytes = null;
     }
 
     private void createDataBytes() {

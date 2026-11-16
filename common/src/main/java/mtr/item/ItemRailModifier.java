@@ -15,6 +15,7 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 
+import java.util.Arrays;
 import java.util.List;
 
 public class ItemRailModifier extends ItemNodeModifierBase {
@@ -90,8 +91,11 @@ public class ItemRailModifier extends ItemNodeModifierBase {
 			final boolean isValid = rail1.isValid() && rail2.isValid();
 
 			if (goodRadius && isValid && isValidContinuousMovement) {
+				// New rails follow their nodes' grades (0.87.0); the nodes take the new rail into their own
+				RailGrades.startGrades(world, posStart, posEnd, rail1, rail2);
 				railwayData.addRail(player, transportMode, posStart, posEnd, rail1, false);
 				final long newId = railwayData.addRail(player, transportMode, posEnd, posStart, rail2, true);
+				railwayData.refreshNodeGrades(Arrays.asList(posStart, posEnd));
 				world.setBlockAndUpdate(posStart, stateStart.setValue(BlockNode.IS_CONNECTED, true));
 				world.setBlockAndUpdate(posEnd, stateEnd.setValue(BlockNode.IS_CONNECTED, true));
 				PacketTrainDataGuiServer.createRailS2C(world, transportMode, posStart, posEnd, rail1, rail2, newId);

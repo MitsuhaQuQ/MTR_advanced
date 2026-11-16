@@ -26,6 +26,7 @@ import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.world.phys.Vec3;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
+import transitsim.geometry.VerticalProfile;
 
 import java.io.IOException;
 import java.util.*;
@@ -56,6 +57,17 @@ public class Rail extends SerializedDataBase {
 	 */
 	private float[] mapShape;
 	private boolean mapShapeDone;
+	/**
+	 * Whether the rail's height follows the grades at its ends ({@link VerticalProfile}, design 9.2). Rails built before
+	 * 0.87.0 have none and keep the old shape, level at both ends; new rails get them from their nodes ({@link RailGrades}).
+	 * They are set again in place when a node's grade changes, as the rail's shape across stays the same.
+	 */
+	private boolean hasGrades;
+	private double gradeStart;
+	private double gradeEnd;
+	private double verticalRadiusStart = VerticalProfile.DEFAULT_RADIUS;
+	private double verticalRadiusEnd = VerticalProfile.DEFAULT_RADIUS;
+	private VerticalProfile verticalProfile;
 
 	private static final double ACCEPT_THRESHOLD = 1E-4;
 	private static final double ANGLE_THRESHOLD = 1E-9;
@@ -85,6 +97,10 @@ public class Rail extends SerializedDataBase {
 	private static final String KEY_RAIL_TYPE = "rail_type";
 	private static final String KEY_TRANSPORT_MODE = "transport_mode";
 	private static final String KEY_TURN_BACK_DWELL = "turn_back_dwell";
+	private static final String KEY_GRADE_START = "grade_start";
+	private static final String KEY_GRADE_END = "grade_end";
+	private static final String KEY_VERTICAL_RADIUS_START = "vertical_radius_start";
+	private static final String KEY_VERTICAL_RADIUS_END = "vertical_radius_end";
 	/**
 	 * Keys ANTE saved with every rail; only read, for its Bézier rails ({@link #fromAnteBezier}).
 	 */
@@ -134,7 +150,29 @@ public class Rail extends SerializedDataBase {
 		// 3. b. If not -> Use two circles of different radii (see Biarc)
 		final double deltaForward = vecDifferenceRotatedZ;
 		final double deltaSide = vecDifferenceRotatedX;
-		if (facingStart.isParallel(facingEnd)) { // 1
+		// The line between the two nodes, when both nodes face along it as near as angles are kept (a tenth of a degree)
+		final double lineAngle = Math.atan2(vecDifference.z, vecDifference.x);
+		final boolean onLine = facingStart.isParallel(facingEnd) && Math.abs(deltaForward) >= ACCEPT_THRESHOLD && RailAngle.fromAngle(Math.toDegrees(lineAngle)).isParallel(facingStart);
+		if (onLine) { // 1. a. on a line at any angle: straight along the line itself, which ends exactly on both nodes
+			final double sign = Math.cos(lineAngle) * facingStart.cos + Math.sin(lineAngle) * facingStart.sin >= 0 ? 1 : -1;
+			h1 = sign * Math.cos(lineAngle);
+			k1 = sign * Math.sin(lineAngle);
+			if (Math.abs(h1) >= 0.5 && Math.abs(k1) >= 0.5) {
+				r1 = (h1 * zStart - k1 * xStart) / h1 / h1;
+				tStart1 = xStart / h1;
+				tEnd1 = xEnd / h1;
+			} else {
+				final double div = h1 * h1 - k1 * k1;
+				r1 = (h1 * zStart - k1 * xStart) / div;
+				tStart1 = (h1 * xStart - k1 * zStart) / div;
+				tEnd1 = (h1 * xEnd - k1 * zEnd) / div;
+			}
+			h2 = k2 = r2 = 0;
+			reverseT1 = tStart1 > tEnd1;
+			reverseT2 = false;
+			isStraight1 = isStraight2 = true;
+			tStart2 = tEnd2 = 0;
+		} else if (facingStart.isParallel(facingEnd)) { // 1
 			if (Math.abs(deltaForward) < ACCEPT_THRESHOLD) { // 1. a.
 				h1 = facingStart.cos;
 				k1 = facingStart.sin;
@@ -297,6 +335,9 @@ public class Rail extends SerializedDataBase {
 
 		facingStart = getRailAngle(false);
 		facingEnd = getRailAngle(true);
+		if (map.containsKey(KEY_GRADE_START) && map.containsKey(KEY_GRADE_END)) {
+			setGrades(messagePackHelper.getDouble(KEY_GRADE_START), messagePackHelper.getDouble(KEY_GRADE_END), messagePackHelper.getDouble(KEY_VERTICAL_RADIUS_START, VerticalProfile.DEFAULT_RADIUS), messagePackHelper.getDouble(KEY_VERTICAL_RADIUS_END, VerticalProfile.DEFAULT_RADIUS));
+		}
 	}
 
 	/**
@@ -366,6 +407,10 @@ public class Rail extends SerializedDataBase {
 
 		facingStart = getRailAngle(false);
 		facingEnd = getRailAngle(true);
+		// Before the ANTE fields, which its mixin reads after this constructor
+		if (packet.readBoolean()) {
+			setGrades(packet.readDouble(), packet.readDouble(), packet.readDouble(), packet.readDouble());
+		}
 	}
 
 	@Override
@@ -389,11 +434,17 @@ public class Rail extends SerializedDataBase {
 		messagePacker.packString(KEY_RAIL_TYPE).packString(railType.toString());
 		messagePacker.packString(KEY_TRANSPORT_MODE).packString(transportMode.toString());
 		messagePacker.packString(KEY_TURN_BACK_DWELL).packInt(turnBackDwell);
+		if (hasGrades) {
+			messagePacker.packString(KEY_GRADE_START).packDouble(gradeStart);
+			messagePacker.packString(KEY_GRADE_END).packDouble(gradeEnd);
+			messagePacker.packString(KEY_VERTICAL_RADIUS_START).packDouble(verticalRadiusStart);
+			messagePacker.packString(KEY_VERTICAL_RADIUS_END).packDouble(verticalRadiusEnd);
+		}
 	}
 
 	@Override
 	public int messagePackLength() {
-		return 19;
+		return hasGrades ? 23 : 19;
 	}
 
 	@Override
@@ -417,6 +468,90 @@ public class Rail extends SerializedDataBase {
 		packet.writeUtf(railType.toString());
 		packet.writeUtf(transportMode.toString());
 		packet.writeInt(turnBackDwell);
+		packet.writeBoolean(hasGrades);
+		if (hasGrades) {
+			packet.writeDouble(gradeStart);
+			packet.writeDouble(gradeEnd);
+			packet.writeDouble(verticalRadiusStart);
+			packet.writeDouble(verticalRadiusEnd);
+		}
+	}
+
+	public boolean hasGrades() {
+		return hasGrades;
+	}
+
+	/**
+	 * @return the grade at the start going along the rail, 0 for a rail of the old shape
+	 */
+	public double getGradeStart() {
+		return hasGrades ? gradeStart : 0;
+	}
+
+	/**
+	 * @return the grade at the end going along the rail, 0 for a rail of the old shape
+	 */
+	public double getGradeEnd() {
+		return hasGrades ? gradeEnd : 0;
+	}
+
+	public double getVerticalRadiusStart() {
+		return verticalRadiusStart;
+	}
+
+	public double getVerticalRadiusEnd() {
+		return verticalRadiusEnd;
+	}
+
+	/**
+	 * @return the height along the rail, or null for a rail of the old shape
+	 */
+	public VerticalProfile getVerticalProfile() {
+		return verticalProfile;
+	}
+
+	/**
+	 * Gives the rail grades at its ends, or new ones. Cable car rails keep their sag.
+	 */
+	public void setGrades(double gradeStart, double gradeEnd, double radiusStart, double radiusEnd) {
+		if (railType.railSlopeStyle == RailType.RailSlopeStyle.CABLE) {
+			return;
+		}
+		hasGrades = true;
+		this.gradeStart = VerticalProfile.clampGrade(gradeStart);
+		this.gradeEnd = VerticalProfile.clampGrade(gradeEnd);
+		verticalRadiusStart = VerticalProfile.clampRadius(radiusStart);
+		verticalRadiusEnd = VerticalProfile.clampRadius(radiusEnd);
+		verticalProfile = VerticalProfile.of(getLength(), yStart, yEnd, this.gradeStart, this.gradeEnd, verticalRadiusStart, verticalRadiusEnd);
+	}
+
+	public void setGradeStart(double grade, double radius) {
+		setGrades(grade, gradeEnd, radius, verticalRadiusEnd);
+	}
+
+	public void setGradeEnd(double grade, double radius) {
+		setGrades(gradeStart, grade, verticalRadiusStart, radius);
+	}
+
+	/**
+	 * Gives this rail the grades of another one between the same nodes, going the same way or, if {@code reversed}, the
+	 * other way.
+	 */
+	public void copyGrades(Rail rail, boolean reversed) {
+		if (rail.hasGrades) {
+			if (reversed) {
+				setGrades(-rail.gradeEnd, -rail.gradeStart, rail.verticalRadiusEnd, rail.verticalRadiusStart);
+			} else {
+				setGrades(rail.gradeStart, rail.gradeEnd, rail.verticalRadiusStart, rail.verticalRadiusEnd);
+			}
+		}
+	}
+
+	/**
+	 * The height by the grades at the ends, for ANTE's mixin, which otherwise works out its own.
+	 */
+	public double getGradedY(double value) {
+		return verticalProfile == null ? getPositionY(value) : verticalProfile.getY(value);
 	}
 
 	/**
@@ -507,6 +642,9 @@ public class Rail extends SerializedDataBase {
 			}
 			newRail.turnBackDwell = rail.turnBackDwell;
 			newBackwardsRail.turnBackDwell = backwardsRail.turnBackDwell;
+			// The same grades over the new length; the nodes work their grades out again afterwards (RailGrades)
+			newRail.copyGrades(rail, false);
+			newBackwardsRail.copyGrades(backwardsRail, false);
 		}
 		return rotatedNode;
 	}
@@ -563,6 +701,9 @@ public class Rail extends SerializedDataBase {
 	}
 
 	private double getPositionY(double value) {
+		if (verticalProfile != null) {
+			return verticalProfile.getY(value);
+		}
 		final double length = getLength();
 
 		if (railType.railSlopeStyle == RailType.RailSlopeStyle.CABLE) {

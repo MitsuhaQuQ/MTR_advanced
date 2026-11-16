@@ -9,6 +9,7 @@ import mtr.client.IDrawing;
 import mtr.data.IGui;
 import mtr.data.Rail;
 import mtr.data.RailAngle;
+import mtr.data.RailGrades;
 import mtr.mappings.BlockEntityRendererMapper;
 import mtr.mappings.Text;
 import mtr.mappings.UtilitiesClient;
@@ -28,7 +29,6 @@ import net.minecraft.world.phys.HitResult;
 
 import java.util.Locale;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 public class RenderNode<T extends BlockNode.TileEntityNode> extends BlockEntityRendererMapper<T> {
 
@@ -144,15 +144,14 @@ public class RenderNode<T extends BlockNode.TileEntityNode> extends BlockEntityR
 		UtilitiesClient.drawInBatch(font, text.getVisualOrderText(), -font.width(text) / 2F, y, IGui.ARGB_WHITE, true, matrices.last().pose(), vertexConsumers, 0, IGui.MAX_LIGHT_GLOWING);
 	}
 
-	// Nodes don't store a slope yet, so this is the average grade of each connected rail, going away from the node
+	// The node's grade going the way it faces (RailGrades), and whether it is worked out from the rails
 	private static String getSlopeText(BlockPos pos) {
 		final Map<BlockPos, Rail> connections = ClientData.RAILS.get(pos);
-		if (connections == null || connections.isEmpty()) {
+		final Level world = Minecraft.getInstance().level;
+		if (connections == null || connections.isEmpty() || world == null) {
 			return "-";
 		}
-		return connections.entrySet().stream().map(entry -> {
-			final double length = entry.getValue().getLength();
-			return String.format(Locale.ENGLISH, "%+.2f%%", length > 0 ? (entry.getKey().getY() - pos.getY()) * 100 / length : 0);
-		}).collect(Collectors.joining(" / "));
+		final String grade = String.format(Locale.ENGLISH, "%+.1f", RailGrades.getNodeGrade(world, ClientData.RAILS, pos) * 1000);
+		return Text.translatable(Float.isNaN(BlockNode.getGrade(world, pos)) ? "gui.mtr.node_grade_text_auto" : "gui.mtr.node_grade_text", grade).getString();
 	}
 }

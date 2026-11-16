@@ -522,5 +522,17 @@
   "block.mtr.platform_end_psd_2": "High Platform End Gate (No Outer Handle)",
   "item.mtr.platform_end_apg_2": "Low Platform End Gate (No Outer Handle)",
   "block.mtr.platform_end_apg_2": "Low Platform End Gate (No Outer Handle)",
-  "tooltip.mtr.platform_end_door": "Right-click to open or close this platform end gate independently."
+  "tooltip.mtr.platform_end_door": "Right-click to open or close this platform end gate independently.",
+  "gui.mtr.node_tab_plan": "Plan",
+  "gui.mtr.node_tab_vertical": "Vertical",
+  "gui.mtr.node_grade_auto": "Grade from the rails (mean of their mean grades on both sides)",
+  "gui.mtr.node_grade": "Grade (‰)",
+  "gui.mtr.node_grade_rule": "+ is uphill the way the node faces (blue line)",
+  "gui.mtr.node_vertical_radius": "Vertical curve radius (blocks)",
+  "gui.mtr.node_grade_old_rails": "A rail here was laid before 0.87.0 and stays level at this node, so the node's own grade is 0; lay it again to have it follow grades",
+  "gui.mtr.node_vertical_radius_too_large": "The rail to %s, %s, %s is too short for this radius; its curve here gets %s blocks",
+  "gui.mtr.node_grade_preview_hint": "Side view, the way the node faces to the right, heights stretched %s times. Grey: as now; yellow: as set (red if the radius doesn't fit). Drag to set the grade",
+  "gui.mtr.node_grade_forward": "facing →",
+  "gui.mtr.node_grade_text": "Grade %s‰",
+  "gui.mtr.node_grade_text_auto": "Grade %s‰ (auto)"
 }

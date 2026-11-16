@@ -4,6 +4,7 @@ import mtr.compat.Compat;
 import mtr.BlockEntityTypes;
 import mtr.Items;
 import mtr.data.RailAngle;
+import transitsim.geometry.VerticalProfile;
 import mtr.data.RailwayData;
 import mtr.data.TransportMode;
 import mtr.mappings.BlockDirectionalMapper;
@@ -165,6 +166,32 @@ public class BlockNode extends BlockDirectionalMapper {
 
 	private static final String[] DIRECTION_KEYS = {"e", "s", "w", "n"};
 
+	/**
+	 * @return the grade set for the node going the way it faces, or NaN if it is worked out from its rails
+	 */
+	public static float getGrade(BlockGetter world, BlockPos pos) {
+		final BlockEntity entity = world.getBlockEntity(pos);
+		return entity instanceof TileEntityNode ? ((TileEntityNode) entity).grade : Float.NaN;
+	}
+
+	/**
+	 * @return the radius of the vertical curves of the rails at the node
+	 */
+	public static float getVerticalRadius(BlockGetter world, BlockPos pos) {
+		final BlockEntity entity = world.getBlockEntity(pos);
+		return entity instanceof TileEntityNode ? ((TileEntityNode) entity).verticalRadius : (float) VerticalProfile.DEFAULT_RADIUS;
+	}
+
+	/**
+	 * @param grade the grade going the way the node faces, or NaN to work it out from the rails
+	 */
+	public static void setGrade(BlockGetter world, BlockPos pos, float grade, float verticalRadius) {
+		final BlockEntity entity = world.getBlockEntity(pos);
+		if (entity instanceof TileEntityNode) {
+			((TileEntityNode) entity).setGrade(grade, verticalRadius);
+		}
+	}
+
 	public static void setCustomAngle(BlockGetter world, BlockPos pos, float angle) {
 		final BlockEntity entity = world.getBlockEntity(pos);
 		if (entity instanceof TileEntityNode) {
@@ -242,8 +269,15 @@ public class BlockNode extends BlockDirectionalMapper {
 
 		private boolean hasCustomAngle;
 		private float customAngle;
+		/**
+		 * The grade set for the node going the way it faces, or NaN to work it out from its rails ({@code RailGrades}).
+		 */
+		private float grade = Float.NaN;
+		private float verticalRadius = (float) VerticalProfile.DEFAULT_RADIUS;
 
 		private static final String KEY_CUSTOM_ANGLE = "custom_angle";
+		private static final String KEY_GRADE = "grade";
+		private static final String KEY_VERTICAL_RADIUS = "vertical_radius";
 
 		public TileEntityNode(BlockEntityType<?> type, BlockPos pos, BlockState state) {
 			super(type, pos, state);
@@ -253,6 +287,8 @@ public class BlockNode extends BlockDirectionalMapper {
 		public void readCompoundTag(CompoundTag compoundTag) {
 			hasCustomAngle = compoundTag.contains(KEY_CUSTOM_ANGLE);
 			customAngle = compoundTag.getFloat(KEY_CUSTOM_ANGLE);
+			grade = compoundTag.contains(KEY_GRADE) ? compoundTag.getFloat(KEY_GRADE) : Float.NaN;
+			verticalRadius = compoundTag.contains(KEY_VERTICAL_RADIUS) ? compoundTag.getFloat(KEY_VERTICAL_RADIUS) : (float) VerticalProfile.DEFAULT_RADIUS;
 		}
 
 		@Override
@@ -260,6 +296,19 @@ public class BlockNode extends BlockDirectionalMapper {
 			if (hasCustomAngle) {
 				compoundTag.putFloat(KEY_CUSTOM_ANGLE, customAngle);
 			}
+			if (!Float.isNaN(grade)) {
+				compoundTag.putFloat(KEY_GRADE, grade);
+			}
+			if (verticalRadius != (float) VerticalProfile.DEFAULT_RADIUS) {
+				compoundTag.putFloat(KEY_VERTICAL_RADIUS, verticalRadius);
+			}
+		}
+
+		private void setGrade(float grade, float verticalRadius) {
+			this.grade = Float.isNaN(grade) ? Float.NaN : (float) VerticalProfile.clampGrade(grade);
+			this.verticalRadius = (float) VerticalProfile.clampRadius(verticalRadius);
+			setChanged();
+			syncData();
 		}
 
 		private void setCustomAngle(float angle) {

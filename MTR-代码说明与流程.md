@@ -85,6 +85,16 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.87.0 斜向直线和纵曲线（用户 2026-11-16：“下一步先提前斜向线路的直线、纵曲线的实现”；竖曲线半径可调，在节点界面加纵向选项卡）：
+- 斜向直线：`Rail` 构造时，两端朝向平行、两点连线的角度按 0.1° 取整后也与朝向平行，就沿连线的精确方向建一段直线（新的 0 号分支），两端正好在节点上。以前只有终点正好在起点朝向轴上（偏差 < 1e-4）才算直线，斜向整数坐标几乎都做成两段半径极大的反向圆弧，两端各留一点弯。已有轨道不重建。测试 `RailStraightAndGradesTest`。
+- 纵断面：纯计算在组件 `transitsim.geometry.VerticalProfile`（竖曲线 + 直坡 + 竖曲线，抛物线竖曲线，放不下时两端半径同比缩小；节点自动坡度 `autoNodeGrade`），测试 `VerticalProfileTest`。`Rail` 加 `grade_start/grade_end/vertical_radius_start/vertical_radius_end`（存档只在有坡度时写，包里先写一个布尔），`getPositionY` 有坡度时用 `VerticalProfile`。长度仍是水平长度，组件、闭塞、时刻都不受影响。
+- 节点坡度：`BlockNode.TileEntityNode` 存 `grade`（没有为自动）和 `vertical_radius`（默认 500）。`RailGrades.refreshNode` 把节点坡度设到相连有坡度轨道的这一端（就地改，ANTE 附加数据不丢），`RailwayData.refreshNodeGrades` 标记保存并 `createRailS2C`。调用顺序：连轨 `ItemRailModifier.onConnect` → `RailGrades.startGrades`（两端坡度 0）→ 两次 `addRail` → `refreshNodeGrades(两端)`；拆轨 `removeRailConnection`、拆节点 `removeNode`、转节点 `rotateNodeRails`（`Rail.rotateNode` 先 `copyGrades`）之后都 `refreshNodeGrades`；刷子界面设定 `receiveNodeAngleC2S`：`BlockNode.setGrade` → 转轨道 → `refreshNodeGrades(节点)`。
+- 坡度方向：沿节点自己的朝向（`BlockNode.getAngle`，刷子显示的蓝线）上坡为正，不随轨道增减而变。自动坡度：两侧各取相连轨道平均坡度的均值，再取两侧均值；有旧式轨道时为 0（旧轨道两端水平）。
+- 旧轨道（0.87.0 以前铺的）没有坡度，高度公式不变；ANTE `RailMixin.onGetPositionY` 对有坡度的轨道改用 `Rail.getGradedY` 加侧倾偏移，ANTE 的 `vertical_curve_radius` 只对旧轨道起作用。ANTE 绘制缓存键加了坡度字段，`setGrades` 末尾清 `equals/hashCode` 缓存，`getTransposition` 带上反向坡度。
+- 界面：`NodeAngleScreen` 顶部加“平面”“纵向”选项卡；纵向有“自动坡度”、坡度（‰）、竖曲线半径（格）、侧视图 `NodeGradePreview`（灰现状、黄设定后、红放不下，拖动设坡度），旧轨道和半径放不下有提示。节点悬浮文字第三行改为“坡度 +x.x‰（自动）”。数据包 `sendNodeAngleC2S` 多两个 float（坡度 NaN 为自动、半径）。
+- 已知限制：存车线已生成路径里的轨道副本要等重新生成路径才跟上新坡度；旧轨道不自动升级，拆掉重连才跟随坡度；竖曲线还没进限速（设计 9.5 第 4 步）。
+存档和协议变化，升第二位：0.87.0。资源不变，`mtm_assets_version` 不升，只换 MTM_Logic。
+
 0.86.1 卡死日志写明位置：`RailwayData` 在 `trains waiting on each other` 一行之后，对圈里每列车再写一行 `- train … holds …; waits for 列车 on …`，内容取自 `runReservations.getHeldClaims` 和 `getBlockers`，资源用 `describeClaim` 写成种类（方块坐标>方块坐标 way n）；道岔、区段只有第一部分有意义。原因：Q 世界 S2 车辆段（depot 8727185151283477680）单线带会让站的线路在游戏里两车各在一端互等，组件单独跑（`--resume`、`--restarts@`、共用预约逐 tick 的探针）都不重现，要靠游戏日志看两车各占什么、等什么。只改服务端，升第三位。
 
 0.86.0 共用轨道：按运行图分组、共用段冲突检查、运行图接入接出（用户 2026-11-16：直接做完再测，界面问题回头看）：

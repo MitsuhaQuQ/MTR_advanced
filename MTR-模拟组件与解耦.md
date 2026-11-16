@@ -853,9 +853,9 @@ G1 以前，这些功能只在组件和网页模拟里生效。要提前在游�
 5b. **曲线编辑**（用户 2026-11-05 提出，排在 ANTE 重合部分清掉之后）：
    - 两端切线长度可调：保留"两端位置加角度"，每端再加一个切线长度，控制曲线在这一端拉多长才转弯，在刷子界面的可视化里拖两个手柄；
    - 缓和曲线：圆弧两头曲率逐渐变化；
-   - 竖曲线：取代 ANTE 的竖曲线（`vertical_curve_radius`），读旧档时转换；
+   - 竖曲线：取代 ANTE 的竖曲线（`vertical_curve_radius`），读旧档时转换；（0.87.0：节点坡度和竖曲线已做，新轨道用；ANTE 旧数据的转换未做。）
    - 旧的贝塞尔轨道（ANTE 清理时先按两端方向算成了本体的形状）按新的切线长度补回原来的形状；
-   - 斜线上的曲线要好调（用户 2026-11-05 反馈）：现在想在斜向（非 0°/45°/90°）连一段直线，两端总会留一点弯，连不成完全笔直的直线。要能沿两端连线的方向连出真正的直线；任意角度的弯道也能直接拖手柄调整。
+   - 斜线上的曲线要好调（用户 2026-11-05 反馈）：现在想在斜向（非 0°/45°/90°）连一段直线，两端总会留一点弯，连不成完全笔直的直线。要能沿两端连线的方向连出真正的直线；任意角度的弯道也能直接拖手柄调整。（0.87.0：斜向直线已做；拖手柄调弯道未做。）
 5c. **游戏内只管物理层**（用户 2026-11-06 定的长期目标）：游戏内的仪表盘最终只负责划定车站和车厂范围、查看线路、编辑车站名称和站台号这类地图实物；运营逻辑（线路怎么跑、时刻表、车厂负责哪些线、存车线跑哪些线和配属几列、运用、排班方式）都放到网页编辑器。0.13.0 已经把车厂的线路、"不回库"、存车线的线路和配属车数做进网页；以后要从游戏内移走的入口：车厂的线路、方式、"不回库"、按频率的设置，存车线的上限，线路的时刻表界面。新的运营设置不再加到游戏内。
    - 0.38.0 做了存车线这一步：游戏内存车线界面只改名称、颜色、车型，车数、车型设置（含手动驾驶最高速度、手动转自动时间）和种别只显示、在网页车厂对话框改；网页设的车数同时是上限。还剩：车厂界面的运营项、线路的时刻表界面；运用按车池存放和规划另做。
 5d. **车厂拓扑、回送班次和等候位置进运行图**（用户 2026-11-06 提出，规划，尚未动手）：
@@ -1476,6 +1476,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 下一站清客和剩下运用交给备车（0.84.11）：组件 `TrainService.chooseDispatch`（清客站为调度台显示的下一站）、`handRestToSpare`/`tellRestUncovered`（复用 D5 的 `requestTakeover`），`Board.noteServicesUncovered`、`DepotBoard.uncoveredServices`；游戏和组件同一份代码，测试 `ClearOutTest`。
 
 回库车不收走等出库的车（0.84.10）：规则在组件 `FleetRules.givesUpEarlierStanding` 和 `TrainService.isLeavingForDuty`；组件 `TickRunner.SidingRun.tick`/`HeadlessTrain.canDeploy` 与游戏 `Siding.simulateTrain`/`TrainServer.canDeploy` 调同一函数（`ShedDutyTest`）。
+
+斜向直线和纵曲线（0.87.0）：纵断面的计算放在组件 `transitsim.geometry.VerticalProfile`（新包，纯几何，`VerticalProfileTest`），游戏 `Rail`、`RailGrades`、刷子界面调用它。组件的运行规则只用轨道长度（水平长度），纵断面不改长度，所以 `RailGraph`、`TrainMotion`、`SimDataset.DataTrack` 都不变；斜向直线只影响新铺轨道的长度，经 `SimExport` 照常导出。
 
 卡死日志（0.86.1）：游戏 `RailwayData.describeClaim`，用组件 `RunReservations.getHeldClaims/getBlockers` 写出卡死圈里每列车占着和等着的资源。
 
