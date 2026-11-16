@@ -161,12 +161,16 @@ public final class CurvedPSD {
 	 */
 	public static BlockState straightState(BlockState curved) {
 		final Block straight = straightOf(curved.getBlock());
-		if (straight == curved.getBlock()) {
-			return curved;
-		}
-		BlockState result = straight.defaultBlockState();
-		for (final Property<?> property : curved.getProperties()) {
-			result = copyProperty(curved, result, property);
+		return straight == curved.getBlock() ? curved : withProperties(curved, straight);
+	}
+
+	/**
+	 * @return the block's state with the properties of another state where it has them
+	 */
+	public static BlockState withProperties(BlockState from, Block block) {
+		BlockState result = block.defaultBlockState();
+		for (final Property<?> property : from.getProperties()) {
+			result = copyProperty(from, result, property);
 		}
 		return result;
 	}

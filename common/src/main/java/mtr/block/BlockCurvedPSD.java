@@ -222,6 +222,16 @@ public final class BlockCurvedPSD {
 		}
 
 		/**
+		 * The straight top works its state out from the block at its place in the world, which is not yet this one while it
+		 * is being put down (as by a command): it would come back straight. It stays curved, with the worked out properties.
+		 */
+		@Override
+		public BlockState updateShape(BlockState state, net.minecraft.core.Direction direction, BlockState newState, LevelAccessor world, BlockPos pos, BlockPos posFrom) {
+			final BlockState updated = super.updateShape(state, direction, newState, world, pos, posFrom);
+			return updated.isAir() || updated.is(this) ? updated : CurvedPSD.withProperties(updated, this);
+		}
+
+		/**
 		 * As the straight top: the brush turns the arrows of the run, shears make the run keep its sign without a door
 		 * below; the run found along the edge line
 		 */
