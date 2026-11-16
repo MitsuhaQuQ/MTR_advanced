@@ -68,13 +68,17 @@ public abstract class RenderRouteBase<T extends BlockPSDTop.TileEntityRouteBase>
 					matricesNew.translate(-0.5, -getAdditionalOffset(state), z);
 				});
 
-				final int leftBlocks = getTextureNumber(world, pos, facing, true);
-				final int rightBlocks = getTextureNumber(world, pos, facing, false);
+				final int leftCount = getTextureNumber(world, pos, facing, true);
+				final int rightCount = getTextureNumber(world, pos, facing, false);
+				// The run shared out by the length of each block's piece (0.91.3), a whole block each for straight blocks
+				final float leftBlocks = mtr.block.CurvedPSD.runLength(world, pos, true, leftCount);
+				final float rightBlocks = mtr.block.CurvedPSD.runLength(world, pos, false, rightCount);
+				final float ownLength = mtr.block.CurvedPSD.pieceLength(world, pos);
 				final int color = getShadingColor(facing, ARGB_WHITE);
-				final RenderType renderType = getRenderType(world, mtr.block.CurvedPSD.walk(world, pos, true, leftBlocks), state);
+				final RenderType renderType = getRenderType(world, mtr.block.CurvedPSD.walk(world, pos, true, leftCount), state);
 
 				if ((renderType == RenderType.ARROW || renderType == RenderType.ROUTE) && IBlock.getStatePropertySafe(state, SIDE_EXTENDED) != EnumSide.SINGLE) {
-					final float width = leftBlocks + rightBlocks + 1 - sidePadding * 2;
+					final float width = leftBlocks + rightBlocks + ownLength - sidePadding * 2;
 					final float height = 1 - topPadding - bottomPadding;
 					final int arrowDirection = IBlock.getStatePropertySafe(state, arrowDirectionProperty);
 
@@ -92,7 +96,7 @@ public abstract class RenderRouteBase<T extends BlockPSDTop.TileEntityRouteBase>
 					});
 				}
 
-				renderAdditional(storedMatrixTransformations, platformId, state, leftBlocks, rightBlocks, facing.getOpposite(), color, light);
+				renderAdditional(storedMatrixTransformations, platformId, state, leftBlocks, rightBlocks, ownLength, facing.getOpposite(), color, light);
 			}
 		}
 	}
@@ -119,7 +123,12 @@ public abstract class RenderRouteBase<T extends BlockPSDTop.TileEntityRouteBase>
 
 	protected abstract RenderType getRenderType(BlockGetter world, BlockPos pos, BlockState state);
 
-	protected abstract void renderAdditional(StoredMatrixTransformations storedMatrixTransformations, long platformId, BlockState state, int leftBlocks, int rightBlocks, Direction facing, int color, int light);
+	/**
+	 * @param leftBlocks  how long the run is on the left of this block, in blocks
+	 * @param rightBlocks on the right
+	 * @param ownLength   how long this block's piece is (1 for a straight block, its piece of the edge line for a curved one)
+	 */
+	protected abstract void renderAdditional(StoredMatrixTransformations storedMatrixTransformations, long platformId, BlockState state, float leftBlocks, float rightBlocks, float ownLength, Direction facing, int color, int light);
 
 	/**
 	 * Counts the blocks of the run beside this one on a side. Since 0.91.0 the next block is found along the bent edge line

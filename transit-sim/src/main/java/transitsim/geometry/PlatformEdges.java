@@ -347,8 +347,22 @@ public final class PlatformEdges {
 	 */
 	public static final class Bend {
 
+		/**
+		 * The ends of two pieces further apart than this aren't joined, in blocks
+		 */
+		private static final double MOST_JOIN_GAP = 0.25;
+		/**
+		 * Pieces turning more than about 60 degrees at a joint aren't mitred
+		 */
+		private static final double MOST_MITRE_COS = 0.5;
+
 		public final double startX, startZ, endX, endZ;
 		public final double towardsTrackX, towardsTrackZ;
+		/**
+		 * Which way depth goes back from the line at each end, scaled so the depth square to the line keeps its size: the
+		 * direction towards the track at both ends on its own, mitred with the next piece's when joined ({@link #joined})
+		 */
+		private final double startMitreX, startMitreZ, endMitreX, endMitreZ;
 
 		private Bend(double[] segment, int angleIndex) {
 			startX = segment[0];
@@ -357,6 +371,21 @@ public final class PlatformEdges {
 			endZ = segment[3];
 			towardsTrackX = Math.cos(angleIndex * 2 * Math.PI / ANGLES);
 			towardsTrackZ = Math.sin(angleIndex * 2 * Math.PI / ANGLES);
+			startMitreX = endMitreX = towardsTrackX;
+			startMitreZ = endMitreZ = towardsTrackZ;
+		}
+
+		private Bend(double startX, double startZ, double endX, double endZ, double towardsTrackX, double towardsTrackZ, double startMitreX, double startMitreZ, double endMitreX, double endMitreZ) {
+			this.startX = startX;
+			this.startZ = startZ;
+			this.endX = endX;
+			this.endZ = endZ;
+			this.towardsTrackX = towardsTrackX;
+			this.towardsTrackZ = towardsTrackZ;
+			this.startMitreX = startMitreX;
+			this.startMitreZ = startMitreZ;
+			this.endMitreX = endMitreX;
+			this.endMitreZ = endMitreZ;
 		}
 
 		/**
@@ -365,7 +394,81 @@ public final class PlatformEdges {
 		public double[] point(int facingX, int facingZ, double x, double z) {
 			final double back = 0.5 - ((x - 0.5) * facingX + (z - 0.5) * facingZ);
 			final double along = 0.5 + (x - 0.5) * -facingZ + (z - 0.5) * facingX;
-			return new double[]{startX + (endX - startX) * along - towardsTrackX * back, startZ + (endZ - startZ) * along - towardsTrackZ * back};
+			return at(along, back);
+		}
+
+		/**
+		 * @param along where along the piece, 0 at its start and 1 at its end
+		 * @param back  how far back from the line towards the platform
+		 * @return the point there, in block coordinates, as {x, z}
+		 */
+		public double[] at(double along, double back) {
+			// Depth goes back along the mitre, turning from one end's to the other's across the piece
+			final double t = Math.max(0, Math.min(1, along));
+			final double mitreX = startMitreX + (endMitreX - startMitreX) * t;
+			final double mitreZ = startMitreZ + (endMitreZ - startMitreZ) * t;
+			return new double[]{startX + (endX - startX) * along - mitreX * back, startZ + (endZ - startZ) * along - mitreZ * back};
+		}
+
+		/**
+		 * Smooths the corner with the pieces of the blocks beside, for drawing (0.91.3): where this piece and the next meet,
+		 * both end at the same point (halfway between their ends, which their rounding may part a little), and depth goes
+		 * back along the bisector there, so the two pieces of a door meet without a gap on the outside of the corner or an
+		 * overlap on the inside.
+		 *
+		 * @param left    the piece of the block beside on the left (against the line), or null
+		 * @param leftDx  where that block is from this one
+		 * @param right   the piece of the block beside on the right, or null
+		 * @return the joined piece; this one where nothing is beside or the pieces don't meet
+		 */
+		public Bend joined(Bend left, int leftDx, int leftDz, Bend right, int rightDx, int rightDz) {
+			double newStartX = startX, newStartZ = startZ, newEndX = endX, newEndZ = endZ;
+			double newStartMitreX = startMitreX, newStartMitreZ = startMitreZ, newEndMitreX = endMitreX, newEndMitreZ = endMitreZ;
+			final double[] start = join(startX, startZ, left, leftDx, leftDz);
+			if (start != null) {
+				newStartX = start[0];
+				newStartZ = start[1];
+				newStartMitreX = start[2];
+				newStartMitreZ = start[3];
+			}
+			final double[] end = join(endX, endZ, right, rightDx, rightDz);
+			if (end != null) {
+				newEndX = end[0];
+				newEndZ = end[1];
+				newEndMitreX = end[2];
+				newEndMitreZ = end[3];
+			}
+			return new Bend(newStartX, newStartZ, newEndX, newEndZ, towardsTrackX, towardsTrackZ, newStartMitreX, newStartMitreZ, newEndMitreX, newEndMitreZ);
+		}
+
+		/**
+		 * @return the joint of this piece's end with the nearer end of the other piece, and the mitre there, as {x, z,
+		 * mitreX, mitreZ}; null when there is no other piece, it doesn't come within a quarter block or turns too sharply
+		 */
+		private double[] join(double x, double z, Bend other, int dx, int dz) {
+			if (other == null) {
+				return null;
+			}
+			final double otherStartX = other.startX + dx, otherStartZ = other.startZ + dz;
+			final double otherEndX = other.endX + dx, otherEndZ = other.endZ + dz;
+			final boolean startNearer = Math.hypot(otherStartX - x, otherStartZ - z) <= Math.hypot(otherEndX - x, otherEndZ - z);
+			final double nearX = startNearer ? otherStartX : otherEndX;
+			final double nearZ = startNearer ? otherStartZ : otherEndZ;
+			if (Math.hypot(nearX - x, nearZ - z) > MOST_JOIN_GAP) {
+				return null;
+			}
+			final double sumX = towardsTrackX + other.towardsTrackX;
+			final double sumZ = towardsTrackZ + other.towardsTrackZ;
+			final double sumLength = Math.hypot(sumX, sumZ);
+			if (sumLength < 1E-6) {
+				return null;
+			}
+			// Scaled so that going back by a depth along it is that depth square to this piece's line
+			final double cos = (sumX * towardsTrackX + sumZ * towardsTrackZ) / sumLength;
+			if (cos < MOST_MITRE_COS) {
+				return null;
+			}
+			return new double[]{(x + nearX) / 2, (z + nearZ) / 2, sumX / sumLength / cos, sumZ / sumLength / cos};
 		}
 
 		/**

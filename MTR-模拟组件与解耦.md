@@ -1479,6 +1479,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 站台边样式（0.89.0）：组件 `PlatformEdges` 的切距范围扩到 ±1.75 格（`MARKING_REACH`），游戏 `BlockPlatformEdge.sourceFor`、`RenderPlatformEdge` 按来源方块模型画。
 
+曲线门折角平滑（0.91.3）：组件 `PlatformEdges.Bend` 加 `joined`（相邻段在接缝处并点、角平分线斜接）和 `at`，测试 `PlatformEdgesTest` 两项；游戏 `CurvedPSD.neighbour` 按最近段端点找邻格，`RenderRouteBase` 按段长分线路图。
+
 曲线门头字闪与卡死（0.91.2）：只改游戏客户端 `BendingVertexConsumer`、`RenderRouteBase`，组件不变。
 
 曲线屏蔽门画歪（0.91.1）：只改游戏客户端 `BendingVertexConsumer`，组件不变。

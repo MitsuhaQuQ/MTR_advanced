@@ -42,6 +42,8 @@
 
 0.89.0 (client and server, save change): a platform edge block looks like the platform block it is put against (the block clicked, else a platform beside it), whatever its kind, other mods' too: its top and side textures come from that block's model, and the platform's edge marking is laid along the cut, so it follows the track at any angle. Blocks wholly platform within a block of the edge keep the cut's direction for that.
 
+0.91.3 (client and server, no protocol change): a run of curved screen doors no longer breaks apart near block corners (the next block along is the one whose piece of the line meets this one), so a route map or arrow spans its whole run; it is shared out by each block's length along the line instead of a whole block each, so it isn't stretched; and the corners between the pieces of a curved door are smoothed: they meet at one point and the door's depth turns along the bisector there, without a gap outside the corner or an overlap inside.
+
 0.91.2 (client only): the route maps and arrows on curved screen door tops and gate glass no longer flicker as the camera moves, and counting the blocks of a run along a bent line can no longer run on for ever and freeze the game. The curved glass no longer lays a whole side when used sneaking.
 
 0.91.1 (client only): curved screen doors and gates no longer lean with the view: they are bent in the block's own coordinates.

@@ -32,7 +32,7 @@ public class RenderAPGGlass extends RenderRouteBase<BlockAPGGlass.TileEntityAPGG
 	}
 
 	@Override
-	protected void renderAdditional(StoredMatrixTransformations storedMatrixTransformations, long platformId, BlockState state, int leftBlocks, int rightBlocks, Direction facing, int color, int light) {
+	protected void renderAdditional(StoredMatrixTransformations storedMatrixTransformations, long platformId, BlockState state, float leftBlocks, float rightBlocks, float ownLength, Direction facing, int color, int light) {
 		if (IBlock.getStatePropertySafe(state, HALF) == DoubleBlockHalf.UPPER && IBlock.getStatePropertySafe(state, SIDE_EXTENDED) != EnumSide.SINGLE) {
 			final boolean isLeft = isLeft(state);
 			final boolean isRight = isRight(state);
@@ -43,7 +43,7 @@ public class RenderAPGGlass extends RenderRouteBase<BlockAPGGlass.TileEntityAPGG
 				matrices.popPose();
 			});
 
-			final float width = leftBlocks + rightBlocks + 1 - sidePadding * 2;
+			final float width = leftBlocks + rightBlocks + ownLength - sidePadding * 2;
 			final float height = 1 - topPadding - bottomPadding;
 			RenderTrains.scheduleRender(ClientData.DATA_CACHE.getSingleRowStationName(platformId, width / height).resourceLocation, false, RenderTrains.QueuedRenderLayer.EXTERIOR, (matrices, vertexConsumer) -> {
 				storedMatrixTransformations.transform(matrices);

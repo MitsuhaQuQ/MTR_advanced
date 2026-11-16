@@ -41,6 +41,10 @@ public final class CurvedPSD {
 	 * How far along the run a brush sets the arrows and the persistent tops, as for the straight ones
 	 */
 	private static final int MOST_STEPS = 256;
+	/**
+	 * Piece ends further apart than this don't make neighbours, in blocks
+	 */
+	private static final double MOST_JOIN_GAP = 0.3;
 
 	private CurvedPSD() {
 	}
@@ -115,6 +119,37 @@ public final class CurvedPSD {
 	public static BlockPos neighbour(BlockGetter world, BlockPos pos, boolean left) {
 		final PlatformEdges.Bend bend = bendAt(world, pos);
 		if (bend != null) {
+			// The curved block round this one whose piece has an end nearest this piece's end on that side, nearer to it than
+			// to this piece's other end (0.91.3: the block just beyond the end was taken, which near a block corner could be
+			// another than the one whose way back leads here, so runs broke apart)
+			final double endX = left ? bend.startX : bend.endX;
+			final double endZ = left ? bend.startZ : bend.endZ;
+			final double otherX = left ? bend.endX : bend.startX;
+			final double otherZ = left ? bend.endZ : bend.startZ;
+			BlockPos best = null;
+			double bestDistance = MOST_JOIN_GAP;
+			for (int dx = -1; dx <= 1; dx++) {
+				for (int dz = -1; dz <= 1; dz++) {
+					if (dx == 0 && dz == 0) {
+						continue;
+					}
+					final BlockPos candidate = pos.offset(dx, 0, dz);
+					final PlatformEdges.Bend candidateBend = bendAt(world, candidate);
+					if (candidateBend == null) {
+						continue;
+					}
+					for (final double[] candidateEnd : new double[][]{{candidateBend.startX + dx, candidateBend.startZ + dz}, {candidateBend.endX + dx, candidateBend.endZ + dz}}) {
+						final double distance = Math.hypot(candidateEnd[0] - endX, candidateEnd[1] - endZ);
+						if (distance < bestDistance && distance < Math.hypot(candidateEnd[0] - otherX, candidateEnd[1] - otherZ)) {
+							bestDistance = distance;
+							best = candidate;
+						}
+					}
+				}
+			}
+			if (best != null) {
+				return best;
+			}
 			final double[] point = bend.beyond(left);
 			return new BlockPos((int) Math.floor(pos.getX() + point[0]), pos.getY(), (int) Math.floor(pos.getZ() + point[1]));
 		}
@@ -140,6 +175,39 @@ public final class CurvedPSD {
 			result = next;
 		}
 		return result;
+	}
+
+	/**
+	 * @return how long the block's piece of a run is, in blocks: its piece of the edge line, a whole block for a straight one
+	 */
+	public static float pieceLength(BlockGetter world, BlockPos pos) {
+		final PlatformEdges.Bend bend = bendAt(world, pos);
+		return bend == null ? 1 : (float) Math.hypot(bend.endX - bend.startX, bend.endZ - bend.startZ);
+	}
+
+	/**
+	 * @return how long the given number of blocks of the run beside this one on a side are together, in blocks
+	 */
+	public static float runLength(BlockGetter world, BlockPos pos, boolean left, int blocks) {
+		float length = 0;
+		BlockPos current = pos;
+		for (int i = 0; i < blocks; i++) {
+			final BlockPos next = neighbour(world, current, left);
+			if (next.equals(current)) {
+				break;
+			}
+			current = next;
+			length += pieceLength(world, current);
+		}
+		return length;
+	}
+
+	/**
+	 * @return the piece of a straight screen door or gate block along its side towards the track, to join curved pieces to
+	 */
+	public static PlatformEdges.Bend straightBend(Direction facing) {
+		final int angle = Math.floorMod(Math.round((float) (Math.atan2(facing.getStepZ(), facing.getStepX()) / (2 * Math.PI) * PlatformEdges.ANGLES)), PlatformEdges.ANGLES);
+		return PlatformEdges.bend(angle, PlatformEdges.CUT_CENTRE + PlatformEdges.CELLS / 2);
 	}
 
 	/**

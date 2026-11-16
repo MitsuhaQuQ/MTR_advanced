@@ -100,7 +100,7 @@ public class RenderPSDTop extends RenderRouteBase<BlockPSDTop.TileEntityPSDTop> 
 	}
 
 	@Override
-	protected void renderAdditional(StoredMatrixTransformations storedMatrixTransformations, long platformId, BlockState state, int leftBlocks, int rightBlocks, Direction facing, int color, int light) {
+	protected void renderAdditional(StoredMatrixTransformations storedMatrixTransformations, long platformId, BlockState state, float leftBlocks, float rightBlocks, float ownLength, Direction facing, int color, int light) {
 		final boolean isNotPersistent = IBlock.getStatePropertySafe(state, BlockPSDTop.PERSISTENT) == BlockPSDTop.EnumPersistent.NONE;
 		final boolean airLeft = isNotPersistent && IBlock.getStatePropertySafe(state, BlockPSDTop.AIR_LEFT);
 		final boolean airRight = isNotPersistent && IBlock.getStatePropertySafe(state, BlockPSDTop.AIR_RIGHT);
