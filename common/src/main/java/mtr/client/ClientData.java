@@ -100,6 +100,10 @@ public final class ClientData {
 
 	public static final ClientCache DATA_CACHE = new ClientCache(STATIONS, PLATFORMS, SIDINGS, ROUTES, DEPOTS, LIFTS);
 
+	static {
+		DATA_CACHE.rails = RAILS;
+	}
+
 	private static final Map<UUID, Integer> PLAYER_RIDING_COOL_DOWN = new HashMap<>();
 
 	/**
@@ -176,7 +180,10 @@ public final class ClientData {
 			railsTemp.put(startPos, railMap);
 		}
 
-		client.execute(() -> clearAndAddAll(RAILS, railsTemp));
+		client.execute(() -> {
+			clearAndAddAll(RAILS, railsTemp);
+			DATA_CACHE.railsChanged();
+		});
 	}
 
 	public static void updateTrains(Minecraft client, FriendlyByteBuf packet) {

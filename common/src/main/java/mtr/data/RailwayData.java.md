@@ -224,7 +224,7 @@
 - `removeRailConnection(Level, rails, pos1, pos2)` 及私有带 `kept` 版本。调用者：`PacketTrainDataGuiClient.java:502`。
 - `containsRail(rails, pos1, pos2)`。调用者：`SavedRailBase.java:205`、`SignalBlocks.java:220`。
 - `getStation(Set<Station>, DataCache, BlockPos)`：见 `DataCache#getStationAt`（旁边站台的车站，否则区域包含该位置、同高度且站台最近的车站）。调用者：`RailwayDataRouteFinderModule.java:297`、`MinecraftClientUtil.java:140`。
-- `getClosePlatformId(platforms, dataCache, pos[, radius, lower, upper])`：先查缓存；否则从半径 1 到 radius 逐步找最近（曼哈顿距离到中点）的站台；结果（含 0）写入缓存。默认 5/0/4。调用者：`BlockPSDTop.java:197`、`BlockTrainScheduleSensor.java:168`。
+- `getClosePlatformId(platforms, dataCache, pos[, radius, lower, upper])`：先查缓存；否则（0.89.5）对高度在 [低端−lower, 高端+upper] 内的站台，用 `PlatformCurves.railOf` 取它的轨道（`dataCache.rails`），算方块中心到轨道曲线的水平距离（`railDistance`：每 1 格粗扫再在最近点 ±1 格内按 0.125 细扫）减 0.5，不超过 radius 的取最近，相等时取中点曼哈顿距离近的；先用两端方框外扩 radius+弦长/4 粗筛。没有轨道的站台退回原来的两端方框（`boxDistance`：能框住方块的最小半径）。原先只用两端点的方框 + 中点距离，曲线站台内侧识别不到、斜站台会认成相邻站台。结果（含 0）写入缓存。默认 5/0/4。调用者：`BlockPSDTop.java:197`、`BlockTrainScheduleSensor.java:168`。
 - `useRoutesAndStationsFromIndex(int stopIndex, [long actualPlatform,] List<Long> routeIds, DataCache, RouteAndStationsCallback)`：把跨多条线路的停站序号换成（本线内序号、本线、下一可见线路、本站、下一个不通过的站、终点站）并回调；相邻线路首末站台相同时只算一次；给出实际站台时先用 `AnnouncementStops.nearest` 校正序号。返回是否找到。调用者：`TrainServer.java:741`、`TrainClient.java:333`。
 - `isBetween(value, v1, v2[, padding])`、`round(value, decimalPlaces)`。
 - `writeMessagePackDataset(MessagePacker, Collection<? extends SerializedDataBase>, String key)`：写键与数组，每项为 map。调用者：`Siding.java:474`、`PathPieces.java:106`。

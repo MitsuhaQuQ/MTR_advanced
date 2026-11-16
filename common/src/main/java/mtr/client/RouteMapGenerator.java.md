@@ -72,10 +72,10 @@
 - 并行线的纵向偏移（以 `scale` 为单位，按颜色组居中）。
 
 ### `private static List<Integer> getRouteStream(long platformId, BiConsumer<Route, Integer> nonTerminatingCallback)`
-- 作用：经过该站台且在此停站（非通过）、未隐藏的线路按颜色排序；非终到的线路回调 `(线路, 本站序号)` 并收集颜色；若全部终到则返回终到线路的颜色。
+- 作用：经过该站台且在此停站（非通过）、未隐藏的线路按颜色排序；非终到的线路回调 `(线路, 本站序号)` 并收集颜色；若全部终到则返回终到线路的颜色。0.89.5：站台上没有任何停车或终到的线路（只有通过的线路，如快车线）时，退回收集经过该站台、未隐藏的通过线路，线路图与方向牌照常画出。
 
 ### `private static List<MapRoute> getMapRoutes(long platformId)`（本分支新增）
-- 作用：要画的线路，每条只保留停站。同一线路键在此有多种服务颜色（`Route.getOwnColor`）时用各自颜色，否则用线路颜色；只有一站的跳过；与已有线路画法相同（`drawsSameAs`）的跳过；按线路颜色、线路键、颜色排序。
+- 作用：要画的线路，每条只保留停站。同一线路键在此有多种服务颜色（`Route.getOwnColor`）时用各自颜色，否则用线路颜色；只有一站的跳过；与已有线路画法相同（`drawsSameAs`）的跳过；按线路颜色、线路键、颜色排序。`MapRoute.passesHere`（0.89.5）：线路在本站台通过；全部线路都通过时，`generateRouteMap`/`generateLoopMap` 把本站画成灰色的已过站样式，不画当前站的黑底高亮。
 
 ### `private static String getLineKey(Route route)`
 - `交通方式 + route.getLineKey()`。

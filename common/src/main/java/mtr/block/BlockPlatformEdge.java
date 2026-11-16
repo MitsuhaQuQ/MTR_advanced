@@ -78,7 +78,7 @@ public class BlockPlatformEdge extends BlockMapper implements EntityBlockMapper 
 	}
 
 	/**
-	 * A platform block whose side towards the track is set back under its top (MTR's indented platforms, 0.89.3) has the
+	 * A platform block whose side towards the track is set back under its top (MTR's indented platforms, 0.89.4) has the
 	 * same recess along the cut: below its height the platform's part starts that much further from the track.
 	 *
 	 * @param source the block the edge block looks like, null for the default platform

@@ -486,13 +486,14 @@ public class RouteMapGenerator implements IGui {
 				}
 
 				final int maxStringWidth = (int) (scale * 0.9 * ((vertical ? heightScale : widthScale) / 2 + extraPadding / routeCount));
+				final boolean passesHere = mapRoutes.stream().allMatch(mapRoute -> mapRoute.passesHere);
 				stationPositionsGrouped.forEach((stationId, stationPositionGroupedSet) -> stationPositionGroupedSet.forEach(stationPositionGrouped -> {
 					final int x = Math.round((stationPositionGrouped.stationPosition.x + xOffset) * scale * widthScale);
 					final int y = Math.round((stationPositionGrouped.stationPosition.y + yOffset) * scale * heightScale);
 					final int lines = stationPositionGrouped.stationPosition.isCommon ? colorIndices[colorIndices.length - 1] : 0;
 					final boolean textBelow = vertical || (stationPositionGrouped.stationPosition.isCommon ? Math.abs(stationPositionGrouped.stationOffset) % 2 == 0 : y >= yOffset * scale);
-					final boolean currentStation = stationPositionGrouped.stationOffset == 0;
-					final boolean passed = stationPositionGrouped.stationOffset < 0;
+					final boolean currentStation = stationPositionGrouped.stationOffset == 0 && !passesHere;
+					final boolean passed = stationPositionGrouped.stationOffset < 0 || stationPositionGrouped.stationOffset == 0 && passesHere;
 
 					drawStationWithText(nativeImage, stationId, x, y, heightScale, lines, textBelow, currentStation, passed, stationPositionGrouped.interchangeColors, stationPositionGrouped.interchangeNames, maxStringWidth, vertical);
 				}));
@@ -601,7 +602,7 @@ public class RouteMapGenerator implements IGui {
 			final StationPosition position = positions.get(i);
 			final int x = Math.round((position.x + xOffset) * scale * widthScale);
 			final int y = Math.round((position.y + yOffset) * scale * heightScale);
-			drawStationWithText(nativeImage, stationIds.get(i), x, y, heightScale, 0, i < bottomCount, i == 0, false, interchangeColorsList.get(i), interchangeNamesList.get(i), maxStringWidth, false);
+			drawStationWithText(nativeImage, stationIds.get(i), x, y, heightScale, 0, i < bottomCount, i == 0 && !mapRoute.passesHere, i == 0 && mapRoute.passesHere, interchangeColorsList.get(i), interchangeNamesList.get(i), maxStringWidth, false);
 		}
 
 		if (transparentWhite) {
@@ -769,6 +770,19 @@ public class RouteMapGenerator implements IGui {
 				colors.add(route.color);
 			}
 		});
+		// A platform every route runs through without stopping (the fast lines of a station where locals wait): its signs
+		// show those routes rather than nothing, this station drawn as passed (user, 2026-11-17: 通过的站台线路图画不出来)
+		if (colors.isEmpty() && terminatingColors.isEmpty()) {
+			ClientData.ROUTES.stream().filter(route -> route.containsPlatformId(platformId) && !route.isHidden).sorted((a, b) -> a.color == b.color ? a.compareTo(b) : a.color - b.color).forEach(route -> {
+				final int currentStationIndex = route.getPlatformIdIndex(platformId);
+				if (currentStationIndex < route.platformIds.size() - 1) {
+					nonTerminatingCallback.accept(route, currentStationIndex);
+					if (!colors.contains(route.color)) {
+						colors.add(route.color);
+					}
+				}
+			});
+		}
 		if (colors.isEmpty()) {
 			colors.addAll(terminatingColors);
 		}
@@ -1054,9 +1068,14 @@ public class RouteMapGenerator implements IGui {
 		 * For a loop, each station once going round from the current one; otherwise null.
 		 */
 		private final List<Long> loopStationIds;
+		/**
+		 * Trains of this route run through the platform the map is for without stopping.
+		 */
+		private final boolean passesHere;
 
 		private MapRoute(Route route, int color, int currentPlatformIndex) {
 			this.color = color;
+			passesHere = currentPlatformIndex > 0 && currentPlatformIndex < route.platformIds.size() - 1 && route.platformIds.get(currentPlatformIndex).pass;
 			lineColor = route.color;
 			lineKey = getLineKey(route);
 			name = route.name.split("\\|\\|")[0];

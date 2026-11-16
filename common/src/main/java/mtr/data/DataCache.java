@@ -49,6 +49,11 @@ public class DataCache {
 	public final Map<Long, Station> overlappingPlatforms = new TreeMap<>();
 	public final Set<Long> platformsByIdAlone = new TreeSet<>();
 	public final Long2LongOpenHashMap blockPosToPlatformId = new Long2LongOpenHashMap();
+	/**
+	 * The rails of this side (the server's dimension, or the client's), so a block can find the platform whose rail it
+	 * stands nearest along a curve ({@link RailwayData#getClosePlatformId}); empty until set.
+	 */
+	public Map<BlockPos, Map<BlockPos, Rail>> rails = new HashMap<>();
 	public final Long2ObjectOpenHashMap<Long2ObjectOpenHashMap<RailwayDataRouteFinderModule.ConnectionDetails>> platformConnections = new Long2ObjectOpenHashMap<>();
 
 	protected final Set<Station> stations;
@@ -228,6 +233,14 @@ public class DataCache {
 			e.printStackTrace();
 		}
 
+		lastRefreshedTime = System.currentTimeMillis();
+	}
+
+	/**
+	 * The rails came after the platforms (the client gets them in their own packet): blocks look for their platform again.
+	 */
+	public void railsChanged() {
+		blockPosToPlatformId.clear();
 		lastRefreshedTime = System.currentTimeMillis();
 	}
 

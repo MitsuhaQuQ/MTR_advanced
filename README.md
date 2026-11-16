@@ -42,6 +42,8 @@
 
 0.89.0 (client and server, save change): a platform edge block looks like the platform block it is put against (the block clicked, else a platform beside it), whatever its kind, other mods' too: its top and side textures come from that block's model, and the platform's edge marking is laid along the cut, so it follows the track at any angle. Blocks wholly platform within a block of the edge keep the cut's direction for that.
 
+0.89.5 (client and server): a sign, PIDS or other block finds its platform by how near it stands to the platform's actual track, so blocks on the inner side of a curved platform are found and diagonal platforms side by side are told apart; route maps on a platform where every route runs through without stopping show those routes, this station greyed out, instead of nothing.
+
 0.89.2 (server only): a platform edge block put down by itself against an edge block of the default look now takes the default platform's look with its edge marking, instead of the look of a plain block beside it.
 
 0.89.4 (client and server): a platform edge block lays the marking of the platform block it looks like with that block's facing side at the cut, so the yellow line and the tactile strip keep the sides they have on that block, and an edge block that looks like an indented platform is set back under its top along the cut as that block is.

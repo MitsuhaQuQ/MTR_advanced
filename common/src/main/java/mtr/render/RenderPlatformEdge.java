@@ -69,7 +69,7 @@ public class RenderPlatformEdge extends BlockEntityRendererMapper<BlockPlatformE
 		}
 		final BlockState source = entity.getSource() == null ? Blocks.PLATFORM.get().defaultBlockState() : entity.getSource();
 		final Textures textures = texturesOf(source);
-		// Below a recess (MTR's indented platforms) the platform's part starts further from the track (0.89.3)
+		// Below a recess (MTR's indented platforms) the platform's part starts further from the track (0.89.4)
 		final int[] recess = BlockPlatformEdge.recessOf(entity.getSource());
 		final float recessHeight = recess[0] == 0 ? 0 : (float) recess[1] / PlatformEdges.CELLS;
 		final double[] lowerOutline = recess[0] == 0 ? outline : PlatformEdges.outline(angle, BlockPlatformEdge.recessedCut(cut, recess));
@@ -98,7 +98,7 @@ public class RenderPlatformEdge extends BlockEntityRendererMapper<BlockPlatformE
 		final double d = (double) (cut - PlatformEdges.CUT_CENTRE) / PlatformEdges.CELLS;
 		final double[] marked = clip(outline, (x, z) -> d - ((x - 0.5) * towardsTrackX + (z - 0.5) * towardsTrackZ) - PlatformEdges.MARKING_REACH);
 		if (marked.length >= 6) {
-			// The side the source block faces is its side towards the track (0.89.3): that side of its marking is laid at the
+			// The side the source block faces is its side towards the track (0.89.4): that side of its marking is laid at the
 			// cut, wherever it is on the texture; a block with no facing has the texture's bottom (v = 1) there
 			final Direction facing = source.hasProperty(HorizontalDirectionalBlock.FACING) ? source.getValue(HorizontalDirectionalBlock.FACING) : null;
 			for (final Layer layer : textures.layers) {
@@ -240,7 +240,7 @@ public class RenderPlatformEdge extends BlockEntityRendererMapper<BlockPlatformE
 
 	/**
 	 * A further layer of a block's top, with where on its texture each point of the top is as the block's model lays it
-	 * (turned with the block's facing), so the marking keeps the side the block has towards the track (0.89.3)
+	 * (turned with the block's facing), so the marking keeps the side the block has towards the track (0.89.4)
 	 */
 	private static final class Layer {
 

@@ -1483,6 +1483,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 单放站台边样式（0.89.2）：只改游戏 `BlockPlatformEdge.sourceOf`，组件不变。
 
+曲线站台识别与通过站台线路图（0.89.5）：只改游戏 `RailwayData.getClosePlatformId`（按轨道曲线距离）、`DataCache.rails`、`RouteMapGenerator`（通过站台退回画通过线路），组件不变。
+
 屏蔽门触发退后一格（0.89.3）：只改游戏开门扫描 `Train.isDoorScanned`（MTR、ANTE mixin、脚本三处共用），组件不变。
 
 网页不拖选文字（0.89.1）：只改编辑器页面样式，组件和游戏端不变。

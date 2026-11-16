@@ -406,6 +406,7 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	public RailwayData(Level world) {
 		super(NAME);
 		this.world = world;
+		dataCache.rails = rails;
 
 
 		final ResourceLocation dimensionLocation = world.dimension().location();
@@ -1727,12 +1728,38 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			if (dataCache.blockPosToPlatformId.containsKey(posLong)) {
 				return dataCache.blockPosToPlatformId.get(posLong);
 			} else {
+				// The platform whose rail passes nearest the block, along the rail itself, so a curved or diagonal platform is
+				// found on both sides (a box round its two ends leaves out the inner side of a curve and takes in its
+				// neighbours); a platform whose rail isn't here yet goes by that box as before
 				long platformId = 0;
-				for (int i = 1; i <= radius; i++) {
-					final int searchRadius = i;
-					platformId = platforms.stream().filter(platform -> platform.isCloseToSavedRail(pos, searchRadius, lower, upper)).min(Comparator.comparingInt(platform -> platform.getMidPos().distManhattan(pos))).map(platform -> platform.id).orElse(0L);
-					if (platformId != 0) {
-						break;
+				double best = Double.MAX_VALUE;
+				int bestMidDistance = Integer.MAX_VALUE;
+				final double x = pos.getX() + 0.5;
+				final double z = pos.getZ() + 0.5;
+				for (final Platform platform : platforms) {
+					final List<BlockPos> ends = platform.getOrderedPositions(BlockPos.ZERO, false);
+					final BlockPos pos1 = ends.get(0);
+					final BlockPos pos2 = ends.get(1);
+					if (pos.getY() < Math.min(pos1.getY(), pos2.getY()) - lower || pos.getY() > Math.max(pos1.getY(), pos2.getY()) + upper) {
+						continue;
+					}
+					final Rail rail = PlatformCurves.railOf(platform, dataCache.rails);
+					final double distance;
+					if (rail == null) {
+						distance = boxDistance(platform, pos, radius);
+					} else {
+						// A curve stands out of the box round its ends by at most a quarter of its length
+						final int slack = radius + (int) Math.ceil(Math.hypot(pos1.getX() - pos2.getX(), pos1.getZ() - pos2.getZ()) / 4);
+						distance = platform.isCloseToSavedRail(pos, slack, lower, upper) ? railDistance(rail, x, z) - 0.5 : Double.MAX_VALUE;
+					}
+					if (distance > radius) {
+						continue;
+					}
+					final int midDistance = platform.getMidPos().distManhattan(pos);
+					if (distance < best - 1E-6 || distance < best + 1E-6 && midDistance < bestMidDistance) {
+						best = distance;
+						bestMidDistance = midDistance;
+						platformId = platform.id;
 					}
 				}
 				dataCache.blockPosToPlatformId.put(posLong, platformId);
@@ -1742,6 +1769,43 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			e.printStackTrace();
 			return 0;
 		}
+	}
+
+	/**
+	 * @return the smallest box radius round the platform's two ends that takes in the block, or more than the radius
+	 */
+	private static double boxDistance(Platform platform, BlockPos pos, int radius) {
+		for (int i = 1; i <= radius; i++) {
+			if (platform.isCloseToSavedRail(pos, i, Integer.MAX_VALUE / 2, Integer.MAX_VALUE / 2)) {
+				return i;
+			}
+		}
+		return Double.MAX_VALUE;
+	}
+
+	/**
+	 * @return the horizontal distance from a place to the nearest point of a rail: a coarse pass along it, then a fine one
+	 * round the nearest point
+	 */
+	private static double railDistance(Rail rail, double x, double z) {
+		final double length = rail.getLength();
+		double best = Double.MAX_VALUE;
+		double bestAlong = 0;
+		for (double along = 0; along <= length + 1E-9; along += 1) {
+			final Vec3 point = rail.getPosition(Math.min(along, length));
+			final double distance = Math.hypot(point.x - x, point.z - z);
+			if (distance < best) {
+				best = distance;
+				bestAlong = Math.min(along, length);
+			}
+		}
+		final double from = Math.max(0, bestAlong - 1);
+		final double to = Math.min(length, bestAlong + 1);
+		for (double along = from; along <= to + 1E-9; along += 0.125) {
+			final Vec3 point = rail.getPosition(Math.min(along, to));
+			best = Math.min(best, Math.hypot(point.x - x, point.z - z));
+		}
+		return best;
 	}
 
 	public static boolean useRoutesAndStationsFromIndex(int stopIndex, List<Long> routeIds, DataCache dataCache, RouteAndStationsCallback routeAndStationsCallback) {
