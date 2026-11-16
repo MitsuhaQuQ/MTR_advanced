@@ -185,6 +185,16 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	}
 
 	/**
+	 * @return a claim of the run reservations for the log: its kind, the rail's two nodes as block positions (a turnout, a
+	 * zone or a block section only by its first part), and its way
+	 */
+	private static String describeClaim(transitsim.sim.Arbiter.Claim<UUID> claim) {
+		final UUID resource = claim.resource;
+		final String where = BlockPos.of(resource.getMostSignificantBits()).toShortString() + ">" + BlockPos.of(resource.getLeastSignificantBits()).toShortString();
+		return claim.kind + "(" + where + (claim.way != 0 ? " way " + claim.way : "") + ")";
+	}
+
+	/**
 	 * @return the units of a shared area by their depots' names and lines, how long it is, and the stations with platforms
 	 * on it, or where it starts if there are none
 	 */
@@ -686,6 +696,15 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 		// Trains waiting on each other in a circle, which the arbiter holds as they are, said once each so the server log shows them
 		for (final Set<Long> deadlock : runReservations.takeDeadlocks()) {
 			System.out.println("Minecraft Transit Railway: trains waiting on each other for their runs " + deadlock);
+			// What each holds and what keeps it waiting, by block position, so the log alone tells where (0.86.1: a deadlock on
+			// the Q: world's single track line that the simulator on its own didn't repeat)
+			for (final long trainId : deadlock) {
+				final StringBuilder held = new StringBuilder();
+				runReservations.getHeldClaims(trainId).forEach(claim -> held.append(" ").append(describeClaim(claim)));
+				final StringBuilder waiting = new StringBuilder();
+				runReservations.getBlockers(trainId).forEach((blocker, claim) -> waiting.append(" ").append(blocker).append(" on ").append(describeClaim(claim)));
+				System.out.println("Minecraft Transit Railway: - train " + trainId + " holds" + held + "; waits for" + waiting);
+			}
 			deadlockedTrains.addAll(deadlock);
 		}
 		depots.forEach(depot -> {

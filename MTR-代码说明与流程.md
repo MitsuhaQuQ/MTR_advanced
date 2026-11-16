@@ -85,6 +85,8 @@
 - 改法：`copyIdMaps` 带上 `sidingIdToDepot`。同一个拷贝里其他按车厂查存车线的地方（车池、`DutyPathBuilder` 的同车池存车线、`Depot` 里按车厂过滤）原来也都查不到，一起好了。
 - 查法：Q 世界副本在测试服务器上复现，`-Dmtr.debugDepotWays=true` 临时多打出每次找路用的规则（入口站台、经过点个数），看出两个线程互相拿错规则。组件测试不变；`DepotAreaHeightsTest` 加一项拷贝也知道存车线属于哪个车厂。只改服务端，升第三位。
 
+0.86.1 卡死日志写明位置：`RailwayData` 在 `trains waiting on each other` 一行之后，对圈里每列车再写一行 `- train … holds …; waits for 列车 on …`，内容取自 `runReservations.getHeldClaims` 和 `getBlockers`，资源用 `describeClaim` 写成种类（方块坐标>方块坐标 way n）；道岔、区段只有第一部分有意义。原因：Q 世界 S2 车辆段（depot 8727185151283477680）单线带会让站的线路在游戏里两车各在一端互等，组件单独跑（`--resume`、`--restarts@`、共用预约逐 tick 的探针）都不重现，要靠游戏日志看两车各占什么、等什么。只改服务端，升第三位。
+
 0.86.0 共用轨道：按运行图分组、共用段冲突检查、运行图接入接出（用户 2026-11-16：直接做完再测，界面问题回头看）：
 - 分组改按运行图：Q 世界所有车厂都是运行图模式（运用已写入），按排班单位每个车厂各成一组，同一线路（s1）的两个车厂也被报出。网页运行图本按线路分组，所以“一张运行图”= 线路，经车厂所跑线路、直通连接、并入关系连通。游戏 `LineDuties.diagramGroupsOf`（`Lines(..., everyDepot=true)`，不看模式；取代 0.85.0 的 `unitDepotIdsOf`），`SharedTrack.find`、`RailwayData.updateSharedAreas` 改用它；组件 `PlanCheck.diagramGroupsByDepot`，`SimDataset.getSharedAreas` 改用它。Q 世界由 11 处变为 2 处（环线 2801… 与明珠线 -6793…）。日志与网页措辞改为“不在同一张运行图上”。
 - 共用段冲突：组件 `TimetableConflicts.checkSharedTrack`：宿主经 `RouteTimes.setTrack(各轨道的闭塞分区, 各轨道终点距离, 各站位置, 车长)` 给出交路轨道；每班车按计划从各站发车到下站到达匀速行驶，车头到达分区起点至车尾离开分区终点为占用；不同交路的两班同时占用同一分区即冲突（同向追近、单线对开都算），每对班次一条，`Conflict.sharedTrack=true`，stopIndex 为分区前的本交路车站。`getHeldBySection` 先按分区算好各班占用区间再比较。测试 `TimetableConflictsTest.anotherRoutesServiceOnTheSharedTrackAtOnceConflicts`、`theSharedTrackAtOtherTimesOrNotGivenIsNoConflict`。
