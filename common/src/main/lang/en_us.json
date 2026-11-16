@@ -540,5 +540,13 @@
   "tooltip.mtr.platform_edge": "Cut along the track of the nearest platform, where the cars stopping there need the edge. Sneak and right-click to lay the whole edge of that side of the platform.",
   "gui.mtr.platform_edge_laid": "Laid %s platform edge blocks",
   "gui.mtr.platform_edge_no_platform": "No platform track within 4 blocks",
-  "gui.mtr.platform_edge_in_the_way": "This block would be in the cars' way"
+  "gui.mtr.platform_edge_in_the_way": "This block would be in the cars' way",
+  "block.mtr.edge_screen_door": "Curved Platform Screen Door",
+  "item.mtr.edge_screen_door": "Curved Platform Screen Door",
+  "tooltip.mtr.edge_screen_door": "Stands on the edge line of the nearest platform, put a block above the platform edge. Sneak and right-click to lay the whole side with a door every quarter car. Right-click a placed block to switch glass and door leaves; sneak and right-click to change the style of the whole run.",
+  "gui.mtr.edge_screen_door_laid": "Laid %s screen door blocks",
+  "gui.mtr.edge_screen_door_no_edge": "No platform edge line crosses this block",
+  "gui.mtr.edge_screen_door_part_door": "Door leaf (right-click again to slide the other way)",
+  "gui.mtr.edge_screen_door_part_glass": "Glass",
+  "gui.mtr.edge_screen_door_style": "Style %s, %s blocks changed"
 }

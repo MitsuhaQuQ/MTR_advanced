@@ -636,5 +636,13 @@
   "tooltip.mtr.platform_edge": "沿最近月台的路軌切齊，切在停靠列車需要的月台邊位置。潛行右鍵沿這一側鋪滿整條月台邊。",
   "gui.mtr.platform_edge_laid": "鋪咗 %s 塊月台邊",
   "gui.mtr.platform_edge_no_platform": "4 格內冇月台路軌",
-  "gui.mtr.platform_edge_in_the_way": "呢一格會擋住列車"
+  "gui.mtr.platform_edge_in_the_way": "呢一格會擋住列車",
+  "block.mtr.edge_screen_door": "曲線幕門",
+  "item.mtr.edge_screen_door": "曲線幕門",
+  "tooltip.mtr.edge_screen_door": "企喺最近月台嘅邊線上，放喺月台邊上面一格。潛行右鍵鋪滿呢一邊，每四分之一卡一道門。右鍵已放嘅門切換玻璃同門扇，潛行右鍵成排換款式。",
+  "gui.mtr.edge_screen_door_laid": "鋪咗 %s 格幕門",
+  "gui.mtr.edge_screen_door_no_edge": "月台邊線唔經過呢一格",
+  "gui.mtr.edge_screen_door_part_door": "門扇（再右鍵換另一個方向趟開）",
+  "gui.mtr.edge_screen_door_part_glass": "玻璃",
+  "gui.mtr.edge_screen_door_style": "款式 %s，改咗 %s 格"
 }

@@ -655,6 +655,18 @@ public class TrainServer extends Train {
 
 	@Override
 	protected boolean openDoors(Level world, Block block, BlockPos checkPos, int dwellTicks) {
+		// A leaf of a screen door cut along a curved platform's edge (0.90.0), opened and shut as an ordinary one
+		if (block instanceof mtr.block.BlockEdgeScreenDoor) {
+			final BlockEntity entity = world.getBlockEntity(checkPos);
+			if (entity instanceof mtr.block.BlockEdgeScreenDoor.TileEntityEdgeScreenDoor && ((mtr.block.BlockEdgeScreenDoor.TileEntityEdgeScreenDoor) entity).isDoor()) {
+				final int doorStateValue = (int) Mth.clamp(doorValue * DOOR_MOVE_TIME, 0, mtr.block.BlockEdgeScreenDoor.MAX_OPEN_VALUE);
+				((mtr.block.BlockEdgeScreenDoor.TileEntityEdgeScreenDoor) entity).setOpen(doorStateValue);
+				if (doorStateValue > 0 && !world.getBlockTicks().hasScheduledTick(checkPos, block)) {
+					Utilities.scheduleBlockTick(world, checkPos, block, dwellTicks);
+				}
+			}
+			return false;
+		}
 		if (block instanceof BlockPSDAPGDoorBase) {
 			for (int i = -1; i <= 1; i++) {
 				final BlockPos doorPos = checkPos.above(i);

@@ -56,6 +56,7 @@ public interface Items {
 	RegistryObject<Item> RAIL_CONNECTOR_300 = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, false, RailType.DIAMOND));
 	RegistryObject<Item> RAIL_CONNECTOR_300_ONE_WAY = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, true, RailType.DIAMOND));
 	RegistryObject<Item> PLATFORM_EDGE = new RegistryObject<>(mtr.item.ItemPlatformEdge::new);
+	RegistryObject<Item> EDGE_SCREEN_DOOR = new RegistryObject<>(mtr.item.ItemEdgeScreenDoor::new);
 	RegistryObject<Item> RAIL_CONNECTOR_PLATFORM = new RegistryObject<>(() -> new ItemRailModifier(true, true, true, false, RailType.PLATFORM));
 	RegistryObject<Item> RAIL_CONNECTOR_SIDING = new RegistryObject<>(() -> new ItemRailModifier(true, true, true, false, RailType.SIDING));
 	RegistryObject<Item> RAIL_CONNECTOR_TURN_BACK = new RegistryObject<>(() -> new ItemRailModifier(true, false, true, false, RailType.TURN_BACK));

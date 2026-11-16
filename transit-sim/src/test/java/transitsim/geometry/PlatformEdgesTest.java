@@ -84,4 +84,55 @@ class PlatformEdgesTest {
 			assertTrue(outline[i] >= 0.5 - 1E-9, String.valueOf(outline[i]));
 		}
 	}
+
+	@Test
+	void aScreenDoorWallRunsAlongTheEdgeLineAndStandsBehindIt() {
+		// Edge along z at x = 10.5 (the block's middle), platform towards +x, so towards the track is -x
+		final int cut = PlatformEdges.cutOf(10, 3, 10.5, 3.2, 1, 0);
+		final int angle = PlatformEdges.angleOf(cut);
+		final double[] segment = PlatformEdges.wallSegment(angle, PlatformEdges.cutOfPacked(cut));
+		assertNotNull(segment);
+		assertEquals(0.5, segment[0], 1E-9);
+		assertEquals(0.5, segment[2], 1E-9);
+		assertEquals(1, Math.abs(segment[3] - segment[1]), 1E-9);
+		// Going along the line in its direction
+		assertEquals(Math.signum(PlatformEdges.alongZ(angle)), Math.signum(segment[3] - segment[1]), 1E-9);
+		final boolean[] mask = PlatformEdges.wallMask(angle, PlatformEdges.cutOfPacked(cut));
+		for (int x = 0; x < 16; x++) {
+			// Columns 8 to 10: just behind the line, on the platform's side
+			assertEquals(x >= 8 && x < 8 + PlatformEdges.WALL_COLLISION_CELLS, mask[x * 16 + 5], "column " + x);
+		}
+	}
+
+	@Test
+	void aDiagonalWallIsJoinedFromColumnToColumn() {
+		// Edge at 45 degrees through the block's centre
+		final int cut = PlatformEdges.cutOf(0, 0, 0.5, 0.5, 1, 1);
+		final int angle = PlatformEdges.angleOf(cut);
+		final double[] segment = PlatformEdges.wallSegment(angle, PlatformEdges.cutOfPacked(cut));
+		assertNotNull(segment);
+		assertEquals(Math.sqrt(2), Math.hypot(segment[2] - segment[0], segment[3] - segment[1]), 1E-6);
+		final boolean[] mask = PlatformEdges.wallMask(angle, PlatformEdges.cutOfPacked(cut));
+		// Each row's wall touches the next row's along a side, not only at a corner (the rows at the block's corners, where
+		// the line leaves it, may have none)
+		for (int x = 1; x < 14; x++) {
+			boolean joined = false;
+			for (int z = 0; z < 16; z++) {
+				joined |= mask[x * 16 + z] && mask[(x + 1) * 16 + z];
+			}
+			assertTrue(joined, "row " + x);
+		}
+	}
+
+	@Test
+	void aLineOnlyTouchingACornerGivesNoWall() {
+		// Edge at 45 degrees just touching the block's corner (0, 0)
+		final int cut = PlatformEdges.cutOf(0, 0, -0.01, -0.01, 1, 1);
+		if (cut >= 0) {
+			assertNull(PlatformEdges.wallSegment(PlatformEdges.angleOf(cut), PlatformEdges.cutOfPacked(cut)));
+		}
+		// Beyond the block on the platform's side the line misses it
+		final int far = PlatformEdges.cutOf(0, 0, -0.8, 0.5, 1, 0);
+		assertTrue(far == PlatformEdges.FULL || PlatformEdges.wallSegment(PlatformEdges.angleOf(far), PlatformEdges.cutOfPacked(far)) == null);
+	}
 }

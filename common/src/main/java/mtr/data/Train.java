@@ -1304,10 +1304,15 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 	 * @param checkX    how many blocks out from the car's centre line the block is, from 1
 	 * @param offsetVec the horizontal direction from the car out to that side
 	 * @return whether the door scan takes the block as the platform or as a door to open: within three blocks a platform, a
-	 * platform edge block (0.89.3) or a screen door or gate; a block further a screen door or gate facing the car
+	 * platform edge block (0.89.3) or a screen door or gate; a block further a screen door or gate facing the car; a cut screen
+	 * door along a platform's edge (0.90.0) anywhere within reach when it faces the car
 	 */
 	public static boolean isDoorScanned(BlockState state, int checkX, Vec3 offsetVec) {
 		final Block block = state.getBlock();
+		// A screen door cut along a curved platform's edge (0.90.0), within the whole reach, when it faces the car
+		if (block instanceof mtr.block.BlockEdgeScreenDoor) {
+			return checkX <= DOOR_SCAN_REACH && mtr.block.BlockEdgeScreenDoor.facesCar(state, offsetVec);
+		}
 		if (checkX <= DOOR_SCAN_ORDINARY) {
 			return block instanceof BlockPlatform || block instanceof BlockPSDAPGBase || block instanceof BlockPlatformEdge;
 		}

@@ -219,4 +219,93 @@ public final class PlatformEdges {
 		}
 		return result;
 	}
+
+	/**
+	 * How thick a screen door's wall cut along a platform's edge is drawn (0.90.0), in blocks, back from the edge line
+	 * towards the platform
+	 */
+	public static final double WALL_THICKNESS = 2D / CELLS;
+	/**
+	 * How thick its wall is to walk into, in sixteenths: a little more than drawn, so no thin diagonal staircase of columns
+	 * leaves a gap
+	 */
+	public static final int WALL_COLLISION_CELLS = 3;
+	/**
+	 * A wall segment shorter than this in a block, in blocks, is left out (the edge line only touches a corner)
+	 */
+	public static final double SHORTEST_WALL = 1D / CELLS;
+
+	private static final boolean[][] WALL_MASKS = new boolean[ANGLES * CUTS][];
+
+	/**
+	 * @return which of the block's 16 by 16 columns a screen door's wall along the edge line takes (0.90.0), as [x * 16 + z]:
+	 * those within {@link #WALL_COLLISION_CELLS} sixteenths behind the line, on the platform's side
+	 */
+	public static boolean[] wallMask(int angleIndex, int cutIndex) {
+		final int index = pack(angleIndex, cutIndex);
+		boolean[] mask = WALL_MASKS[index];
+		if (mask == null) {
+			mask = new boolean[CELLS * CELLS];
+			final double angle = angleIndex * 2 * Math.PI / ANGLES;
+			final double towardsTrackX = Math.cos(angle);
+			final double towardsTrackZ = Math.sin(angle);
+			final double d = (double) (cutIndex - CUT_CENTRE) / CELLS;
+			final double back = (double) WALL_COLLISION_CELLS / CELLS;
+			for (int x = 0; x < CELLS; x++) {
+				for (int z = 0; z < CELLS; z++) {
+					final double value = ((x + 0.5) / CELLS - 0.5) * towardsTrackX + ((z + 0.5) / CELLS - 0.5) * towardsTrackZ;
+					mask[x * CELLS + z] = value <= d && value > d - back;
+				}
+			}
+			WALL_MASKS[index] = mask;
+		}
+		return mask;
+	}
+
+	/**
+	 * @return where the edge line crosses the block, in block coordinates from 0 to 1, as {x1, z1, x2, z2} going along the
+	 * line in the direction {@link #alongX}, {@link #alongZ}; null when it crosses less than {@link #SHORTEST_WALL} of it
+	 */
+	public static double[] wallSegment(int angleIndex, int cutIndex) {
+		final double angle = angleIndex * 2 * Math.PI / ANGLES;
+		final double towardsTrackX = Math.cos(angle);
+		final double towardsTrackZ = Math.sin(angle);
+		final double alongX = alongX(angleIndex);
+		final double alongZ = alongZ(angleIndex);
+		final double d = (double) (cutIndex - CUT_CENTRE) / CELLS;
+		// The line is centre + towardsTrack * d + along * t; the square clips t
+		final double baseX = 0.5 + towardsTrackX * d;
+		final double baseZ = 0.5 + towardsTrackZ * d;
+		double tMin = Double.NEGATIVE_INFINITY;
+		double tMax = Double.POSITIVE_INFINITY;
+		final double[][] axes = {{baseX, alongX}, {baseZ, alongZ}};
+		for (final double[] axis : axes) {
+			if (Math.abs(axis[1]) < 1E-9) {
+				if (axis[0] < 0 || axis[0] > 1) {
+					return null;
+				}
+			} else {
+				final double t1 = (0 - axis[0]) / axis[1];
+				final double t2 = (1 - axis[0]) / axis[1];
+				tMin = Math.max(tMin, Math.min(t1, t2));
+				tMax = Math.min(tMax, Math.max(t1, t2));
+			}
+		}
+		if (tMax - tMin < SHORTEST_WALL) {
+			return null;
+		}
+		return new double[]{baseX + alongX * tMin, baseZ + alongZ * tMin, baseX + alongX * tMax, baseZ + alongZ * tMax};
+	}
+
+	/**
+	 * The direction along the edge line of a block state's angle: the direction towards the track turned a quarter
+	 * clockwise seen from above (x east, z south)
+	 */
+	public static double alongX(int angleIndex) {
+		return -Math.sin(angleIndex * 2 * Math.PI / ANGLES);
+	}
+
+	public static double alongZ(int angleIndex) {
+		return Math.cos(angleIndex * 2 * Math.PI / ANGLES);
+	}
 }
