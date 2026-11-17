@@ -59,6 +59,11 @@ public class RenderPlatformEdge<T extends BlockPlatformEdge.TileEntityPlatformEd
 
 	@Override
 	public void render(T entity, float tickDelta, PoseStack matrices, MultiBufferSource vertexConsumers, int light, int overlay) {
+		// An error drawing one block (bad data read from a save, say) skips it, never crashing the game (0.100.0)
+		RenderGuard.draw("Platform edge", entity.getBlockPos(), matrices, guarded -> renderBlock(entity, tickDelta, guarded, vertexConsumers, light, overlay));
+	}
+
+	private void renderBlock(T entity, float tickDelta, PoseStack matrices, MultiBufferSource vertexConsumers, int light, int overlay) {
 		final Level world = entity.getLevel();
 		if (world == null) {
 			return;
@@ -77,8 +82,14 @@ public class RenderPlatformEdge<T extends BlockPlatformEdge.TileEntityPlatformEd
 			return;
 		}
 		// As a platform block under screen doors or platform gates looks (0.97.0): their top, and the boarding arrows by a door
-		final BlockState source = gapFiller ? (entity.getSource() == null ? Blocks.PLATFORM.get().defaultBlockState() : entity.getSource()) : mtr.block.BlockPlatform.withDoorsAbove(world, pos, entity.getSource() == null ? Blocks.PLATFORM.get().defaultBlockState() : entity.getSource());
+		final BlockState plain = entity.getSource() == null ? Blocks.PLATFORM.get().defaultBlockState() : entity.getSource();
+		final BlockState source = gapFiller ? plain : mtr.block.BlockPlatform.withDoorsAbove(world, pos, plain);
 		final Textures textures = texturesOf(source);
+		// Under screen doors or gates (0.100.0, user 2026-11-17: 地面贴图还是方块单位): MTR's platform under doors is a
+		// lighter block, a row a block deep along a straight edge. Along a curved or slanting edge the block's own top keeps
+		// the platform's look and the lighter one is laid as a band a block deep along the edge itself ({@link #doorBand})
+		final boolean underDoors = !gapFiller && mtr.block.BlockPlatform.hasDoorsAbove(source);
+		final Textures topTextures = underDoors ? texturesOf(plain) : textures;
 		// Below a recess (MTR's indented platforms) the platform's part starts further from the track (0.89.4)
 		final int[] recess = gapFiller ? new int[]{0, 0} : BlockPlatformEdge.recessOf(entity.getSource());
 		final float recessHeight = recess[0] == 0 ? 0 : (float) recess[1] / PlatformEdges.CELLS;
@@ -110,8 +121,8 @@ public class RenderPlatformEdge<T extends BlockPlatformEdge.TileEntityPlatformEd
 		final double[] lower = curved == null ? lowerOutline : centred(curved.lowerOutline);
 
 		// The top and the bottom, as fans of triangles drawn as quads with the last corner twice, the texture as on a whole block
-		if (textures.top != null) {
-			fan(consumer, pose, normal, upper, 1, textures.top, topLight, 1, null);
+		if (topTextures.top != null) {
+			fan(consumer, pose, normal, upper, 1, topTextures.top, topLight, 1, null);
 		}
 		if (textures.side != null) {
 			if (lower.length >= 6) {
@@ -128,7 +139,9 @@ public class RenderPlatformEdge<T extends BlockPlatformEdge.TileEntityPlatformEd
 		final double d = (double) (cut - PlatformEdges.CUT_CENTRE) / PlatformEdges.CELLS;
 		// How far into the platform from the edge: from the straight cut, or from the curve itself
 		final Value depthOf = curved == null ? (x, z) -> d - ((x - 0.5) * towardsTrackX + (z - 0.5) * towardsTrackZ) : curved::depth;
-		final double[] marked = curved == null ? clip(outline, (x, z) -> depthOf.at(x, z) - PlatformEdges.MARKING_REACH) : centred(clip(subdivide(curved.outline), (x, z) -> depthOf.at(x, z) - PlatformEdges.MARKING_REACH));
+		// Along a curve, only alongside it: at the platform's end the marking stops square to the edge (0.100.0) rather than
+		// fanning round the curve's last point
+		final double[] marked = curved == null ? clip(outline, (x, z) -> depthOf.at(x, z) - PlatformEdges.MARKING_REACH) : centred(clip(clip(subdivide(curved.outline), (x, z) -> depthOf.at(x, z) - PlatformEdges.MARKING_REACH), curved::pastEnds));
 		if (marked.length >= 6 && !gapFiller) {
 			// The side the source block faces is its side towards the track (0.89.4): that side of its marking is laid at the
 			// cut, wherever it is on the texture; a block with no facing has the texture's bottom (v = 1) there
@@ -146,6 +159,10 @@ public class RenderPlatformEdge<T extends BlockPlatformEdge.TileEntityPlatformEd
 				});
 			}
 		}
+		if (underDoors && textures.top != null) {
+			final double[] edge = curved == null ? clipToBlock(straightEdge(depthOf)) : curved.edgeInBlock();
+			doorBand(consumer, pose, normal, edge, depthOf, textures.top, topLight);
+		}
 		// Each side of the outline, the cut among them, from the bottom to the top; under a recess the lower outline's
 		if (textures.side != null) {
 			sides(consumer, pose, normal, curved == null ? outline : curved.outline, recessHeight, 1, textures.side, sideLight);
@@ -153,6 +170,146 @@ public class RenderPlatformEdge<T extends BlockPlatformEdge.TileEntityPlatformEd
 				sides(consumer, pose, normal, curved == null ? lowerOutline : curved.lowerOutline, 0, recessHeight, textures.side, sideLight);
 			}
 		}
+	}
+
+	/**
+	 * How deep the lighter band under screen doors is, from the edge into the platform: as MTR's row of platform blocks
+	 * under straight doors
+	 */
+	private static final double DOOR_BAND = 1;
+	private static final float DOOR_BAND_LIFT = 0.0045F;
+
+	/**
+	 * The lighter band under screen doors (0.100.0): from the block's piece of the edge a block deep into the platform,
+	 * square to the edge, so the pieces of neighbouring blocks meet and the band follows the edge, over the platform's
+	 * blocks further in too.
+	 *
+	 * @param edge the block's piece of the edge line, x, z pairs in order
+	 */
+	private static void doorBand(VertexConsumer consumer, Matrix4f pose, Matrix3f normal, double[] edge, Value depthOf, TextureAtlasSprite sprite, int light) {
+		final int points = edge.length / 2;
+		if (points < 2) {
+			return;
+		}
+		// Into the platform, square to the edge at each point
+		final double[] inX = new double[points], inZ = new double[points];
+		double total = 0;
+		final double[] along = new double[points];
+		for (int i = 0; i < points; i++) {
+			final int a = Math.max(0, i - 1), b = Math.min(points - 1, i + 1);
+			final double dx = edge[b * 2] - edge[a * 2], dz = edge[b * 2 + 1] - edge[a * 2 + 1];
+			final double length = Math.hypot(dx, dz);
+			if (length < 1E-9) {
+				return;
+			}
+			double nx = dz / length, nz = -dx / length;
+			if (depthOf.at(edge[i * 2] + nx * 0.05, edge[i * 2 + 1] + nz * 0.05) < depthOf.at(edge[i * 2] - nx * 0.05, edge[i * 2 + 1] - nz * 0.05)) {
+				nx = -nx;
+				nz = -nz;
+			}
+			inX[i] = nx;
+			inZ[i] = nz;
+			if (i > 0) {
+				total += Math.hypot(edge[i * 2] - edge[i * 2 - 2], edge[i * 2 + 1] - edge[i * 2 - 1]);
+			}
+			along[i] = total;
+		}
+		// Over the platform blocks' own top layers (MTR's marking at 16.05 / 16) and the edge marking, under the boarding
+		// arrows (16.1 / 16): the band is the whole row under the doors, as MTR's block there has no marking
+		final float y = 1 + DOOR_BAND_LIFT;
+		for (int i = 0; i + 1 < points; i++) {
+			final float x1 = (float) edge[i * 2], z1 = (float) edge[i * 2 + 1];
+			final float x2 = (float) edge[i * 2 + 2], z2 = (float) edge[i * 2 + 3];
+			final float u1 = (float) along[i], u2 = (float) along[i + 1];
+			vertex(consumer, pose, normal, x1, y, z1, sprite, u1, 0, 0, 1, 0, light);
+			vertex(consumer, pose, normal, x2, y, z2, sprite, u2, 0, 0, 1, 0, light);
+			vertex(consumer, pose, normal, (float) (x2 + inX[i + 1] * DOOR_BAND), y, (float) (z2 + inZ[i + 1] * DOOR_BAND), sprite, u2, 1, 0, 1, 0, light);
+			vertex(consumer, pose, normal, (float) (x1 + inX[i] * DOOR_BAND), y, (float) (z1 + inZ[i] * DOOR_BAND), sprite, u1, 1, 0, 1, 0, light);
+		}
+	}
+
+	/**
+	 * @return a straight edge (where the depth is 0) as its two ends, on the block's square or beyond it
+	 */
+	private static double[] straightEdge(Value depthOf) {
+		// The depth goes linearly over the block: its gradient from three points
+		final double d00 = depthOf.at(0, 0), d10 = depthOf.at(1, 0), d01 = depthOf.at(0, 1);
+		final double gx = d10 - d00, gz = d01 - d00;
+		final double length = Math.hypot(gx, gz);
+		if (length < 1E-9) {
+			return new double[0];
+		}
+		// The point of the line nearest the block's middle, and the line's way
+		final double middle = depthOf.at(0.5, 0.5);
+		final double cx = 0.5 - middle * gx / (length * length), cz = 0.5 - middle * gz / (length * length);
+		final double wx = -gz / length, wz = gx / length;
+		return new double[]{cx - wx * 2, cz - wz * 2, cx + wx * 2, cz + wz * 2};
+	}
+
+	/**
+	 * @return the part of a line of points inside the block's square (x and z from 0 to 1), the longest run of it, with
+	 * the points where it crosses the square's sides
+	 */
+	static double[] clipToBlock(double[] line) {
+		if (line == null || line.length < 4) {
+			return new double[0];
+		}
+		List<Double> best = new ArrayList<>();
+		List<Double> run = new ArrayList<>();
+		for (int i = 0; i + 3 < line.length; i += 2) {
+			final double[] clipped = clipSegment(line[i], line[i + 1], line[i + 2], line[i + 3]);
+			if (clipped == null) {
+				if (run.size() > best.size()) {
+					best = run;
+				}
+				run = new ArrayList<>();
+				continue;
+			}
+			if (run.isEmpty() || Math.abs(run.get(run.size() - 2) - clipped[0]) > 1E-9 || Math.abs(run.get(run.size() - 1) - clipped[1]) > 1E-9) {
+				if (run.size() > best.size()) {
+					best = run;
+				}
+				run = new ArrayList<>();
+				run.add(clipped[0]);
+				run.add(clipped[1]);
+			}
+			run.add(clipped[2]);
+			run.add(clipped[3]);
+		}
+		if (run.size() > best.size()) {
+			best = run;
+		}
+		final double[] result = new double[best.size()];
+		for (int i = 0; i < result.length; i++) {
+			result[i] = best.get(i);
+		}
+		return result;
+	}
+
+	/** Liang-Barsky: the part of a segment inside the unit square, or null */
+	private static double[] clipSegment(double x1, double z1, double x2, double z2) {
+		double t0 = 0, t1 = 1;
+		final double dx = x2 - x1, dz = z2 - z1;
+		final double[] p = {-dx, dx, -dz, dz};
+		final double[] q = {x1, 1 - x1, z1, 1 - z1};
+		for (int i = 0; i < 4; i++) {
+			if (Math.abs(p[i]) < 1E-12) {
+				if (q[i] < 0) {
+					return null;
+				}
+			} else {
+				final double t = q[i] / p[i];
+				if (p[i] < 0) {
+					t0 = Math.max(t0, t);
+				} else {
+					t1 = Math.min(t1, t);
+				}
+			}
+		}
+		if (t0 > t1 || t1 - t0 < 1E-9) {
+			return null;
+		}
+		return new double[]{x1 + dx * t0, z1 + dz * t0, x1 + dx * t1, z1 + dz * t1};
 	}
 
 	/**

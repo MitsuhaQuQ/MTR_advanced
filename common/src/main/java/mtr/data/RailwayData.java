@@ -820,6 +820,19 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 					packet.writeInt(piece.getValue());
 				});
 
+				// The station throat turnouts and the routes locked through them now (0.99.0), for signals in front of them
+				final Set<Long> throatTurnouts = new HashSet<>();
+				final List<long[]> lockedTurnouts = new ArrayList<>();
+				sidings.forEach(siding -> siding.forEachTrain(train -> lockedTurnouts.addAll(train.getThroatTurnouts(throatTurnouts))));
+				packet.writeInt(throatTurnouts.size());
+				throatTurnouts.forEach(packet::writeLong);
+				packet.writeInt(lockedTurnouts.size());
+				lockedTurnouts.forEach(turnout -> {
+					packet.writeLong(turnout[0]);
+					packet.writeLong(turnout[1]);
+					packet.writeLong(turnout[2]);
+				});
+
 				if (packet.readableBytes() <= MAX_PACKET_BYTES) {
 					Registry.sendToPlayer((ServerPlayer) player, PACKET_UPDATE_SCHEDULE, packet);
 				}

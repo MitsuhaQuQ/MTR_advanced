@@ -1,17 +1,22 @@
 package mtr;
 
 import com.mojang.brigadier.CommandDispatcher;
+import com.mojang.brigadier.arguments.DoubleArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import mtr.compat.Compat;
 import mtr.data.RailwayData;
 import mtr.data.Siding;
 import mtr.data.TrainServer;
+import mtr.escalator.FreeEscalators;
 import mtr.image.ImageServer;
 import mtr.item.ItemPlatformEdge;
 import mtr.mappings.Text;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.SharedSuggestionProvider;
+import net.minecraft.commands.arguments.coordinates.BlockPosArgument;
+import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.Level;
@@ -29,6 +34,9 @@ import net.minecraft.world.phys.Vec3;
  * rules: anyone their own, managers anyone's; the console and command blocks by {@code imageManagePermissionLevel}.</li>
  * <li>{@code /mtr undoedge} (0.96.0): takes back the player's last platform edge strip laid by sneaking
  * ({@link ItemPlatformEdge#undoLastLay}); the message after laying has a button running it.</li>
+ * <li>{@code /mtr escalator build|undo|clear} (0.100.0): builds a free escalator through the points the player marked,
+ * takes back the last point, or clears them; {@code /mtr escalator speed|width <x y z> <value>} sets an escalator's
+ * speed or width (the settings' buttons, sneaking with the brush on it). See {@link mtr.escalator.FreeEscalators}.</li>
  * </ul>
  */
 public final class MTRCommands {
@@ -47,9 +55,37 @@ public final class MTRCommands {
 					return SharedSuggestionProvider.suggest(ImageServer.deletableNames(player, source.hasPermission(SecurityConfig.imageManagePermissionLevel)), builder);
 				})
 				.executes(context -> deletePicture(context.getSource(), StringArgumentType.getString(context, "name").trim())))));
+		dispatcher.register(Commands.literal("mtr").then(Commands.literal("escalator")
+				.then(Commands.literal("build").requires(source -> source.getEntity() instanceof ServerPlayer)
+						.executes(context -> FreeEscalators.build(context.getSource().getLevel(), (ServerPlayer) context.getSource().getEntity()) ? 1 : 0))
+				.then(Commands.literal("undo").requires(source -> source.getEntity() instanceof ServerPlayer)
+						.executes(context -> {
+							FreeEscalators.undoMark((ServerPlayer) context.getSource().getEntity());
+							return 1;
+						}))
+				.then(Commands.literal("clear").requires(source -> source.getEntity() instanceof ServerPlayer)
+						.executes(context -> {
+							FreeEscalators.clearMarks((ServerPlayer) context.getSource().getEntity());
+							return 1;
+						}))
+				.then(Commands.literal("speed").then(Commands.argument("pos", BlockPosArgument.blockPos()).then(Commands.argument("value", DoubleArgumentType.doubleArg(0.1, 2))
+						.executes(context -> escalatorSetting(context.getSource(), FreeEscalators.setSpeed(context.getSource().getLevel(), BlockPosArgument.getLoadedBlockPos(context, "pos"), DoubleArgumentType.getDouble(context, "value")),
+								Text.translatable("gui.mtr.free_escalator_speed_set", DoubleArgumentType.getDouble(context, "value")))))))
+				.then(Commands.literal("width").then(Commands.argument("pos", BlockPosArgument.blockPos()).then(Commands.argument("value", IntegerArgumentType.integer(1, 2))
+						.executes(context -> escalatorSetting(context.getSource(), FreeEscalators.setWidth(context.getSource().getLevel(), BlockPosArgument.getLoadedBlockPos(context, "pos"), IntegerArgumentType.getInteger(context, "value")),
+								Text.translatable("gui.mtr.free_escalator_width_set", IntegerArgumentType.getInteger(context, "value")))))))));
 		dispatcher.register(Commands.literal("mtr").then(Commands.literal("undoedge")
 				.requires(source -> source.getEntity() instanceof ServerPlayer)
 				.executes(context -> undoEdge(context.getSource()))));
+	}
+
+	private static int escalatorSetting(CommandSourceStack source, String error, Component done) {
+		if (error != null) {
+			source.sendFailure(FreeEscalators.errorMessage(error));
+			return 0;
+		}
+		source.sendSuccess(() -> done, false);
+		return 1;
 	}
 
 	private static int undoEdge(CommandSourceStack source) {

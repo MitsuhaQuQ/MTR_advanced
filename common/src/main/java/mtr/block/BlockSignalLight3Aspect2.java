@@ -16,7 +16,7 @@ public class BlockSignalLight3Aspect2 extends BlockSignalLightBase {
 		return new TileEntitySignalLight3Aspect2(pos, state);
 	}
 
-	public static class TileEntitySignalLight3Aspect2 extends BlockEntityMapper {
+	public static class TileEntitySignalLight3Aspect2 extends TileEntitySignalBase {
 
 		public TileEntitySignalLight3Aspect2(BlockPos pos, BlockState state) {
 			super(BlockEntityTypes.SIGNAL_LIGHT_3_ASPECT_2.get(), pos, state);

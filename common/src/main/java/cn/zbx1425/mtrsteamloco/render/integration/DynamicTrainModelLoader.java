@@ -274,7 +274,7 @@ public class DynamicTrainModelLoader {
                 target.parts.clear();
                 JsonArray partsPropArray = new JsonArray();
                 target.properties.add(IResourcePackCreatorProperties.KEY_PROPERTIES_PARTS, partsPropArray);
-                boolean isLoadingFromEditor = !GlStateTracker.isStateProtected;
+                boolean isLoadingFromEditor = !GlStateTracker.isStateProtected && !UploadCapture.isActive();
                 if (isLoadingFromEditor) GlStateTracker.capture();
                 double radiusSquared = 0;
                 for (Map.Entry<PartBatch, RawModel> entry : mergedModels.entrySet()) {
@@ -290,7 +290,7 @@ public class DynamicTrainModelLoader {
                 target.setGeometryRadius(Math.sqrt(radiusSquared));
             } else {
                 // Loading in RP editor. Don't merge the parts.
-                boolean isLoadingFromEditor = !GlStateTracker.isStateProtected;
+                boolean isLoadingFromEditor = !GlStateTracker.isStateProtected && !UploadCapture.isActive();
                 if (isLoadingFromEditor) GlStateTracker.capture();
                 for (Map.Entry<String, RawModel> entry : models.entrySet()) {
                     target.parts.put(entry.getKey(), new SowcerModelAgent(entry.getValue(), false));

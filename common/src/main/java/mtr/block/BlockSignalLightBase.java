@@ -40,6 +40,27 @@ public abstract class BlockSignalLightBase extends BlockDirectionalMapper implem
 		return IBlock.getVoxelShapeByDirection(shapeX, 0, 5, 16 - shapeX, shapeHeight, 11, IBlock.getStatePropertySafe(state, FACING));
 	}
 
+	/**
+	 * Binds the signal to the block sections it protects when put down (0.99.0, {@link SignalBinding})
+	 */
+	@Override
+	public void setPlacedBy(net.minecraft.world.level.Level world, BlockPos pos, BlockState state, net.minecraft.world.entity.LivingEntity placer, net.minecraft.world.item.ItemStack itemStack) {
+		if (!world.isClientSide) {
+			SignalBinding.bind(world, pos);
+		}
+	}
+
+	/**
+	 * The brush binds the signal again, or sneaking, by hand to the node clicked next (0.99.0)
+	 */
+	@Override
+	public net.minecraft.world.InteractionResult use(BlockState state, net.minecraft.world.level.Level world, BlockPos pos, net.minecraft.world.entity.player.Player player, net.minecraft.world.InteractionHand hand, net.minecraft.world.phys.BlockHitResult hit) {
+		if (!player.isHolding(mtr.Items.BRUSH.get())) {
+			return net.minecraft.world.InteractionResult.PASS;
+		}
+		return IBlock.checkHoldingBrush(world, player, () -> SignalBinding.onBrush(world, pos, player));
+	}
+
 	public PushReaction getPistonPushReaction(BlockState blockState) {
 		return PushReaction.BLOCK;
 	}

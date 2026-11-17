@@ -20,6 +20,12 @@ import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
+/**
+ * A step of the original 2x2-placed escalator. Since 0.100.0 the steps themselves are drawn moving by
+ * {@code RenderEscalatorStep} (the baked models keep only the frame), for the step blocks the client finds near the
+ * camera ({@code EscalatorStepsClient}); no block entity, so saves are as before. How it runs, pushes and changes
+ * direction is as before.
+ */
 public class BlockEscalatorStep extends BlockEscalatorBase {
 
 	public static final BooleanProperty DIRECTION = BooleanProperty.create("direction");

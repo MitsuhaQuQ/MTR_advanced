@@ -60,6 +60,7 @@ public class MTR implements IPacket {
 	) {
 		registerItem.accept("brush", Items.BRUSH);
 		registerItem.accept("escalator", Items.ESCALATOR);
+		registerItem.accept("free_escalator", Items.FREE_ESCALATOR);
 		registerItem.accept("lift_buttons_link_connector", Items.LIFT_BUTTONS_LINK_CONNECTOR);
 		registerItem.accept("lift_buttons_link_remover", Items.LIFT_BUTTONS_LINK_REMOVER);
 		registerItem.accept("lift_door_1", Items.LIFT_DOOR_1);
@@ -68,6 +69,7 @@ public class MTR implements IPacket {
 
 		registerBlock.accept("escalator_side", Blocks.ESCALATOR_SIDE);
 		registerBlock.accept("escalator_step", Blocks.ESCALATOR_STEP);
+		registerBlock.accept("free_escalator", Blocks.FREE_ESCALATOR);
 		registerBlockItem.accept("lift_buttons_1", Blocks.LIFT_BUTTONS_1, CreativeModeTabs.ESCALATORS_LIFTS);
 		registerBlockItem.accept("lift_panel_even_1", Blocks.LIFT_PANEL_EVEN_1, CreativeModeTabs.ESCALATORS_LIFTS);
 		registerBlockItem.accept("lift_panel_odd_1", Blocks.LIFT_PANEL_ODD_1, CreativeModeTabs.ESCALATORS_LIFTS);
@@ -464,6 +466,7 @@ public class MTR implements IPacket {
 			registerBlockEntityType.accept("route_sign_standing_metal", BlockEntityTypes.ROUTE_SIGN_STANDING_METAL_TILE_ENTITY);
 			registerBlockEntityType.accept("route_sign_wall_light", BlockEntityTypes.ROUTE_SIGN_WALL_LIGHT_TILE_ENTITY);
 			registerBlockEntityType.accept("route_sign_wall_metal", BlockEntityTypes.ROUTE_SIGN_WALL_METAL_TILE_ENTITY);
+			registerBlockEntityType.accept("free_escalator", BlockEntityTypes.FREE_ESCALATOR);
 			registerBlockEntityType.accept("signal_light_1", BlockEntityTypes.SIGNAL_LIGHT_2_ASPECT_1);
 			registerBlockEntityType.accept("signal_light_2", BlockEntityTypes.SIGNAL_LIGHT_2_ASPECT_2);
 			registerBlockEntityType.accept("signal_light_3", BlockEntityTypes.SIGNAL_LIGHT_2_ASPECT_3);
@@ -562,6 +565,7 @@ public class MTR implements IPacket {
 		RegistryUtilities.registerCommand(MTRCommands::register);
 
 		Registry.registerTickEvent(minecraftServer -> {
+			mtr.escalator.FreeEscalators.serverTick();
 			minecraftServer.getAllLevels().forEach(serverWorld -> {
 				final RailwayData railwayData = RailwayData.getInstance(serverWorld);
 				if (railwayData != null) {

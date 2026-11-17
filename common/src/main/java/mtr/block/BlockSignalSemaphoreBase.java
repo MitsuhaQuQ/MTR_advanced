@@ -32,6 +32,27 @@ public abstract class BlockSignalSemaphoreBase extends BlockDirectionalMapper im
 		return Shapes.or(IBlock.getVoxelShapeByDirection(4, 4, 5, 12, 8, 11, IBlock.getStatePropertySafe(state, FACING)), Block.box(6, 0, 6, 10, 12, 10));
 	}
 
+	/**
+	 * Binds the signal to the block sections it protects when put down (0.99.0, {@link SignalBinding})
+	 */
+	@Override
+	public void setPlacedBy(net.minecraft.world.level.Level world, BlockPos pos, BlockState state, net.minecraft.world.entity.LivingEntity placer, net.minecraft.world.item.ItemStack itemStack) {
+		if (!world.isClientSide) {
+			SignalBinding.bind(world, pos);
+		}
+	}
+
+	/**
+	 * The brush binds the signal again, or sneaking, by hand to the node clicked next (0.99.0)
+	 */
+	@Override
+	public net.minecraft.world.InteractionResult use(BlockState state, net.minecraft.world.level.Level world, BlockPos pos, net.minecraft.world.entity.player.Player player, net.minecraft.world.InteractionHand hand, net.minecraft.world.phys.BlockHitResult hit) {
+		if (!player.isHolding(mtr.Items.BRUSH.get())) {
+			return net.minecraft.world.InteractionResult.PASS;
+		}
+		return IBlock.checkHoldingBrush(world, player, () -> SignalBinding.onBrush(world, pos, player));
+	}
+
 	public PushReaction getPistonPushReaction(BlockState blockState) {
 		return PushReaction.BLOCK;
 	}
@@ -41,7 +62,7 @@ public abstract class BlockSignalSemaphoreBase extends BlockDirectionalMapper im
 		builder.add(FACING);
 	}
 
-	public static abstract class TileEntitySignalSemaphoreBase extends BlockEntityMapper {
+	public static abstract class TileEntitySignalSemaphoreBase extends TileEntitySignalBase {
 
 		public float angle1;
 		public float angle2;

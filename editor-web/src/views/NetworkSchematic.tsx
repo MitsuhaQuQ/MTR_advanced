@@ -12,7 +12,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { legacy, useLegacy } from "../legacy/engine"
 import { abstractNetwork, corridorPath, offsetPath, type Corridor, type Place, type Pt, type Schematic } from "../core/abstractNet"
-import { paint, useBrush } from "./OwnershipPanel"
+import { choose, paint, useBrush, useSelection } from "./OwnershipPanel"
 import { tr } from "../i18n"
 import { colorOf } from "./now"
 import { trackSchematic } from "../core/trackSchematic"
@@ -27,6 +27,7 @@ export type TrainMark = { id: string; name: string; rail: number; late: boolean;
 
 export function NetworkSchematic({ onShowReal, mode = "tracks", shape = "real", trains, onTrain }: { onShowReal: () => void; mode?: "tracks" | "logical"; shape?: "real" | "schematic"; trains?: TrainMark[]; onTrain?: (id: string) => void }) {
   const brush = useBrush()
+  const chosenRails = useSelection()
   useLegacy()
   const { fn, v } = legacy
   // The old code reads the network on its own timer and only redraws its canvas: look for a new one now and then
@@ -124,7 +125,7 @@ export function NetworkSchematic({ onShowReal, mode = "tracks", shape = "real", 
           {mode === "tracks"
             ? trackMap && <g transform={`translate(${view?.x ?? 0} ${view?.y ?? 0}) scale(${k})`}><TrackMapDrawing map={trackMap} zoom={k} chosen={chosen} onChoose={id => { if (!drag.current?.moved) setChosen(id === chosen ? null : id) }} trains={trains} onTrain={onTrain} /></g>
             : <>
-              {schematic.corridors.map((c, i) => <LogicalCorridor key={i} corridor={c} a={at.get(c.a)!} b={at.get(c.b)!} sx={sx} sy={sy}
+              {schematic.corridors.map((c, i) => <LogicalCorridor key={i} corridor={c} a={at.get(c.a)!} b={at.get(c.b)!} sx={sx} sy={sy} chosen={c.rails.some(rail => chosenRails.has(rail))}
                 onPaint={brush ? () => { if (!drag.current?.moved) paintCorridor(c, brush) } : undefined} />)}
               {schematic.places.map(p => p.kind === "station"
                 ? <StationGlyph key={p.id} place={p} x={sx(p)} y={sy(p)} on={p.id === chosen} onClick={() => { if (!drag.current?.moved) setChosen(p.id === chosen ? null : p.id) }} />
@@ -196,6 +197,8 @@ function railColors(rail: number): string[] {
 
 /** Paints every section a corridor's rails are in, each once */
 function paintCorridor(c: Corridor, brush: Parameters<typeof paint>[1]) {
+  // Chosen by hand (0.99.0): the whole corridor in or out of the choice
+  if (brush.kind === "select") { choose(c.rails, true); return }
   const { v } = legacy
   const seen = new Set<unknown>()
   c.rails.forEach(rail => {
@@ -207,7 +210,7 @@ function paintCorridor(c: Corridor, brush: Parameters<typeof paint>[1]) {
   })
 }
 
-function LogicalCorridor({ corridor: c, a, b, sx, sy, onPaint }: { corridor: Corridor; a: Place; b: Place; sx: (p: Place) => number; sy: (p: Place) => number; onPaint?: () => void }) {
+function LogicalCorridor({ corridor: c, a, b, sx, sy, onPaint, chosen }: { corridor: Corridor; a: Place; b: Place; sx: (p: Place) => number; sy: (p: Place) => number; onPaint?: () => void; chosen?: boolean }) {
   // Level, upright and 45° pieces only, with a bend where the places don't line up (0.83.7)
   const path = corridorPath([sx(a), sy(a)], [sx(b), sy(b)])
   const points = (list: Pt[]) => list.map(p => p[0] + "," + p[1]).join(" ")
@@ -215,6 +218,7 @@ function LogicalCorridor({ corridor: c, a, b, sx, sy, onPaint }: { corridor: Cor
   return (
     <g className={onPaint ? "cursor-crosshair" : undefined} onClick={onPaint}>
       {onPaint && <polyline points={points(path)} fill="none" stroke="transparent" strokeWidth={Math.max(14, c.tracks * GAP + 8)} />}
+      {chosen && <polyline data-chosen points={points(path)} fill="none" stroke="#facc15" strokeOpacity={0.55} strokeWidth={Math.max(12, c.tracks * GAP + 6)} strokeLinecap="round" strokeLinejoin="round" />}
       {Array.from({ length: c.tracks }, (_, t) => {
         const o = (t - (c.tracks - 1) / 2) * GAP
         const color = colors.length ? colors[t % colors.length] : "var(--grid-strong)"

@@ -100,6 +100,10 @@ public final class DispatchConsole implements IPacket {
 			// Where it is by stops, for the run monitor
 			packet.writeLong(train.getLastStopId());
 			packet.writeVarInt(train.getStopState());
+			// Where the head is on its rail and which way it runs (0.99.0, the web editor's line view)
+			final float[] place = train.getHeadPlace();
+			packet.writeFloat(place == null ? 0.5F : place[0]);
+			packet.writeBoolean(place != null && place[1] > 0);
 		});
 		return packet;
 	}
@@ -118,7 +122,7 @@ public final class DispatchConsole implements IPacket {
 		final List<TrainState> trains = new ArrayList<>();
 		final int trainCount = Math.min(packet.readVarInt(), MAX_TRAINS);
 		for (int i = 0; i < trainCount; i++) {
-			trains.add(new TrainState(packet.readLong(), packet.readLong(), packet.readLong(), packet.readVarInt(), new UUID(packet.readLong(), packet.readLong()), packet.readLong(), packet.readLong(), packet.readLong(), packet.readVarInt(), packet.readVarInt(), packet.readVarInt(), packet.readVarInt(), packet.readLong(), packet.readVarInt()));
+			trains.add(new TrainState(packet.readLong(), packet.readLong(), packet.readLong(), packet.readVarInt(), new UUID(packet.readLong(), packet.readLong()), packet.readLong(), packet.readLong(), packet.readLong(), packet.readVarInt(), packet.readVarInt(), packet.readVarInt(), packet.readVarInt(), packet.readLong(), packet.readVarInt(), packet.readFloat(), packet.readBoolean()));
 		}
 		return new Snapshot(serverMillis, System.currentTimeMillis() - serverMillis, occupied, trains);
 	}
@@ -199,8 +203,16 @@ public final class DispatchConsole implements IPacket {
 		 */
 		public final long lastStopId;
 		public final int stopState;
+		/**
+		 * Where the head is along its rail from the node with the smaller position, 0 to 1, and whether the train runs towards
+		 * the other node (0.99.0)
+		 */
+		public final float headAlong;
+		public final boolean headTowardsHigher;
 
-		TrainState(long trainId, long sidingId, long routeId, int slot, UUID headRail, long nextStopId, long lateSince, long waitingSince, int flags, int turnState, int takeoverState, int dispatchState, long lastStopId, int stopState) {
+		TrainState(long trainId, long sidingId, long routeId, int slot, UUID headRail, long nextStopId, long lateSince, long waitingSince, int flags, int turnState, int takeoverState, int dispatchState, long lastStopId, int stopState, float headAlong, boolean headTowardsHigher) {
+			this.headAlong = headAlong;
+			this.headTowardsHigher = headTowardsHigher;
 			this.trainId = trainId;
 			this.sidingId = sidingId;
 			this.routeId = routeId;

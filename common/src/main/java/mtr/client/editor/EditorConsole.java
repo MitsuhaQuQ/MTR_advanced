@@ -65,6 +65,9 @@ public final class EditorConsole {
 			headArray.add(String.valueOf(train.headRail.getMostSignificantBits()));
 			headArray.add(String.valueOf(train.headRail.getLeastSignificantBits()));
 			trainObject.add("head", headArray);
+			// Where on that rail and which way (0.99.0, the line view)
+			trainObject.addProperty("along", train.headAlong);
+			trainObject.addProperty("towardsHigher", train.headTowardsHigher);
 			final SignalBlocks.SignalBlock block = railBlocks.get(train.headRail);
 			if (block != null) {
 				trainObject.addProperty("block", String.valueOf(block.id));
@@ -108,6 +111,39 @@ public final class EditorConsole {
 			blocksArray.add(blockObject);
 		});
 		console.add("blocks", blocksArray);
+
+		// For the line view (0.99.0): every rail a train has taken a block section of, and the routes locked through
+		// station throat turnouts, {node, side, side}
+		final JsonArray takenArray = new JsonArray();
+		final Map<UUID, Set<Integer>> sections = ClientData.OCCUPIED_SECTIONS;
+		if (sections != null) {
+			sections.forEach((rail, pieces) -> {
+				if (!pieces.isEmpty()) {
+					final JsonArray railArray = new JsonArray();
+					railArray.add(String.valueOf(rail.getMostSignificantBits()));
+					railArray.add(String.valueOf(rail.getLeastSignificantBits()));
+					takenArray.add(railArray);
+				}
+			});
+		}
+		ClientData.OCCUPIED_RAILS.forEach((rail, occupied) -> {
+			if (Boolean.TRUE.equals(occupied)) {
+				final JsonArray railArray = new JsonArray();
+				railArray.add(String.valueOf(rail.getMostSignificantBits()));
+				railArray.add(String.valueOf(rail.getLeastSignificantBits()));
+				takenArray.add(railArray);
+			}
+		});
+		console.add("taken", takenArray);
+		final JsonArray lockedArray = new JsonArray();
+		ClientData.LOCKED_TURNOUTS.forEach((node, ways) -> ways.forEach(sides -> {
+			final JsonArray lockedRoute = new JsonArray();
+			lockedRoute.add(String.valueOf(node));
+			lockedRoute.add(String.valueOf(sides[0]));
+			lockedRoute.add(String.valueOf(sides[1]));
+			lockedArray.add(lockedRoute);
+		}));
+		console.add("locked", lockedArray);
 		return console;
 	}
 

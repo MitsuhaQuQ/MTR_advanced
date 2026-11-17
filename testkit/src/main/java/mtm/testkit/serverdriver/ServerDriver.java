@@ -121,6 +121,40 @@ public final class ServerDriver {
 		routes.put("/trains", (body, query) -> Http.onThread(server, () -> trains(level(server, query.get("dimension")), query.containsKey("pathZ") ? Double.parseDouble(query.get("pathZ")) : Double.NaN)));
 		routes.put("/clock", (body, query) -> clock());
 		routes.put("/sensors", (body, query) -> sensors());
+		// The station throat turnouts of the trains' paths and the routes locked through them now (0.99.0, U564):
+		// {turnouts: [[x, y, z]...], locked: [[node x, y, z, side, side]...]}
+		routes.put("/throats", (body, query) -> Http.onThread(server, () -> {
+			final RailwayData railwayData = RailwayData.getInstance(level(server, query.get("dimension")));
+			final JsonObject result = new JsonObject();
+			final java.util.Set<Long> nodes = new java.util.TreeSet<>();
+			final List<long[]> locked = new ArrayList<>();
+			if (railwayData != null) {
+				railwayData.sidings.forEach(siding -> siding.forEachTrain(train -> locked.addAll(train.getThroatTurnouts(nodes))));
+			}
+			final JsonArray turnouts = new JsonArray();
+			nodes.forEach(node -> {
+				final BlockPos pos = BlockPos.of(node);
+				final JsonArray xyz = new JsonArray();
+				xyz.add(pos.getX());
+				xyz.add(pos.getY());
+				xyz.add(pos.getZ());
+				turnouts.add(xyz);
+			});
+			result.add("turnouts", turnouts);
+			final JsonArray lockedArray = new JsonArray();
+			locked.forEach(route -> {
+				final BlockPos pos = BlockPos.of(route[0]);
+				final JsonArray entry = new JsonArray();
+				entry.add(pos.getX());
+				entry.add(pos.getY());
+				entry.add(pos.getZ());
+				entry.add(String.valueOf(route[1]));
+				entry.add(String.valueOf(route[2]));
+				lockedArray.add(entry);
+			});
+			result.add("locked", lockedArray);
+			return result;
+		}));
 		routes.put("/log", (body, query) -> LogCapture.since(query.containsKey("since") ? Long.parseLong(query.get("since")) : 0));
 		routes.put("/stop", (body, query) -> {
 			server.execute(() -> server.halt(false));

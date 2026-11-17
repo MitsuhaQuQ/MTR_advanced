@@ -49,9 +49,22 @@ public final class SignalAspects {
 			if (step.entered > 0 && step.entered + 1 < aspects && hasUnknownRail(step.node, railMap)) {
 				taken = Math.min(taken, step.entered + 1);
 			}
+			// A station throat turnout facing this way (0.99.0): stop until a route through it is locked for a train, and then
+			// only the way locked counts
+			final List<long[]> locked = getLockedWays(step.node, railMap, step.facing);
+			if (locked != null && locked.isEmpty()) {
+				if (!railMap.isEmpty()) {
+					anyRail = true;
+				}
+				taken = Math.min(taken, step.entered + 1);
+				continue;
+			}
 			for (final Map.Entry<BlockPos, Rail> entry : railMap.entrySet()) {
 				final Rail rail = entry.getValue();
 				if (!rail.facingStart.similarFacing(step.facing)) {
+					continue;
+				}
+				if (locked != null && locked.stream().noneMatch(sides -> sides[0] == entry.getKey().asLong() || sides[1] == entry.getKey().asLong())) {
 					continue;
 				}
 				anyRail = true;
@@ -85,6 +98,78 @@ public final class SignalAspects {
 			}
 		}
 		return !anyRail ? -1 : taken == Integer.MAX_VALUE ? 0 : taken;
+	}
+
+	/**
+	 * @return for a station throat turnout facing this way, the ways locked through it now (empty when none is), or null
+	 * when the node is no such turnout or the server doesn't say (0.99.0)
+	 */
+	private static List<long[]> getLockedWays(BlockPos node, Map<BlockPos, Rail> railMap, float facing) {
+		final Set<Long> turnouts = ClientData.THROAT_TURNOUTS;
+		if (turnouts == null || !turnouts.contains(node.asLong())) {
+			return null;
+		}
+		int ways = 0;
+		for (final Rail rail : railMap.values()) {
+			if (rail.facingStart.similarFacing(facing)) {
+				ways++;
+			}
+		}
+		if (ways < 2) {
+			return null;
+		}
+		return ClientData.LOCKED_TURNOUTS.getOrDefault(node.asLong(), Collections.emptyList());
+	}
+
+	/**
+	 * The rails of the first block section past a signal's node, as lines to draw {x1, y1, z1, x2, y2, z2} (0.99.0, the
+	 * section a signal protects highlighted while looked at); every way past a turnout
+	 */
+	public static List<double[]> getFirstSection(BlockPos startPos, float facing) {
+		ClientData.SIGNAL_BLOCKS.updateSections(ClientData.interlockColor, CLIENT_RAILS, ClientData.RAILS.size());
+		final BlockSections sections = ClientData.SIGNAL_BLOCKS.getBlockSections();
+		final List<double[]> lines = new ArrayList<>();
+		final Deque<Step> steps = new ArrayDeque<>();
+		steps.add(new Step(startPos, facing, 0, null));
+		int railsGone = 0;
+		while (!steps.isEmpty() && railsGone < MAX_RAILS) {
+			final Step step = steps.pop();
+			for (final Map.Entry<BlockPos, Rail> entry : ClientData.RAILS.getOrDefault(step.node, Collections.emptyMap()).entrySet()) {
+				final Rail rail = entry.getValue();
+				if (!rail.facingStart.similarFacing(step.facing)) {
+					continue;
+				}
+				railsGone++;
+				final BlockPos endPos = entry.getKey();
+				final UUID railKey = PathData.getRailProduct(step.node, endPos);
+				final int[] order = getPieceOrder(rail, step.node.asLong() < endPos.asLong());
+				int entered = step.entered;
+				UUID lastSection = step.lastSection;
+				boolean stop = false;
+				for (int i = 0; i < order.length; i++) {
+					final UUID unit = BlockSections.getPieceKey(railKey, order[i]);
+					final List<UUID> section = sections == null ? null : sections.getSection(unit);
+					final UUID sectionId = section == null || section.isEmpty() ? unit : section.get(0);
+					entered = sectionId.equals(lastSection) ? entered : entered + 1;
+					if (entered > 1) {
+						stop = true;
+						break;
+					}
+					lastSection = sectionId;
+					final double length = rail.getLength();
+					final int samples = Math.max(1, (int) Math.ceil(length / order.length / 2));
+					for (int k = 0; k < samples; k++) {
+						final net.minecraft.world.phys.Vec3 from = rail.getPosition(length * (i + (double) k / samples) / order.length);
+						final net.minecraft.world.phys.Vec3 to = rail.getPosition(length * (i + (double) (k + 1) / samples) / order.length);
+						lines.add(new double[]{from.x, from.y, from.z, to.x, to.y, to.z});
+					}
+				}
+				if (!stop) {
+					steps.push(new Step(endPos, rail.facingEnd.getOpposite().angleDegrees, entered, lastSection));
+				}
+			}
+		}
+		return lines;
 	}
 
 	/**

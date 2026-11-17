@@ -12,6 +12,10 @@
  * drag paints every rail passed over, Shift+drag a box paints every rail in it, and a double click paints along the rail
  * both ways up to the turnouts. Each is one step of undo. Right-drag or Space+drag pans while a brush is in hand, the
  * wheel zooms; Esc drops the way's start, then puts the brush down. Right-click menus still work.
+ *
+ * Choosing by hand (0.99.0, user 2026-11-17: 人工多选加入分组): the "select" tool takes sections into a choice with the
+ * same gestures instead of painting them (a click takes a section in or out), marked on both maps; the choice then goes
+ * into a logical line picked below, a new one, or out of its logical line, at once.
  */
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
 import { legacy, useLegacy } from "../legacy/engine"
@@ -20,7 +24,7 @@ import { ConfirmButton } from "../ui/bits"
 import { tr } from "../i18n"
 import { colorOf, shortName } from "./now"
 
-export type Brush = { kind: "logical"; id: string | null } | { kind: "owner"; lines: string[] | null; label: string }
+export type Brush = { kind: "logical"; id: string | null } | { kind: "owner"; lines: string[] | null; label: string } | { kind: "select" }
 
 /** The brush in hand, shared by the panel, the real map and the logical schematic */
 let brushNow: Brush | null = null
@@ -28,18 +32,47 @@ const brushListeners = new Set<() => void>()
 export function setBrushNow(brush: Brush | null) { brushNow = brush; brushListeners.forEach(listener => listener()) }
 export const useBrush = () => useSyncExternalStore(listener => { brushListeners.add(listener); return () => brushListeners.delete(listener) }, () => brushNow)
 
-/** Paints one rail's section with a brush, as the old menus would. */
+/** The rails chosen by hand with the select tool (0.99.0), each with its whole section */
+let selection: Set<number> = new Set()
+const selectionListeners = new Set<() => void>()
+export const useSelection = () => useSyncExternalStore(listener => { selectionListeners.add(listener); return () => selectionListeners.delete(listener) }, () => selection)
+/** The rails of the sections of these rails */
+const sectionRails = (indices: Iterable<number>) => {
+  const rails = new Set<number>()
+  for (const index of indices) for (const each of legacy.v.sectionOf(index)) rails.add(each)
+  return rails
+}
+function setSelection(next: Set<number>) {
+  selection = next
+  const net = legacy.v.net
+  if (net) net.paintMarks = { rails: [...next], box: null, start: net.paintMarks?.start ?? -1 }
+  legacy.fn.drawNetwork()
+  selectionListeners.forEach(listener => listener())
+}
+/** Takes rails' sections into the choice, or with toggle, a section chosen already out of it */
+export function choose(indices: number[], toggle: boolean) {
+  const next = new Set(selection)
+  const rails = sectionRails(indices)
+  if (toggle && [...rails].every(rail => next.has(rail))) rails.forEach(rail => next.delete(rail))
+  else rails.forEach(rail => next.add(rail))
+  setSelection(next)
+}
+export function clearSelection() { setSelection(new Set()) }
+
+/** Paints one rail's section with a brush, as the old menus would; the select tool takes it in or out of the choice. */
 export function paint(index: number, brush: Brush) {
   const { fn } = legacy
-  if (brush.kind === "logical") fn.setRailLogicalLine(index, brush.id)
+  if (brush.kind === "select") choose([index], true)
+  else if (brush.kind === "logical") fn.setRailLogicalLine(index, brush.id)
   else fn.setOwnerOverride(index, brush.lines)
 }
 
-/** Paints many rails' sections with a brush at once, each section once: one step of undo (0.83.13). */
+/** Paints many rails' sections with a brush at once, each section once: one step of undo (0.83.13); the select tool takes them into the choice. */
 export function paintMany(indices: number[], brush: Brush) {
   if (!indices.length) return
   const { fn } = legacy
-  if (brush.kind === "logical") fn.setRailsLogicalLine(indices, brush.id)
+  if (brush.kind === "select") choose(indices, false)
+  else if (brush.kind === "logical") fn.setRailsLogicalLine(indices, brush.id)
   else fn.setRailsOwnerOverride(indices, brush.lines)
 }
 
@@ -68,7 +101,8 @@ function useBrushGestures(brush: Brush | null, start: { current: number }, setSt
     const cursor = () => { canvas.style.cursor = space || gesture?.kind === "pan" ? "grab" : "crosshair" }
     /** Marks the sections of the rails a gesture will paint, the start of a way, and the box */
     const mark = (rails: Iterable<number> = [], box: { x0: number; z0: number; x1: number; z1: number } | null = null) => {
-      const shown = new Set<number>()
+      // The choice so far stays marked while the select tool takes more
+      const shown = new Set<number>(brush.kind === "select" ? selection : [])
       for (const index of rails) for (const each of v.sectionOf(index)) shown.add(each)
       net().paintMarks = { rails: [...shown], start: start.current, box }
       fn.drawNetwork()
@@ -193,7 +227,8 @@ function useBrushGestures(brush: Brush | null, start: { current: number }, setSt
       removeEventListener("mouseup", onUp)
       canvas.style.cursor = ""
       start.current = -1
-      net().paintMarks = null
+      // The choice stays marked while it lasts
+      net().paintMarks = selection.size ? { rails: [...selection], box: null, start: -1 } : null
       fn.drawNetwork()
     }
   }, [brush]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -227,13 +262,15 @@ export function setLineTrack(lineKey: string, id: string, on: boolean) {
   fn.draftSettingsPart("lineTracks", (drafted: any) => { drafted[lineKey] = chosen.length ? chosen : null })
 }
 
-const sameBrush = (a: Brush | null, b: Brush) => Boolean(a && a.kind === b.kind && (a.kind === "logical" ? a.id === (b as any).id : JSON.stringify(a.lines) === JSON.stringify((b as any).lines)))
+const sameBrush = (a: Brush | null, b: Brush) => Boolean(a && a.kind === b.kind && (a.kind === "select" || (a.kind === "logical" ? a.id === (b as any).id : JSON.stringify(a.lines) === JSON.stringify((b as any).lines))))
 
 export function OwnershipPanel({ className }: { className: string }) {
   const version = useLegacy()
   const { fn, v } = legacy
   const data = v.data, net = v.net
   const brush = useBrush(), setBrush = setBrushNow
+  const chosen = useSelection()
+  const [target, setTarget] = useState("")
   // The start of a way between two rails: the rail clicked last
   const start = useRef(-1), [hasStart, setHasStart] = useState(false)
   const setStart = (index: number) => {
@@ -253,6 +290,13 @@ export function OwnershipPanel({ className }: { className: string }) {
   useEffect(() => {
     if (brush?.kind === "logical" && brush.id !== null && !fn.logicalLinesShown().has(brush.id)) setBrush(null)
   })
+
+  // How many sections are chosen by hand
+  const chosenSections = useMemo(() => {
+    const sections = new Set<unknown>()
+    chosen.forEach(rail => { const entry = net.ownerOf && net.ownerOf.get(rail); sections.add(entry ? entry.section : "r" + rail) })
+    return sections.size
+  }, [chosen]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // How many sections each logical line has, as the draft has them
   const counts = useMemo(() => {
@@ -317,12 +361,33 @@ export function OwnershipPanel({ className }: { className: string }) {
                 </span>
               ), line.connecting))}
               {brushRow("erase", { kind: "logical", id: null }, null, tr("橡皮：移出逻辑线路"))}
+              {brushRow("select", { kind: "select" }, null, tr("多选：先选区段，再加入逻辑线路"))}
             </> : <>
               {operating.map((line: any) => brushRow("o" + line.key, { kind: "owner", lines: [line.key], label: line.key }, colorOf(line.color), tr("只归 {0}", shortName(line.name))))}
               {brushRow("open", { kind: "owner", lines: [], label: "open" }, null, tr("对所有线路开放"))}
               {brushRow("auto", { kind: "owner", lines: null, label: "auto" }, null, tr("恢复自动归属"))}
+              {brushRow("select", { kind: "select" }, null, tr("多选：先选区段，再加入逻辑线路"))}
             </>}
           </ul>
+          {canEdit && chosen.size > 0 && (
+            <div className="mt-2 flex flex-col gap-1.5 rounded-md border border-ctl p-2" role="group" aria-label={tr("选中的区段")} data-chosen-sections={chosenSections}>
+              <span className="text-[12px] font-semibold">{tr("已选 {0} 段", chosenSections)}</span>
+              {logical && (
+                <div className="flex items-center gap-1.5">
+                  <select className="h-7 min-w-0 flex-1 rounded-md border border-ctl bg-panel px-1 text-[13px]" value={target} onChange={e => setTarget(e.target.value)} aria-label={tr("加入哪条逻辑线路")}>
+                    <option value="">{tr("选逻辑线路…")}</option>
+                    {logicalLines.map((line: any) => <option key={line.id} value={line.id}>{line.name}</option>)}
+                  </select>
+                  <button className="btn" disabled={!target} onClick={() => { paintMany([...chosen], { kind: "logical", id: target }); clearSelection() }}>{tr("加入")}</button>
+                </div>
+              )}
+              <div className="flex flex-wrap gap-1.5">
+                <button className="btn" onClick={() => fn.logicalLineDialog(null, (id: string) => { paintMany([...chosen], { kind: "logical", id }); clearSelection() })}>{tr("新建逻辑线路并加入…")}</button>
+                {logical && <button className="btn" onClick={() => { paintMany([...chosen], { kind: "logical", id: null }); clearSelection() }}>{tr("移出逻辑线路")}</button>}
+                <button className="btn btn-ghost" onClick={clearSelection}>{tr("清空选择")}</button>
+              </div>
+            </div>
+          )}
           {canEdit && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               <button className="btn" onClick={() => fn.logicalLineDialog(null, (id: string) => setBrush({ kind: "logical", id }))}>{tr("＋ 新建逻辑线路…")}</button>

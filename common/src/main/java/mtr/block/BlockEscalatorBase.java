@@ -101,7 +101,7 @@ public abstract class BlockEscalatorBase extends HorizontalBlockWithSoftLanding 
 		return IBlock.getStatePropertySafe(state, SIDE) == EnumSide.RIGHT ? facing.getCounterClockWise() : facing.getClockWise();
 	}
 
-	protected enum EnumEscalatorOrientation implements StringRepresentable {
+	public enum EnumEscalatorOrientation implements StringRepresentable {
 
 		LANDING_BOTTOM("landing_bottom"), LANDING_TOP("landing_top"), FLAT("flat"), SLOPE("slope"), TRANSITION_BOTTOM("transition_bottom"), TRANSITION_TOP("transition_top");
 		private final String name;

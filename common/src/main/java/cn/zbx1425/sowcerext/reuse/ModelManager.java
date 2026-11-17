@@ -53,6 +53,32 @@ public class ModelManager {
         loadedRawModels.clear();
     }
 
+    /**
+     * Gives back an uploaded model's GPU buffers and forgets it (0.100.0, on-demand train models let go when unused):
+     * its vertex arrays and the buffers made for them. Call on the render thread, with nothing drawing it any more.
+     */
+    public void release(ModelCluster cluster) {
+        if (cluster == null) return;
+        java.util.Set<Object> indexBuffers = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+        for (VertArrays arrays : new VertArrays[]{cluster.uploadedOpaqueParts, cluster.uploadedTranslucentParts}) {
+            if (arrays == null) continue;
+            arrays.meshList.forEach(vertArray -> indexBuffers.add(vertArray.indexBuf));
+        }
+        if (uploadedVertArrays.values().removeIf(value -> value == cluster)) {
+            vaoCount -= cluster.uploadedOpaqueParts == null ? 0 : cluster.uploadedOpaqueParts.meshList.size();
+        }
+        java.util.Iterator<Model> models = uploadedModels.values().iterator();
+        while (models.hasNext()) {
+            Model model = models.next();
+            if (model.meshList.stream().anyMatch(mesh -> indexBuffers.contains(mesh.indexBuf))) {
+                vboCount -= model.meshList.size();
+                model.close();
+                models.remove();
+            }
+        }
+        cluster.close();
+    }
+
     public void clearNamespace(String namespace) {
         uploadedVertArrays.entrySet().stream()
                 .filter(k -> k.getKey().getNamespace().equals(namespace))

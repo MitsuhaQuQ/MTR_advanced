@@ -114,7 +114,7 @@
 | `api/network` | 全网配线：节点、轨道（种类、隔离、形状）、车站、各线路的路径节点和各停站位置（`stopNodes`）、归属（`owners`：每条轨道的手改标记、区段号、逻辑线路、能走的运营线路） |
 | `api/layout`、`api/route-layout` | 车站周围的配线图；一条线路拉直的配线图 |
 | `api/route-preview`、`api/depot-way-preview` | 新线路各段怎么走；出入库规则的路怎么走（服务端寻路） |
-| `api/console` | 调度台快照 |
+| `api/console` | 调度台快照；0.99.0 起每列车有车头在轨道上的位置 `along` 和方向 `towardsHigher`，顶层有被占的轨道 `taken` 和锁定的咽喉进路 `locked`，供调度层“线路”视图（`views/LineMonitor.tsx`） |
 | `api/audio`、`api/audio-file` | 报站音频列表、上传删除；本机的音频文件。列表响应带服务端实际的 `maxSeconds`、`maxFileBytes` 和上传/管理权限；页面只负责显示并发起请求，客户端 Java 预检，服务端终检 |
 | `api/images`、`api/image-file` | 图片列表、导入/删除和本机预览；列表给出内部名、上传者、宽高、大小、时间及逐项删除权限；仅使用内部命名空间，不支持外部 URL |
 

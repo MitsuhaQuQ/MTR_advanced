@@ -35,6 +35,8 @@ public class ClientConfig {
     public static boolean translucentSort = true;
     /** MTR's own train models drawn from buffers built once (mtr.model.BakedTrainModels, 0.73.5); a way out if one looks wrong */
     public static boolean bakeBuiltInTrains = true;
+    /** Resource pack train models built when first needed instead of in the reload (mtr.client.TrainModelsOnDemand, 0.100.0) */
+    public static boolean loadTrainModelsOnDemand = true;
 
     public static boolean enableScriptDebugOverlay = false;
 
@@ -71,6 +73,7 @@ public class ClientConfig {
             enableBbModelPreload = !preloadDefaultApplied || getOrDefault(configObject, "enableBbModelPreload", JsonElement::getAsBoolean, true);
             translucentSort = getOrDefault(configObject, "translucentSort", JsonElement::getAsBoolean, false);
             bakeBuiltInTrains = getOrDefault(configObject, "bakeBuiltInTrains", JsonElement::getAsBoolean, true);
+            loadTrainModelsOnDemand = getOrDefault(configObject, "loadTrainModelsOnDemand", JsonElement::getAsBoolean, true);
             enableScriptDebugOverlay = getOrDefault(configObject, "enableScriptDebugOverlay", JsonElement::getAsBoolean, false);
             enableRailDeform = getOrDefault(configObject, "enableRailDeform", JsonElement::getAsBoolean, true);
             enableRail3D = getOrDefault(configObject, "enableRail3D", JsonElement::getAsBoolean, true);
@@ -163,6 +166,7 @@ public class ClientConfig {
             configObject.addProperty(PRELOAD_DEFAULT_KEY, true);
             configObject.addProperty("translucentSort", translucentSort);
             configObject.addProperty("bakeBuiltInTrains", bakeBuiltInTrains);
+            configObject.addProperty("loadTrainModelsOnDemand", loadTrainModelsOnDemand);
             configObject.addProperty("enableScriptDebugOverlay", enableScriptDebugOverlay);
             configObject.addProperty("enableRailDeform", enableRailDeform);
             configObject.addProperty("enableRail3D", enableRail3D);

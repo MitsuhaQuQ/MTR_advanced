@@ -12,6 +12,7 @@ import type { LayerId } from "../shell/layers"
 import { Navigator, type Part } from "./Navigator"
 import { Inspector } from "./Inspector"
 import { DutyBoard } from "./DutyBoard"
+import { LineMonitor } from "./LineMonitor"
 import { RunningDiagram } from "./RunningDiagram"
 import { SummaryTable } from "./SummaryTable"
 import { DispatchConsole } from "./DispatchConsole"
@@ -145,8 +146,8 @@ function DispatchWork() {
     const timer = setInterval(() => setTick(t => t + 1), 1000)
     return () => clearInterval(timer)
   }, [])
-  const [view, setView] = useState<"schematic" | "real">(() => { try { return localStorage.getItem("mtr-next-dispatch-view") === "real" ? "real" : "schematic" } catch { return "schematic" } })
-  const choose = (next: "schematic" | "real") => {
+  const [view, setView] = useState<"schematic" | "real" | "line">(() => { try { const saved = localStorage.getItem("mtr-next-dispatch-view"); return saved === "real" || saved === "line" ? saved : "schematic" } catch { return "schematic" } })
+  const choose = (next: "schematic" | "real" | "line") => {
     setView(next)
     try { localStorage.setItem("mtr-next-dispatch-view", next) } catch { /* private window */ }
     if (next === "real") setTimeout(() => fn.drawNetwork())
@@ -160,14 +161,16 @@ function DispatchWork() {
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <div className="flex shrink-0 items-center gap-3 border-b border-grid bg-panel px-3 py-2">
           <div className="flex h-7 shrink-0 overflow-hidden rounded-md border border-ctl" role="group" aria-label={tr("视图")}>
-            {([["schematic", tr("示意图")], ["real", tr("实际图")]] as const).map(([id, label], i) => (
+            {([["schematic", tr("示意图")], ["real", tr("实际图")], ["line", tr("线路")]] as const).map(([id, label], i) => (
               <button key={id} type="button" aria-pressed={view === id} onClick={() => choose(id)}
                 className={"px-2.5 text-[13px] " + (i ? "border-l border-gridstrong " : "") + (view === id ? "bg-brand font-medium text-brandink" : "bg-panel")}>{label}</button>
             ))}
           </div>
           <span className="text-[12px] text-dim">{tr("{0} 列车在线上；点列车在右边看它和下命令", trains.length)}</span>
         </div>
-        <NetworkSchematic shape={view} onShowReal={() => choose("real")} trains={trains} onTrain={id => { v.consoleState.selected = v.consoleState.selected === id ? "" : id; fn.renderConsole(); fn.drawNetwork(); fn.renderAll() }} />
+        {view === "line"
+          ? <LineMonitor onTrain={id => { v.consoleState.selected = v.consoleState.selected === id ? "" : id; fn.renderConsole(); fn.renderAll() }} />
+          : <NetworkSchematic shape={view} onShowReal={() => choose("real")} trains={trains} onTrain={id => { v.consoleState.selected = v.consoleState.selected === id ? "" : id; fn.renderConsole(); fn.drawNetwork(); fn.renderAll() }} />}
       </div>
       <DispatchConsole className="scroll-thin max-h-[45%] shrink-0 overflow-y-auto border-t border-grid bg-panel lg:max-h-none lg:w-[340px] lg:border-l lg:border-t-0"
         onChoose={id => { v.consoleState.selected = v.consoleState.selected === id ? "" : id; fn.renderConsole(); fn.drawNetwork(); fn.renderAll() }} />

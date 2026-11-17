@@ -97,6 +97,25 @@ public final class EdgeOutline {
 		return best == Double.MAX_VALUE ? 0 : best * sign;
 	}
 
+	/**
+	 * @return how far a point is past the chain's ends, along the chain there (0.100.0): positive beyond the first point
+	 * or the last, square to the chain, negative or 0 alongside it. A platform's marking stops there instead of fanning
+	 * round the end of the edge (user 2026-11-18: 端头有材质问题).
+	 */
+	public static double pastEnds(double[] chain, double x, double z) {
+		final int points = chain.length / 2;
+		if (points < 2) {
+			return 0;
+		}
+		final double startDx = chain[2] - chain[0], startDz = chain[3] - chain[1];
+		final double startLength = Math.hypot(startDx, startDz);
+		final double endDx = chain[points * 2 - 2] - chain[points * 2 - 4], endDz = chain[points * 2 - 1] - chain[points * 2 - 3];
+		final double endLength = Math.hypot(endDx, endDz);
+		final double beforeStart = startLength == 0 ? 0 : ((chain[0] - x) * startDx + (chain[1] - z) * startDz) / startLength;
+		final double afterEnd = endLength == 0 ? 0 : ((x - chain[points * 2 - 2]) * endDx + (z - chain[points * 2 - 1]) * endDz) / endLength;
+		return Math.max(beforeStart, afterEnd);
+	}
+
 	private static double[] close(List<double[]> points, double from, double to, boolean increasing) {
 		final List<double[]> polygon = new ArrayList<>(points);
 		final double span = increasing ? floorMod(to - from, 4) : floorMod(from - to, 4);

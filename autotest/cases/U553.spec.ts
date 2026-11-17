@@ -186,6 +186,8 @@ test.describe("U553 U554 弯曲站台", () => {
 		try {
 			for (const [label, x, y, z, yaw, pitch] of [
 				["along", 6, Y + 2.6, endZ + 3, 90, 12],
+				// The platform's east end from above (0.100.0): the edge marking stops square at the end of the edge
+				["end-close", LONG_EAST + 2.5, Y + 3.2, endZ + 2.5, 135, 55],
 				["across", -50, Y + 4, middleZ - 14, 0, 12],
 				["above", -50, Y + 70, middleZ, 0, 90],
 				["edge-close", -40, Y + 1.2, trackZOf(rail, -40) - 1, 50, 25],

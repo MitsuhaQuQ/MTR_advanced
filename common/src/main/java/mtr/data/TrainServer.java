@@ -1151,6 +1151,18 @@ public class TrainServer extends Train {
 	 * @return the locks of the station throats on the train's path (L2), made again when the path changes, or null if they
 	 * are off or the train isn't running a duty
 	 */
+	/**
+	 * @return the train's turnouts with routes locked now, {node, side, side}, and in {@code nodes} every throat turnout on
+	 * its path (0.99.0, sent to the players for signals); nothing when its throat locks are off
+	 */
+	public List<long[]> getThroatTurnouts(Set<Long> nodes) {
+		if (throatLocks == null) {
+			return Collections.emptyList();
+		}
+		nodes.addAll(throatLocks.getTurnoutNodes());
+		return throatLocks.getGrantedTurnouts();
+	}
+
 	private ThroatLocks getThroatLocks() {
 		if (!ThroatLocks.enabled || !isOnRoute || isCurrentlyManual || !service.isOnDuty() || path.isEmpty()) {
 			return null;
@@ -1215,6 +1227,23 @@ public class TrainServer extends Train {
 	/**
 	 * @return the rail its head is on, or null, for the dispatcher's console (D6)
 	 */
+	/**
+	 * @return where the head is on its rail (0.99.0, the web editor's line view): {how far along it from its node with the
+	 * smaller position to the other, 0 to 1; 1 if the train runs towards that other node, else 0}; null with no path
+	 */
+	public float[] getHeadPlace() {
+		if (path == null || path.isEmpty() || distances == null || distances.isEmpty()) {
+			return null;
+		}
+		final int index = Math.max(0, Math.min(path.size() - 1, getIndex(railProgress, false)));
+		final double start = index == 0 ? 0 : distances.get(index - 1);
+		final double end = distances.get(Math.min(index, distances.size() - 1));
+		final double along = end > start ? Math.max(0, Math.min(1, (railProgress - start) / (end - start))) : 0;
+		final UUID rail = path.get(index).getRailProduct();
+		final boolean fromLower = path.get(index).startingPos.asLong() == rail.getMostSignificantBits();
+		return new float[]{(float) (fromLower ? along : 1 - along), fromLower ? 1 : 0};
+	}
+
 	public UUID getHeadRail() {
 		if (path == null || path.isEmpty()) {
 			return null;

@@ -60,8 +60,9 @@ public class RenderTrains extends EntityRendererMapper<EntitySeat> implements IG
 
 	public static final int PLAYER_RENDER_OFFSET = 1000;
 
-	public static final Set<String> AVAILABLE_TEXTURES = new HashSet<>();
-	public static final Set<String> UNAVAILABLE_TEXTURES = new HashSet<>();
+	// Also filled by the on-demand train model builder's thread (0.100.0)
+	public static final Set<String> AVAILABLE_TEXTURES = java.util.concurrent.ConcurrentHashMap.newKeySet();
+	public static final Set<String> UNAVAILABLE_TEXTURES = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
 	public static final int DETAIL_RADIUS = 32;
 	public static final int DETAIL_RADIUS_SQUARED = DETAIL_RADIUS * DETAIL_RADIUS;
@@ -134,6 +135,8 @@ public class RenderTrains extends EntityRendererMapper<EntitySeat> implements IG
 		final float lastFrameDuration = MTRClient.getLastFrameDuration();
 		final float newLastFrameDuration = client.isPaused() || lastRenderedTick == MTRClient.getGameTick() ? 0 : lastFrameDuration;
 		final boolean useAnnouncements = Config.useTTSAnnouncements() || Config.showAnnouncementMessages();
+		// Resource pack train models built in the background get their GL calls, and those of known trains are asked for
+		mtr.client.TrainModelsOnDemand.onFrame();
 
 		if (Config.useDynamicFPS()) {
 			if (lastFrameDuration > 0.5) {
@@ -262,6 +265,8 @@ public class RenderTrains extends EntityRendererMapper<EntitySeat> implements IG
 		}, newLastFrameDuration));
 
 		RenderRailInspect.render(matrices, vertexConsumers, player, MTRClient.getGameTick());
+		RenderSignalHighlight.render(matrices, vertexConsumers, player.level());
+		EscalatorStepsClient.render(matrices, vertexConsumers, world, client.getFrameTime());
 		RenderStationAreas.render(matrices, vertexConsumers, player);
 
 		final boolean renderColors = isHoldingRailRelated(player);

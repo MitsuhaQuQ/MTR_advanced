@@ -7,7 +7,11 @@
 成片地画（0.83.13，拿着画笔或橡皮时）：点一段画整段并记作起点；Shift+点另一段画两段之间最短的路（`core/railPick.ts` 的 `railPath`），终点成为下一段的起点；按住左键拖画经过的轨道（`railsNearSegment`）；Shift+拖方框画框里和压框边的轨道（`railsInBox`）；双击沿轨道画到道岔或尽头（`railsAlong`）。每个动作一步撤销。拿着画笔时左键拖不平移，右键拖或空格+拖平移，滚轮缩放；Esc 先取消起点再放下画笔。右键单击菜单照常可用。所有修改经旧代码函数（`fn.setRailLogicalLine`、`fn.setOwnerOverride`、`fn.draftSettingsPart` 等，实现在 `legacy/retired.ts` + `core/settings.ts`）进草稿。由 `views/Layers.tsx` 在归属层显示。
 
 ## 类型
-- `Brush`（导出）：`{ kind: "logical", id: string | null }`（null 为橡皮）或 `{ kind: "owner", lines: string[] | null, label }`（`[]` 对所有线路开放，`null` 恢复自动）。
+- `Brush`（导出）：`{ kind: "logical", id: string | null }`（null 为橡皮）、`{ kind: "owner", lines: string[] | null, label }`（`[]` 对所有线路开放，`null` 恢复自动），或 `{ kind: "select" }`（0.99.0 多选：手势不刷，只把区段加进选择，单点切换）。
+
+## 多选（0.99.0）
+- 模块级 `selection`（轨道序号集合，按整段）、`useSelection()`、`choose(indices, toggle)`（`toggle` 且全已选时移出）、`clearSelection()`；选择变化时写 `net.paintMarks.rails` 并重画，`NetworkSchematic` 逻辑图据此垫黄。
+- 面板：有选择时显示“已选 N 段”分组（`aria-label` “选中的区段”，`data-chosen-sections`）：逻辑线路下拉 + “加入”、“新建逻辑线路并加入…”、“移出逻辑线路”、“清空选择”；加入或移出后清空选择。
 
 ## 模块级状态与导出函数
 - `brushNow`、`brushListeners`（内部）：手中的画笔，在面板、实景地图、逻辑示意图之间共享。

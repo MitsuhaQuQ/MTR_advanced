@@ -149,6 +149,9 @@ public class MTRClient implements IPacket {
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.ROUTE_SIGN_STANDING_METAL_TILE_ENTITY.get(), RenderRouteSign::new);
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.ROUTE_SIGN_WALL_LIGHT_TILE_ENTITY.get(), RenderRouteSign::new);
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.ROUTE_SIGN_WALL_METAL_TILE_ENTITY.get(), RenderRouteSign::new);
+			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.FREE_ESCALATOR.get(), RenderFreeEscalator::new);
+			// The original escalator's steps found in each chunk as it arrives, to be drawn moving (0.100.0)
+			RegistryClient.registerChunkLoadEvent(EscalatorStepsClient::onChunkLoad);
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.SIGNAL_LIGHT_2_ASPECT_1.get(), dispatcher -> new RenderSignalLight2Aspect<>(dispatcher, true, false, 0xFF0000FF));
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.SIGNAL_LIGHT_2_ASPECT_2.get(), dispatcher -> new RenderSignalLight2Aspect<>(dispatcher, false, false, 0xFF0000FF));
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.SIGNAL_LIGHT_2_ASPECT_3.get(), dispatcher -> new RenderSignalLight2Aspect<>(dispatcher, true, true, 0xFF00FF00));

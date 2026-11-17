@@ -17,6 +17,10 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.level.BlockAndTintGetter;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.level.ChunkEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.function.Consumer;
@@ -38,6 +42,14 @@ public class RegistryClientImpl {
 
 	public static <T extends Entity> void registerEntityRenderer(EntityType<T> type, Function<Object, EntityRendererMapper<T>> function) {
 		RegistryUtilitiesClient.registerEntityRenderer(type, function::apply);
+	}
+
+	public static void registerChunkLoadEvent(Consumer<LevelChunk> consumer) {
+		MinecraftForge.EVENT_BUS.addListener(EventPriority.NORMAL, false, ChunkEvent.Load.class, event -> {
+			if (event.getLevel() != null && event.getLevel().isClientSide() && event.getChunk() instanceof LevelChunk) {
+				consumer.accept((LevelChunk) event.getChunk());
+			}
+		});
 	}
 
 	public static void registerKeyBinding(KeyMapping keyMapping) {

@@ -16,6 +16,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.chunk.LevelChunk;
 
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -39,6 +40,12 @@ public class RegistryClient {
 
 	@ExpectPlatform
 	public static <T extends Entity> void registerEntityRenderer(EntityType<T> type, Function<Object, EntityRendererMapper<T>> function) {
+		throw new AssertionError();
+	}
+
+	/** Called on the client for each chunk that arrives, after its data and block entities are in (0.99.0) */
+	@ExpectPlatform
+	public static void registerChunkLoadEvent(Consumer<LevelChunk> consumer) {
 		throw new AssertionError();
 	}
 

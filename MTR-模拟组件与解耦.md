@@ -1489,6 +1489,12 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 外轨超高（0.98.0）：组件 `transitsim.geometry.Superelevation`（由等距点的曲率、两端节点的超高或设计速度求沿轨道的侧倾，`SuperelevationTest`）；游戏 `Rail.setCants`/`getCantRoll`、`BlockNode` 的 `cant`/`cant_speed`、`RailGrades` 带到轨道、`RailExtraSupplier.getRollAngle` 接 ANTE 侧倾。组件还没有把超高用在速度上。
 
+信号机绑定（0.99.0）：组件 `ThroatLocks.getGrantedTurnouts`、`getTurnoutNodes` 给出锁定的进路和受管道岔；其余（`SignalBinding`、`TileEntitySignalBase`、`SignalAspects` 按进路显示、`RenderSignalHighlight`）在游戏一侧。设计 7.4 第 3 步“信号机位置成为分区边界”和第 4 步移动闭塞仍未做，列车不看信号。
+
+网页按线路管理（0.99.0）：只在游戏和网页一侧（`TrainServer.getHeadPlace`、`DispatchConsole`、`EditorConsole`、`views/LineMonitor.tsx`），不涉及组件。
+
+扶梯（0.100.0）：与列车运行规则无关，不进组件。自由扶梯的几何 `mtr.escalator.FreeEscalatorPath` 写成不依赖游戏类的纯 Java，便于单测（`FreeEscalatorPathTest`）；方块、运送、渲染都在游戏一侧（`BlockFreeEscalator`、`FreeEscalators`、`RenderFreeEscalator`）。原版扶梯的立体台阶（`EscalatorStepsClient` 找、`RenderEscalatorStep` 画）只改画法，不带方块实体。存档可靠性的加固（拆除名单 `FreeEscalatorRemovals`、读档容错、`RenderGuard`）和曲线屏蔽门的几何缓存也都在游戏一侧。资源包列车模型按需载入（`LazyTrainModel`、`TrainModelsOnDemand`、`UploadCapture`）只在客户端渲染一侧。站台端头标线截止的几何 `EdgeOutline.pastEnds` 在组件里（纯几何，`EdgeOutlineTest`）。
+
 填缝方块斜顶（0.94.0）：组件 `SlopedTops`（四角高度、双线性、小柱高度；测试 `SlopedTopsTest`：平地整块、沿 x 的坡、跨块边界上下两块）；游戏 `BlockGapFiller.cornerHeights`、`Rail.RailActions` 的 `railHeights`/`slopedTop`/`keepUnderRail`、桥梁按列铺桥面、`ItemGapFiller` 的材质和顶面、`RenderPlatformEdge.slopedFan`。
 
 填缝方块的切线（0.93.0）：组件 `PlatformEdges.fillerCutOf`、`FILLER_SNAP`（测试 `PlatformEdgesTest` 网格对齐取整块、斜线两侧互补）；游戏 `BlockGapFiller`（找轨道最近点、放置）、`Rail.RailActions` 的隧道、桥梁、隧道壁创建器、`ItemGapFiller`、`RenderPlatformEdge.GapFiller`。

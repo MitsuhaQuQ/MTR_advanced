@@ -15,7 +15,7 @@ public interface Items {
 	RegistryObject<Item> APG_DOOR = new RegistryObject<>(() -> new ItemPSDAPGBase(ItemPSDAPGBase.EnumPSDAPGItem.PSD_APG_DOOR, ItemPSDAPGBase.EnumPSDAPGType.APG));
 	RegistryObject<Item> APG_GLASS = new RegistryObject<>(() -> new ItemPSDAPGBase(ItemPSDAPGBase.EnumPSDAPGItem.PSD_APG_GLASS, ItemPSDAPGBase.EnumPSDAPGType.APG));
 	RegistryObject<Item> APG_GLASS_END = new RegistryObject<>(() -> new ItemPSDAPGBase(ItemPSDAPGBase.EnumPSDAPGItem.PSD_APG_GLASS_END, ItemPSDAPGBase.EnumPSDAPGType.APG));
-	RegistryObject<Item> BRUSH = new RegistryObject<>(() -> new ItemWithCreativeTabBase(Keys.LIFTS_ONLY ? CreativeModeTabs.ESCALATORS_LIFTS : CreativeModeTabs.CORE, properties -> properties.stacksTo(1)));
+	RegistryObject<Item> BRUSH = new RegistryObject<>(() -> new mtr.item.ItemBrush(Keys.LIFTS_ONLY ? CreativeModeTabs.ESCALATORS_LIFTS : CreativeModeTabs.CORE));
 	RegistryObject<Item> STATION_AREA_TOOL = new RegistryObject<>(mtr.item.ItemStationAreaTool::new);
 	RegistryObject<Item> RAILWAY_DASHBOARD = new RegistryObject<>(() -> new ItemDashboard(TransportMode.TRAIN));
 	RegistryObject<Item> BOAT_DASHBOARD = new RegistryObject<>(() -> new ItemDashboard(TransportMode.BOAT));
@@ -24,6 +24,7 @@ public interface Items {
 	RegistryObject<Item> DRIVER_KEY = new RegistryObject<>(() -> new ItemWithCreativeTabBase(CreativeModeTabs.CORE, properties -> properties.stacksTo(1)));
 	RegistryObject<Item> BOAT_NODE = new RegistryObject<>(() -> new ItemWithCreativeTabBase.ItemPlaceOnWater(CreativeModeTabs.CORE, Blocks.BOAT_NODE.get()));
 	RegistryObject<Item> ESCALATOR = new RegistryObject<>(ItemEscalator::new);
+	RegistryObject<Item> FREE_ESCALATOR = new RegistryObject<>(mtr.item.ItemFreeEscalator::new);
 	RegistryObject<Item> LIFT_BUTTONS_LINK_CONNECTOR = new RegistryObject<>(() -> new ItemLiftButtonsLinkModifier(true));
 	RegistryObject<Item> LIFT_BUTTONS_LINK_REMOVER = new RegistryObject<>(() -> new ItemLiftButtonsLinkModifier(false));
 	RegistryObject<Item> LIFT_DOOR_1 = new RegistryObject<>(() -> new ItemPSDAPGBase(ItemPSDAPGBase.EnumPSDAPGItem.PSD_APG_DOOR, ItemPSDAPGBase.EnumPSDAPGType.LIFT_DOOR_1));

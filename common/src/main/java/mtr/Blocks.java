@@ -28,6 +28,7 @@ public interface Blocks {
 	RegistryObject<Block> CLOCK_POLE = new RegistryObject<>(() -> new BlockClockPole(Material.properties(Material.METAL).requiresCorrectToolForDrops().strength(1)));
 	RegistryObject<Block> ESCALATOR_SIDE = new RegistryObject<>(BlockEscalatorSide::new);
 	RegistryObject<Block> ESCALATOR_STEP = new RegistryObject<>(BlockEscalatorStep::new);
+	RegistryObject<Block> FREE_ESCALATOR = new RegistryObject<>(mtr.block.BlockFreeEscalator::new);
 	RegistryObject<Block> GLASS_FENCE_CIO = new RegistryObject<>(BlockGlassFence::new);
 	RegistryObject<Block> GLASS_FENCE_CKT = new RegistryObject<>(BlockGlassFence::new);
 	RegistryObject<Block> GLASS_FENCE_HEO = new RegistryObject<>(BlockGlassFence::new);

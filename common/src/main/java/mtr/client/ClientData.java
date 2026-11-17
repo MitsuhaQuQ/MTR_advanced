@@ -73,6 +73,12 @@ public final class ClientData {
 	 * 0 ({@code BlockSections}); null from a server that doesn't send them.
 	 */
 	public static Map<UUID, Set<Integer>> OCCUPIED_SECTIONS = null;
+	/**
+	 * The station throat turnouts whose routes are locked (0.99.0), and the routes locked through them now: node to
+	 * {one side, the other side} of each; null from a server that doesn't send them, when signals don't look at routes
+	 */
+	public static Set<Long> THROAT_TURNOUTS = null;
+	public static Map<Long, List<long[]>> LOCKED_TURNOUTS = Collections.emptyMap();
 	public static final Map<BlockPos, Map<BlockPos, Rail>> RAILS = new HashMap<>();
 	public static final Set<TrainClient> TRAINS = new HashSet<>();
 	private static long nextTrainSnapshot = Long.MIN_VALUE;
@@ -376,6 +382,22 @@ public final class ClientData {
 		} else {
 			occupiedSections = null;
 		}
+		final Set<Long> throatTurnouts;
+		final Map<Long, List<long[]>> lockedTurnouts = new HashMap<>();
+		if (packet.readableBytes() >= 4) {
+			throatTurnouts = new HashSet<>();
+			final int turnoutCount = packet.readInt();
+			for (int i = 0; i < turnoutCount; i++) {
+				throatTurnouts.add(packet.readLong());
+			}
+			final int lockedCount = packet.readInt();
+			for (int i = 0; i < lockedCount; i++) {
+				final long node = packet.readLong();
+				lockedTurnouts.computeIfAbsent(node, key -> new ArrayList<>()).add(new long[]{packet.readLong(), packet.readLong()});
+			}
+		} else {
+			throatTurnouts = null;
+		}
 
 		client.execute(() -> {
 			RECEIVED_SCHEDULES.clear();
@@ -385,6 +407,8 @@ public final class ClientData {
 			OCCUPIED_RAILS.clear();
 			OCCUPIED_RAILS.putAll(occupiedRails);
 			OCCUPIED_SECTIONS = occupiedSections;
+			THROAT_TURNOUTS = throatTurnouts;
+			LOCKED_TURNOUTS = lockedTurnouts;
 		});
 	}
 

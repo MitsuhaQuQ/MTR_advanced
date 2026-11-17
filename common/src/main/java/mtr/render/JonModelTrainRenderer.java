@@ -77,7 +77,8 @@ public class JonModelTrainRenderer extends TrainRendererBase implements IGui {
 	}
 
 	public double getCarCullRadius() {
-		if (model == null || model.getClass() != DynamicTrainModel.class || train.transportMode != TransportMode.TRAIN) {
+		final ModelTrainBase built = mtr.model.LazyTrainModel.peek(model);
+		if (built == null || built.getClass() != DynamicTrainModel.class || train.transportMode != TransportMode.TRAIN) {
 			return Double.POSITIVE_INFINITY;
 		}
 		final TrainProperties properties = TrainClientRegistry.getTrainProperties(train.trainId);
@@ -86,7 +87,7 @@ public class JonModelTrainRenderer extends TrainRendererBase implements IGui {
 		}
 		// The built-in bogies may follow the track away from the car's chord on curves.
 		final double bogieRadius = train.spacing + Math.abs(properties.bogiePosition) + 4;
-		return Math.max(bogieRadius, ((DynamicTrainModel) model).getCullRadius());
+		return Math.max(bogieRadius, ((DynamicTrainModel) built).getCullRadius());
 	}
 
 	@Override
@@ -158,7 +159,11 @@ public class JonModelTrainRenderer extends TrainRendererBase implements IGui {
 			// In the world, MTR's own models may come from buffers built once (BakedTrainModels)
 			mtr.model.BakedTrainModels.setInWorld(true);
 			try {
-				model.render(matrices, vertexConsumers, train, resolveTexture(textureId, textureId -> textureId + ".png"), light, doorLeftValue, doorRightValue, train.isDoorOpening(), carIndex, train.trainCars, !train.isReversed(), train.getIsOnRoute(), isTranslucentBatch, renderDetails, atPlatform);
+				// A resource pack train's model is built when first needed (0.100.0): nothing drawn until it is
+				final ModelTrainBase drawn = mtr.model.LazyTrainModel.resolve(model);
+				if (drawn != null) {
+					drawn.render(matrices, vertexConsumers, train, resolveTexture(textureId, textureId -> textureId + ".png"), light, doorLeftValue, doorRightValue, train.isDoorOpening(), carIndex, train.trainCars, !train.isReversed(), train.getIsOnRoute(), isTranslucentBatch, renderDetails, atPlatform);
+				}
 			} finally {
 				mtr.model.BakedTrainModels.setInWorld(false);
 			}
@@ -302,7 +307,10 @@ public class JonModelTrainRenderer extends TrainRendererBase implements IGui {
 				MODEL_BOGIE.render(matrices, vertexConsumers, light, 0);
 			}
 		} else {
-			bogie.model.render(matrices, vertexConsumers, train, resolveTexture(bogie.textureId, textureId -> textureId + ".png"), light, 0, 0, false, carIndex, train.trainCars, !train.isReversed(), train.getIsOnRoute(), isTranslucentBatch, renderDetails, atPlatform);
+			final ModelTrainBase drawn = mtr.model.LazyTrainModel.resolve(bogie.model);
+			if (drawn != null) {
+				drawn.render(matrices, vertexConsumers, train, resolveTexture(bogie.textureId, textureId -> textureId + ".png"), light, 0, 0, false, carIndex, train.trainCars, !train.isReversed(), train.getIsOnRoute(), isTranslucentBatch, renderDetails, atPlatform);
+			}
 		}
 	}
 

@@ -22,7 +22,11 @@ public class SowcerModelAgent extends ModelMapper {
     public SowcerModelAgent(RawModel rawModel, boolean bbCoords) {
         super(new ModelDataWrapper(null, 0, 0));
         this.bbCoords = bbCoords;
-        if (DeferredModelUpload.isActive() && rawModel.sourceLocation == null) {
+        if (UploadCapture.isActive()) {
+            // Built off the render thread for an on-demand train model (0.100.0): uploaded later on the render thread
+            this.pendingModel = rawModel;
+            UploadCapture.add(this);
+        } else if (DeferredModelUpload.isActive() && rawModel.sourceLocation == null) {
             this.pendingModel = rawModel;
             DeferredModelUpload.add(this, rawModel);
         } else {

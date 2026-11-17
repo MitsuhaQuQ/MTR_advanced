@@ -114,12 +114,21 @@ public final class CurvedPSD {
 		public void set(int angle, int cut) {
 			this.angle = angle;
 			this.cut = cut;
-			bend = angle < 0 ? null : PlatformEdges.bend(angle, cut);
+			// An angle or cut out of range (bad data read from a save) is no bend, the block drawn as nothing curved
+			PlatformEdges.Bend made;
+			try {
+				made = angle < 0 ? null : PlatformEdges.bend(angle, cut);
+			} catch (RuntimeException e) {
+				made = null;
+			}
+			bend = made;
 		}
 
 		public void read(CompoundTag compoundTag) {
 			set(compoundTag.contains(KEY_ANGLE) ? compoundTag.getInt(KEY_ANGLE) : -1, compoundTag.getInt(KEY_CUT));
-			curve = compoundTag.contains(KEY_CURVE_FROM) ? new Curve(BlockPos.of(compoundTag.getLong(KEY_CURVE_FROM)), BlockPos.of(compoundTag.getLong(KEY_CURVE_TO)), compoundTag.getDouble(KEY_CURVE_OFFSET), compoundTag.contains(KEY_CURVE_OFFSET_END) ? compoundTag.getDouble(KEY_CURVE_OFFSET_END) : compoundTag.getDouble(KEY_CURVE_OFFSET), compoundTag.getInt(KEY_CURVE_SIDE), compoundTag.getDouble(KEY_CURVE_START), compoundTag.getDouble(KEY_CURVE_END)) : null;
+			final Curve read = compoundTag.contains(KEY_CURVE_FROM) ? new Curve(BlockPos.of(compoundTag.getLong(KEY_CURVE_FROM)), BlockPos.of(compoundTag.getLong(KEY_CURVE_TO)), compoundTag.getDouble(KEY_CURVE_OFFSET), compoundTag.contains(KEY_CURVE_OFFSET_END) ? compoundTag.getDouble(KEY_CURVE_OFFSET_END) : compoundTag.getDouble(KEY_CURVE_OFFSET), compoundTag.getInt(KEY_CURVE_SIDE), compoundTag.getDouble(KEY_CURVE_START), compoundTag.getDouble(KEY_CURVE_END)) : null;
+			// Numbers that aren't (bad data): no curve, the block drawn along its chord
+			curve = read != null && Double.isFinite(read.offset) && Double.isFinite(read.offsetEnd) && Double.isFinite(read.start) && Double.isFinite(read.end) ? read : null;
 		}
 
 		public void write(CompoundTag compoundTag) {

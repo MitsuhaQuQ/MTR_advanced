@@ -16,6 +16,7 @@ import mtr.sound.bve.BveTrainSound;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.packs.resources.Resource;
 import net.minecraft.server.packs.resources.ResourceManager;
 import org.apache.commons.lang3.StringUtils;
 
@@ -111,7 +112,28 @@ public class CustomResources implements IResourcePackCreatorProperties, ICustomR
 							customTrains.add(trainId);
 						}
 
-						if (jsonObject.has(CUSTOM_TRAINS_MODEL) && jsonObject.has(CUSTOM_TRAINS_MODEL_PROPERTIES)) {
+						if (jsonObject.has(CUSTOM_TRAINS_MODEL) && jsonObject.has(CUSTOM_TRAINS_MODEL_PROPERTIES) && TrainModelsOnDemand.isEnabled()) {
+							// Only the properties now; the model is built when the train is first to be drawn (0.100.0)
+							final String modelPath = jsonObject.get(CUSTOM_TRAINS_MODEL).getAsString();
+							final String carTexture = jsonObject.has(CUSTOM_TRAINS_TEXTURE_ID) ? jsonObject.get(CUSTOM_TRAINS_TEXTURE_ID).getAsString() : jonRendererOrDefault.textureId;
+							final boolean flipV = jsonObject.has("flipV") && jsonObject.get("flipV").getAsBoolean();
+							final boolean preloadBbModel = jsonObject.has("preloadBbModel") && jsonObject.get("preloadBbModel").getAsBoolean();
+							readResource(manager, jsonObject.get(CUSTOM_TRAINS_MODEL_PROPERTIES).getAsString(), jsonProperties -> {
+								IResourcePackCreatorProperties.checkSchema(jsonProperties);
+								final String newBaseTrainType = String.format("%s_%s_%s", jsonProperties.get(KEY_PROPERTIES_TRANSPORT_MODE).getAsString(), jsonProperties.get(KEY_PROPERTIES_LENGTH).getAsInt(), jsonProperties.get(KEY_PROPERTIES_WIDTH).getAsInt());
+
+								// TODO temporary code for backwards compatibility
+								final String gangwayConnectionId2 = gangwayConnectionId.isEmpty() ? getOrDefault(jsonObject, "has_gangway_connection", true, JsonElement::getAsBoolean) ? "mtr:textures/entity/sp1900" : "" : gangwayConnectionId;
+								final String newBaseTrainType2 = baseTrainType.startsWith("base_") ? baseTrainType.replace("base_", "train_") : newBaseTrainType;
+								// TODO temporary code end
+
+								final ModelTrainBase model = lazyModel(trainId, modelPath, jsonProperties, doorAnimationType, carTexture, flipV, preloadBbModel);
+								final String soundBaseId = useBveSound ? bveSoundBaseId : speedSoundBaseId;
+								final JonTrainSound.JonTrainSoundConfig soundConfig = useBveSound ? null : new JonTrainSound.JonTrainSoundConfig(doorSoundBaseId, speedSoundCount, doorCloseSoundTime, accelSoundAtCoast, constPlaybackSpeed);
+								TrainClientRegistry.register(trainId, newBaseTrainType2.toLowerCase(Locale.ENGLISH), name, description, wikipediaArticle, model, textureId, color, gangwayConnectionId2, trainBarrierId, riderOffset, riderOffset, baseTrainProperties.bogiePosition, baseTrainProperties.isJacobsBogie, soundBaseId, soundConfig, bogie1, bogie2);
+								customTrains.add(trainId);
+							});
+						} else if (jsonObject.has(CUSTOM_TRAINS_MODEL) && jsonObject.has(CUSTOM_TRAINS_MODEL_PROPERTIES)) {
 							readResource(manager, jsonObject.get(CUSTOM_TRAINS_MODEL).getAsString(), jsonModel -> readResource(manager, jsonObject.get(CUSTOM_TRAINS_MODEL_PROPERTIES).getAsString(), jsonProperties -> {
 								IResourcePackCreatorProperties.checkSchema(jsonProperties);
 								final String newBaseTrainType = String.format("%s_%s_%s", jsonProperties.get(KEY_PROPERTIES_TRANSPORT_MODE).getAsString(), jsonProperties.get(KEY_PROPERTIES_LENGTH).getAsInt(), jsonProperties.get(KEY_PROPERTIES_WIDTH).getAsInt());
@@ -169,6 +191,51 @@ public class CustomResources implements IResourcePackCreatorProperties, ICustomR
 		CUSTOM_SIGNS.keySet().forEach(System.out::println);
 	}
 
+	/**
+	 * A resource pack train's or bogie's model built when first needed (0.100.0, {@link TrainModelsOnDemand}), as the
+	 * reload would have built it: the model file read then (for an OBJ, ANTE's stand-in carrying the texture, flipV and
+	 * bbmodel preload the reload would have captured from the train's entry), with a copy of its properties (building a
+	 * model changes them).
+	 */
+	private static ModelTrainBase lazyModel(String name, String modelPath, JsonObject properties, DoorAnimationType doorAnimationType, String textureId, boolean flipV, boolean preloadBbModel) {
+		final JsonObject keptProperties = properties.deepCopy();
+		final boolean useLegacy = keptProperties.has("parts_normal");
+		final mtr.model.LazyTrainModel lazy = new mtr.model.LazyTrainModel(name, doorAnimationType, () -> {
+			final String lowerPath = modelPath.toLowerCase(Locale.ROOT);
+			final JsonObject jsonModel;
+			if (lowerPath.endsWith(".obj") || modelPath.contains("|")) {
+				jsonModel = cn.zbx1425.mtrsteamloco.render.integration.MtrModelRegistryUtil.createDummyBbDataPack(modelPath, textureId, flipV, preloadBbModel);
+			} else {
+				jsonModel = readLastJson(cn.zbx1425.mtrsteamloco.render.integration.MtrModelRegistryUtil.resourceManager, modelPath);
+				if (lowerPath.endsWith(".bbmodel")) {
+					jsonModel.add("dummyBbData", cn.zbx1425.mtrsteamloco.render.integration.MtrModelRegistryUtil.createDummyBbDataPack(modelPath, textureId, flipV, preloadBbModel));
+				}
+			}
+			final JsonObject jsonProperties = keptProperties.deepCopy();
+			return useLegacy ? new DynamicTrainModelLegacy(jsonModel, jsonProperties, doorAnimationType) : new DynamicTrainModel(jsonModel, jsonProperties, doorAnimationType);
+		});
+		TrainModelsOnDemand.register(lazy);
+		return lazy;
+	}
+
+	/** The JSON of a resource, from the last pack that has it (as reading every one in turn leaves the last) */
+	private static JsonObject readLastJson(ResourceManager manager, String path) {
+		try {
+			final List<Resource> resources = UtilitiesClient.getResources(manager, new ResourceLocation(path));
+			if (resources.isEmpty()) {
+				throw new IllegalStateException("No resource " + path);
+			}
+			final Resource resource = resources.get(resources.size() - 1);
+			try (final InputStream stream = Utilities.getInputStream(resource)) {
+				return new JsonParser().parse(new InputStreamReader(stream, StandardCharsets.UTF_8)).getAsJsonObject();
+			} finally {
+				Utilities.closeResource(resource);
+			}
+		} catch (IOException e) {
+			throw new java.io.UncheckedIOException(e);
+		}
+	}
+
 	public static int colorStringToInt(String string) {
 		try {
 			return Integer.parseInt(string.toUpperCase(Locale.ENGLISH).replaceAll("[^\\dA-F]", ""), 16);
@@ -188,7 +255,16 @@ public class CustomResources implements IResourcePackCreatorProperties, ICustomR
 		final String textureId = getOrDefault(bogieObject, CUSTOM_TRAINS_TEXTURE_ID, carTextureId, JsonElement::getAsString);
 		final ModelTrainBase[] model = {null};
 
-		if (bogieObject.has(CUSTOM_TRAINS_MODEL) && bogieObject.has(CUSTOM_TRAINS_MODEL_PROPERTIES)) {
+		if (bogieObject.has(CUSTOM_TRAINS_MODEL) && bogieObject.has(CUSTOM_TRAINS_MODEL_PROPERTIES) && TrainModelsOnDemand.isEnabled()) {
+			// Built when first to be drawn (0.100.0)
+			final String modelPath = bogieObject.get(CUSTOM_TRAINS_MODEL).getAsString();
+			final boolean flipV = bogieObject.has("flipV") && bogieObject.get("flipV").getAsBoolean();
+			final boolean preloadBbModel = bogieObject.has("preloadBbModel") && bogieObject.get("preloadBbModel").getAsBoolean();
+			readResource(manager, bogieObject.get(CUSTOM_TRAINS_MODEL_PROPERTIES).getAsString(), jsonProperties -> {
+				IResourcePackCreatorProperties.checkSchema(jsonProperties);
+				model[0] = lazyModel(key + " " + modelPath, modelPath, jsonProperties, DoorAnimationType.STANDARD, textureId, flipV, preloadBbModel);
+			});
+		} else if (bogieObject.has(CUSTOM_TRAINS_MODEL) && bogieObject.has(CUSTOM_TRAINS_MODEL_PROPERTIES)) {
 			readResource(manager, bogieObject.get(CUSTOM_TRAINS_MODEL).getAsString(), jsonModel -> readResource(manager, bogieObject.get(CUSTOM_TRAINS_MODEL_PROPERTIES).getAsString(), jsonProperties -> {
 				IResourcePackCreatorProperties.checkSchema(jsonProperties);
 				model[0] = jsonProperties.has("parts_normal") ? new DynamicTrainModelLegacy(jsonModel, jsonProperties, DoorAnimationType.STANDARD) : new DynamicTrainModel(jsonModel, jsonProperties, DoorAnimationType.STANDARD);

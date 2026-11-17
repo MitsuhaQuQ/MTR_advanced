@@ -6,6 +6,8 @@ import mtr.block.BlockNode;
 import mtr.block.BlockSignalLightBase;
 import mtr.block.BlockSignalSemaphoreBase;
 import mtr.block.IBlock;
+import mtr.block.SignalBinding;
+import mtr.block.TileEntitySignalBase;
 import mtr.client.ClientData;
 import mtr.data.IGui;
 import mtr.data.Rail;
@@ -59,8 +61,10 @@ public abstract class RenderSignalBase<T extends BlockEntityMapper> extends Bloc
 			return;
 		}
 
-		final BlockPos startPos = getNodePos(world, pos, facing);
-		if (startPos == null) {
+		// The sections the signal is bound to (0.99.0); a signal from before has none and takes the nearest node, as before
+		final TileEntitySignalBase binding = entity instanceof TileEntitySignalBase && ((TileEntitySignalBase) entity).hasBinding() ? (TileEntitySignalBase) entity : null;
+		final BlockPos nearestPos = binding == null ? getNodePos(world, pos, facing) : null;
+		if (binding == null && nearestPos == null) {
 			return;
 		}
 
@@ -69,7 +73,18 @@ public abstract class RenderSignalBase<T extends BlockEntityMapper> extends Bloc
 
 		for (int i = 0; i < 2; i++) {
 			final Direction newFacing = (i == 1 ? facing.getOpposite() : facing);
-			final int occupiedAspect = getOccupiedAspect(startPos, newFacing.toYRot() + 90);
+			final int occupiedAspect;
+			if (binding == null) {
+				occupiedAspect = getOccupiedAspect(nearestPos, newFacing.toYRot() + 90);
+			} else {
+				final BlockPos node = binding.getNode(i);
+				// Bound to nothing, or to a node no rail leaves the bound way any more: stop, flashing
+				if (node == null || !SignalBinding.leadsOn(ClientData.RAILS, node, binding.getAngle(i))) {
+					occupiedAspect = System.currentTimeMillis() / FLASH_MILLIS % 2 == 0 ? 1 : -1;
+				} else {
+					occupiedAspect = getOccupiedAspect(node, binding.getAngle(i));
+				}
+			}
 
 			if (occupiedAspect >= 0) {
 				matrices.pushPose();
@@ -105,6 +120,8 @@ public abstract class RenderSignalBase<T extends BlockEntityMapper> extends Bloc
 	private int getOccupiedAspect(BlockPos startPos, float facing) {
 		return mtr.client.SignalAspects.getAspect(startPos, facing, aspects);
 	}
+
+	private static final long FLASH_MILLIS = 500;
 
 	private static BlockPos getNodePos(BlockGetter world, BlockPos pos, Direction facing) {
 		final int[] checkDistance = {0, 1, -1, 2, -2, 3, -3, 4, -4};

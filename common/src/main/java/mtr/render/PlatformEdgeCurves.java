@@ -163,6 +163,18 @@ public final class PlatformEdgeCurves {
 			return EdgeOutline.depth(chain, left, x, z);
 		}
 
+		/**
+		 * @return the piece of the edge curve inside the block (x and z from 0 to 1), as x, z pairs in order; empty when
+		 * the curve doesn't cross it
+		 */
+		public double pastEnds(double x, double z) {
+			return EdgeOutline.pastEnds(chain, x, z);
+		}
+
+		public double[] edgeInBlock() {
+			return RenderPlatformEdge.clipToBlock(chain);
+		}
+
 		private boolean isCurrent(double recess) {
 			if (this.recess != recess) {
 				return false;

@@ -37,6 +37,11 @@ public final class CurvePiece implements PlatformEdges.Piece {
 		return rail == null ? null : new CurvePiece(rail, curve, pos);
 	}
 
+	/** The rail followed, to tell when what was bent along it must be bent again */
+	public Rail getRail() {
+		return rail;
+	}
+
 	@Override
 	public double[] at(double along, double back) {
 		final double distance = Math.max(0, Math.min(rail.getLength(), curve.start + (curve.end - curve.start) * along));

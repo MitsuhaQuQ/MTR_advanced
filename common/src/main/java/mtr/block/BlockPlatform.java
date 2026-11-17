@@ -129,6 +129,11 @@ public class BlockPlatform extends BlockDirectionalMapper {
 	 * themselves along the edge line ({@code RenderCurvedPSD}), as the block under a curved door is often only a sliver of
 	 * the platform. The block keeps its own facing, its side towards the track. Other blocks are returned as they are.
 	 */
+	/** Whether a platform block's state is the one under screen doors or platform gates (0.100.0) */
+	public static boolean hasDoorsAbove(BlockState state) {
+		return state.getBlock() instanceof BlockPlatform && state.hasProperty(DOOR_TYPE) && state.getValue(DOOR_TYPE) != EnumDoorType.NONE;
+	}
+
 	public static BlockState withDoorsAbove(BlockGetter world, BlockPos pos, BlockState state) {
 		if (!(state.getBlock() instanceof BlockPlatform)) {
 			return state;

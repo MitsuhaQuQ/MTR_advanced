@@ -40,6 +40,11 @@ public class RenderEdgeScreenDoor extends BlockEntityRendererMapper<BlockEdgeScr
 
 	@Override
 	public void render(BlockEdgeScreenDoor.TileEntityEdgeScreenDoor entity, float tickDelta, PoseStack matrices, MultiBufferSource vertexConsumers, int light, int overlay) {
+		// An error drawing one block (bad data read from a save, say) skips it, never crashing the game (0.100.0)
+		RenderGuard.draw("Edge screen door", entity.getBlockPos(), matrices, guarded -> renderBlock(entity, tickDelta, guarded, vertexConsumers, light, overlay));
+	}
+
+	private void renderBlock(BlockEdgeScreenDoor.TileEntityEdgeScreenDoor entity, float tickDelta, PoseStack matrices, MultiBufferSource vertexConsumers, int light, int overlay) {
 		final Level world = entity.getLevel();
 		if (world == null) {
 			return;

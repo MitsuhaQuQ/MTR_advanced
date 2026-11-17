@@ -53,7 +53,11 @@ public class CustomResourcesMixin {
         MtrModelRegistryUtil.resourceManager = manager;
 
         CustomResources.reset(manager);
-        TrainModelPreloader.preload(manager);
+        mtr.client.TrainModelsOnDemand.onReload();
+        // With models built when first needed (0.100.0), no OBJ is parsed ahead
+        if (!mtr.client.TrainModelsOnDemand.isEnabled()) {
+            TrainModelPreloader.preload(manager);
+        }
         DeferredModelUpload.begin();
 
         Main.LOGGER.info("MTR has started loading custom resources. (including MTR-ANTE train models and optimizations)");

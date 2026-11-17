@@ -281,7 +281,12 @@ public class BlockNode extends BlockDirectionalMapper {
 			if (!player.isHolding(Items.BRUSH.get())) {
 				return InteractionResult.PASS;
 			}
-			return IBlock.checkHoldingBrush(world, player, () -> PacketTrainDataGuiServer.openNodeAngleScreenS2C((ServerPlayer) player, pos));
+			return IBlock.checkHoldingBrush(world, player, () -> {
+				// A signal being bound by hand takes this node (0.99.0); otherwise the node's screen
+				if (!SignalBinding.onNodeBrush(world, pos, player)) {
+					PacketTrainDataGuiServer.openNodeAngleScreenS2C((ServerPlayer) player, pos);
+				}
+			});
 		}
 	}
 

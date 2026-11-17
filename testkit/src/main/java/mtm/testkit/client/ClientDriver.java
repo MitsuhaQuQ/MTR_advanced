@@ -185,6 +185,30 @@ public final class ClientDriver {
 		});
 		// The same view with a render setting on and off, compared pixel by pixel (RenderCompare)
 		routes.put("/compare", (body, query) -> RenderCompare.compare(minecraft, body));
+		// What a signal at a node would show each way two or more rails leave it (0.99.0, U564): {x, y, z} ->
+		// {managed, locked: number of ways locked through it, ways: [{angle, aspect}]}, as SignalAspects works it out
+		routes.put("/signal-aspect", (body, query) -> Http.onThread(minecraft, () -> {
+			final BlockPos pos = new BlockPos(body.get("x").getAsInt(), body.get("y").getAsInt(), body.get("z").getAsInt());
+			final JsonObject result = new JsonObject();
+			result.addProperty("managed", mtr.client.ClientData.THROAT_TURNOUTS != null && mtr.client.ClientData.THROAT_TURNOUTS.contains(pos.asLong()));
+			result.addProperty("locked", mtr.client.ClientData.LOCKED_TURNOUTS.getOrDefault(pos.asLong(), java.util.Collections.emptyList()).size());
+			final java.util.Map<BlockPos, mtr.data.Rail> rails = mtr.client.ClientData.RAILS.getOrDefault(pos, java.util.Collections.emptyMap());
+			final JsonArray ways = new JsonArray();
+			final java.util.Set<Float> angles = new java.util.TreeSet<>();
+			rails.values().forEach(rail -> angles.add(rail.facingStart.angleDegrees));
+			for (final float angle : angles) {
+				final long count = rails.values().stream().filter(rail -> rail.facingStart.similarFacing(angle)).count();
+				if (count < 2) {
+					continue;
+				}
+				final JsonObject way = new JsonObject();
+				way.addProperty("angle", angle);
+				way.addProperty("aspect", mtr.client.SignalAspects.getAspect(pos, angle, 3));
+				ways.add(way);
+			}
+			result.add("ways", ways);
+			return result;
+		}));
 		routes.put("/log", (body, query) -> LogCapture.since(query.containsKey("since") ? Long.parseLong(query.get("since")) : 0));
 		routes.put("/join", (body, query) -> Http.onThread(minecraft, () -> {
 			// As the multiplayer screen's direct connect does

@@ -81,6 +81,34 @@ public final class ThroatLocks {
 	/**
 	 * @return the turnouts given to the train that its tail, on this rail, hasn't passed, as moves to hold
 	 */
+	/**
+	 * @return the turnouts the train has its routes locked through now, as {node, one side, the other side} (0.99.0, for
+	 * signals showing whether a route is set)
+	 */
+	public List<long[]> getGrantedTurnouts() {
+		final List<long[]> turnouts = new ArrayList<>();
+		granted.values().forEach(item -> {
+			if (!item.isZone()) {
+				turnouts.add(new long[]{item.node, item.side1, item.side2});
+			}
+		});
+		return turnouts;
+	}
+
+	/**
+	 * @return the nodes of every turnout of the stations' ways in and out along the train's path, whose routes are locked
+	 * (0.99.0, for signals: a signal in front of one shows stop until a route through it is locked)
+	 */
+	public Set<Long> getTurnoutNodes() {
+		final Set<Long> nodes = new HashSet<>();
+		getItems().forEach(item -> {
+			if (!item.isZone()) {
+				nodes.add(item.node);
+			}
+		});
+		return nodes;
+	}
+
 	public List<RunReservations.Move> getHeld(int tailRail) {
 		// A turnout once the tail is past its node, a zone once the tail has left its last rail
 		granted.values().removeIf(item -> item.endIndex <= tailRail);

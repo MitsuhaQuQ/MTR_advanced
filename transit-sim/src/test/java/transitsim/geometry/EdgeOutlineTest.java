@@ -7,6 +7,20 @@ import static org.junit.jupiter.api.Assertions.*;
 class EdgeOutlineTest {
 
 	@Test
+	void pastTheEnds() {
+		// An edge along x from 0 to 2, then turning to go along z: past its first point before x = 0, past its last
+		// beyond z = 3 along the last piece, alongside it in between (0.100.0, marking stops square at a platform's end)
+		final double[] chain = {0, 0.5, 1, 0.5, 2, 0.5, 2.5, 1, 2.5, 3};
+		assertTrue(EdgeOutline.pastEnds(chain, -0.3, 0.8) > 0.29);
+		assertEquals(0.3, EdgeOutline.pastEnds(chain, -0.3, 0.8), 1E-9);
+		assertTrue(EdgeOutline.pastEnds(chain, 1, 0.9) <= 0);
+		assertTrue(EdgeOutline.pastEnds(chain, 2.3, 2) <= 0);
+		assertEquals(0.5, EdgeOutline.pastEnds(chain, 2.2, 3.5), 1E-9);
+		assertEquals(0, EdgeOutline.pastEnds(new double[]{1, 1}, 5, 5));
+	}
+
+
+	@Test
 	void aStraightLineAcrossCutsTheBlock() {
 		// Along x at z = 0.3: left of +x is -z
 		final double[] chain = {-1, 0.3, 0, 0.3, 1, 0.3, 2, 0.3};

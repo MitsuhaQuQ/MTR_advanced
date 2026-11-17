@@ -78,6 +78,7 @@ public class LevelRendererMixin {
 
     @Inject(method = "setSectionDirtyWithNeighbors", at = @At("HEAD"))
     private void setSectionDirtyWithNeighbors(int sectionX, int sectionY, int sectionZ, CallbackInfo ci) {
+        mtr.render.EscalatorStepsClient.onSectionDirty(sectionX, sectionY, sectionZ);
         for (int i = sectionZ - 1; i <= sectionZ + 1; ++i) {
             for (int j = sectionX - 1; j <= sectionX + 1; ++j) {
                 MainClient.railRenderDispatcher.registerLightUpdate(j, sectionY - 1, sectionY + 1, i);
@@ -88,11 +89,13 @@ public class LevelRendererMixin {
     @Inject(method = "setSectionDirty(IIIZ)V", at = @At("HEAD"))
     private void setSectionDirty(int sectionX, int sectionY, int sectionZ, boolean reRenderOnMainThread, CallbackInfo ci) {
         MainClient.railRenderDispatcher.registerLightUpdate(sectionX, sectionY, sectionY, sectionZ);
+        mtr.render.EscalatorStepsClient.onSectionDirty(sectionX, sectionY, sectionZ);
     }
 
     @Inject(method = "setSectionDirty(III)V", at = @At("HEAD"))
     private void setSectionDirty(int sectionX, int sectionY, int sectionZ, CallbackInfo ci) {
         MainClient.railRenderDispatcher.registerLightUpdate(sectionX, sectionY, sectionY, sectionZ);
+        mtr.render.EscalatorStepsClient.onSectionDirty(sectionX, sectionY, sectionZ);
     }
 
 }

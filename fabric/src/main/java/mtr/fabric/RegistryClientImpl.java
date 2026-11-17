@@ -6,6 +6,7 @@ import mtr.mappings.BlockEntityRendererMapper;
 import mtr.mappings.EntityRendererMapper;
 import mtr.mappings.FabricRegistryUtilities;
 import net.fabricmc.fabric.api.blockrenderlayer.v1.BlockRenderLayerMap;
+import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientEntityEvents;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
@@ -23,6 +24,7 @@ import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.entity.BlockEntityType;
+import net.minecraft.world.level.chunk.LevelChunk;
 
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -43,6 +45,10 @@ public class RegistryClientImpl {
 
 	public static <T extends Entity> void registerEntityRenderer(EntityType<T> type, Function<Object, EntityRendererMapper<T>> function) {
 		FabricRegistryUtilities.registerEntityRenderer(type, function::apply);
+	}
+
+	public static void registerChunkLoadEvent(Consumer<LevelChunk> consumer) {
+		ClientChunkEvents.CHUNK_LOAD.register((world, chunk) -> consumer.accept(chunk));
 	}
 
 	public static void registerKeyBinding(KeyMapping keyMapping) {
