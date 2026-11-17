@@ -77,6 +77,29 @@ public final class PlatformCurves {
 	}
 
 	/**
+	 * How far from the rail the platform's edge is at a distance along it, on a side (0.96.0): as the edge blocks are cut and
+	 * drawn ({@code PlatformEdgeCurves}), the cars' half width and how far the middle of a car centred there (kept off the
+	 * rail's ends) stands in towards that side. On a transition curve this changes along the rail.
+	 *
+	 * @param side 1 for the left of the rail's direction ((dz, -dx) for a direction (dx, dz)), -1 for the right
+	 * @param cars {@link #carsAt}: the longest car and the widest train
+	 */
+	public static double edgeOffsetAt(Rail rail, double along, int side, int[] cars) {
+		final double length = rail.getLength();
+		final double clamped = Math.max(0, Math.min(length, along));
+		final Vec3 ahead = rail.getPosition(Math.min(length, clamped + 0.25));
+		final Vec3 behind = rail.getPosition(Math.max(0, clamped - 0.25));
+		final double directionX = ahead.x - behind.x;
+		final double directionZ = ahead.z - behind.z;
+		final double directionLength = Math.hypot(directionX, directionZ);
+		final double sideX = directionLength == 0 ? 0 : directionZ / directionLength * side;
+		final double sideZ = directionLength == 0 ? 0 : -directionX / directionLength * side;
+		final double half = Math.min(cars[0], length) / 2;
+		final double centred = Math.max(half, Math.min(length - half, clamped));
+		return PlatformEdges.edgeOffset(cars[1] / 2D, sagittaAt(rail, centred, half, sideX, sideZ, false));
+	}
+
+	/**
 	 * @return how far the middle of a car centred at this distance along the rail stands in from it towards a side, or
 	 * either way (its size) when {@code anySide}
 	 */

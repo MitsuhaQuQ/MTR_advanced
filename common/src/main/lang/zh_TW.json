@@ -633,7 +633,7 @@
   "gui.mtr.node_grade_text_auto": "坡度 %s‰（自動）",
   "block.mtr.platform_edge": "精確月台邊",
   "item.mtr.platform_edge": "精確月台邊",
-  "tooltip.mtr.platform_edge": "沿最近月台的軌道切齊，切在停靠列車需要的月台邊位置。潛行右鍵沿這一側鋪滿整條月台邊。",
+  "tooltip.mtr.platform_edge": "沿最近月台的軌道切齊，切在停靠列車需要的月台邊位置。潛行右鍵沿這一側鋪滿整條月台邊，聊天欄點「[復原]」可撤回。",
   "gui.mtr.platform_edge_laid": "鋪了 %s 塊月台邊",
   "gui.mtr.platform_edge_no_platform": "4 格內沒有月台軌道",
   "gui.mtr.platform_edge_in_the_way": "這一格會擋住列車",
@@ -686,5 +686,9 @@
   "gui.mtr.image_deleted_named": "已刪除圖片「%s」",
   "gui.mtr.image_missing": "沒有圖片「%s」",
   "gui.mtr.image_no_delete_permission": "沒有刪除圖片「%s」的權限",
-  "gui.mtr.image_delete_failed": "圖片「%s」沒刪成，見伺服器日誌"
+  "gui.mtr.image_delete_failed": "圖片「%s」沒刪成，見伺服器日誌",
+  "gui.mtr.platform_edge_undo_button": "[復原]",
+  "gui.mtr.platform_edge_undo_hover": "撤回剛才沿這一側鋪的月台邊",
+  "gui.mtr.platform_edge_undone": "撤回了 %s 塊月台邊",
+  "gui.mtr.platform_edge_nothing_to_undo": "這裡沒有可以復原的整側鋪設"
 }

@@ -537,7 +537,7 @@
   "gui.mtr.node_grade_text_auto": "Grade %s‰ (auto)",
   "block.mtr.platform_edge": "Platform Edge",
   "item.mtr.platform_edge": "Platform Edge",
-  "tooltip.mtr.platform_edge": "Cut along the track of the nearest platform, where the cars stopping there need the edge. Sneak and right-click to lay the whole edge of that side of the platform.",
+  "tooltip.mtr.platform_edge": "Cut along the track of the nearest platform, where the cars stopping there need the edge. Sneak and right-click to lay the whole edge of that side of the platform; [Undo] in the chat takes it back.",
   "gui.mtr.platform_edge_laid": "Laid %s platform edge blocks",
   "gui.mtr.platform_edge_no_platform": "No platform track within 4 blocks",
   "gui.mtr.platform_edge_in_the_way": "This block would be in the cars' way",
@@ -590,5 +590,9 @@
   "gui.mtr.image_deleted_named": "Deleted image %s",
   "gui.mtr.image_missing": "There is no image %s",
   "gui.mtr.image_no_delete_permission": "You may not delete image %s",
-  "gui.mtr.image_delete_failed": "Image %s could not be deleted, see the server log"
+  "gui.mtr.image_delete_failed": "Image %s could not be deleted, see the server log",
+  "gui.mtr.platform_edge_undo_button": "[Undo]",
+  "gui.mtr.platform_edge_undo_hover": "Take back the platform edge just laid along this side",
+  "gui.mtr.platform_edge_undone": "Took back %s platform edge blocks",
+  "gui.mtr.platform_edge_nothing_to_undo": "No platform edge laid by sneaking to undo here"
 }

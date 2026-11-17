@@ -39,6 +39,7 @@ public final class CurvedPSD {
 	private static final String KEY_CURVE_FROM = "curve_from";
 	private static final String KEY_CURVE_TO = "curve_to";
 	private static final String KEY_CURVE_OFFSET = "curve_offset";
+	private static final String KEY_CURVE_OFFSET_END = "curve_offset_end";
 	private static final String KEY_CURVE_SIDE = "curve_side";
 	private static final String KEY_CURVE_START = "curve_start";
 	private static final String KEY_CURVE_END = "curve_end";
@@ -118,7 +119,7 @@ public final class CurvedPSD {
 
 		public void read(CompoundTag compoundTag) {
 			set(compoundTag.contains(KEY_ANGLE) ? compoundTag.getInt(KEY_ANGLE) : -1, compoundTag.getInt(KEY_CUT));
-			curve = compoundTag.contains(KEY_CURVE_FROM) ? new Curve(BlockPos.of(compoundTag.getLong(KEY_CURVE_FROM)), BlockPos.of(compoundTag.getLong(KEY_CURVE_TO)), compoundTag.getDouble(KEY_CURVE_OFFSET), compoundTag.getInt(KEY_CURVE_SIDE), compoundTag.getDouble(KEY_CURVE_START), compoundTag.getDouble(KEY_CURVE_END)) : null;
+			curve = compoundTag.contains(KEY_CURVE_FROM) ? new Curve(BlockPos.of(compoundTag.getLong(KEY_CURVE_FROM)), BlockPos.of(compoundTag.getLong(KEY_CURVE_TO)), compoundTag.getDouble(KEY_CURVE_OFFSET), compoundTag.contains(KEY_CURVE_OFFSET_END) ? compoundTag.getDouble(KEY_CURVE_OFFSET_END) : compoundTag.getDouble(KEY_CURVE_OFFSET), compoundTag.getInt(KEY_CURVE_SIDE), compoundTag.getDouble(KEY_CURVE_START), compoundTag.getDouble(KEY_CURVE_END)) : null;
 		}
 
 		public void write(CompoundTag compoundTag) {
@@ -130,6 +131,7 @@ public final class CurvedPSD {
 				compoundTag.putLong(KEY_CURVE_FROM, curve.railFrom.asLong());
 				compoundTag.putLong(KEY_CURVE_TO, curve.railTo.asLong());
 				compoundTag.putDouble(KEY_CURVE_OFFSET, curve.offset);
+				compoundTag.putDouble(KEY_CURVE_OFFSET_END, curve.offsetEnd);
 				compoundTag.putInt(KEY_CURVE_SIDE, curve.side);
 				compoundTag.putDouble(KEY_CURVE_START, curve.start);
 				compoundTag.putDouble(KEY_CURVE_END, curve.end);
@@ -144,18 +146,32 @@ public final class CurvedPSD {
 
 		public final BlockPos railFrom;
 		public final BlockPos railTo;
+		/**
+		 * How far the edge is from the rail at the piece's start and at its end (0.96.0: on a transition curve it changes
+		 * along the rail; pieces saved before have the one offset at both ends)
+		 */
 		public final double offset;
+		public final double offsetEnd;
 		public final int side;
 		public final double start;
 		public final double end;
 
-		public Curve(BlockPos railFrom, BlockPos railTo, double offset, int side, double start, double end) {
+		public Curve(BlockPos railFrom, BlockPos railTo, double offset, double offsetEnd, int side, double start, double end) {
 			this.railFrom = railFrom;
 			this.railTo = railTo;
 			this.offset = offset;
+			this.offsetEnd = offsetEnd;
 			this.side = side;
 			this.start = start;
 			this.end = end;
+		}
+
+		/**
+		 * @param along 0 at the piece's start, 1 at its end
+		 * @return how far the edge is from the rail there, between the piece's two ends
+		 */
+		public double offsetAt(double along) {
+			return offset + (offsetEnd - offset) * along;
 		}
 
 		/**
@@ -376,6 +392,35 @@ public final class CurvedPSD {
 	 * edge, as the edge block works it out; -1 when no line crosses the block
 	 */
 	public static int lineAt(Level world, BlockPos pos) {
+		final RailwayData railwayData = RailwayData.getInstance(world);
+		final Platform platform = railwayData == null ? null : BlockPlatformEdge.nearestPlatform(railwayData, pos.below());
+		final Rail rail = platform == null ? null : PlatformCurves.railOf(platform, railwayData.getRails());
+		// The chord through where the edge itself enters and leaves the column (0.96.0): the pieces of neighbouring blocks
+		// then meet where the edge crosses from one to the other, also where its distance from the rail changes along a
+		// transition curve, so the run is joined there (the edge block's own cut is square to the rail at its centre)
+		if (rail != null) {
+			final int[] cars = PlatformCurves.carsAt(platform.id, railwayData.routes, railwayData.sidings, railwayData.dataCache.sidingIdToDepot);
+			final PlatformCurves.Nearest nearest = PlatformCurves.nearest(rail, pos.getX() + 0.5, pos.getZ() + 0.5, cars[0]);
+			final int side = sideOf(rail, nearest);
+			final double[] crossing = crossing(rail, side, cars, pos);
+			if (crossing != null) {
+				final double[] first = edgePointAt(rail, crossing[0], side, cars);
+				final double[] last = edgePointAt(rail, crossing[1], side, cars);
+				final double chordX = last[0] - first[0];
+				final double chordZ = last[1] - first[1];
+				// Square to the chord, towards the platform
+				double towardsPlatformX = chordZ;
+				double towardsPlatformZ = -chordX;
+				if (towardsPlatformX * nearest.sideX + towardsPlatformZ * nearest.sideZ < 0) {
+					towardsPlatformX = -towardsPlatformX;
+					towardsPlatformZ = -towardsPlatformZ;
+				}
+				final int packed = PlatformEdges.cutOf(pos.getX(), pos.getZ(), (first[0] + last[0]) / 2, (first[1] + last[1]) / 2, towardsPlatformX, towardsPlatformZ);
+				if (packed >= 0 && PlatformEdges.bend(PlatformEdges.angleOf(packed), PlatformEdges.cutOfPacked(packed)) != null) {
+					return packed;
+				}
+			}
+		}
 		final BlockState below = world.getBlockState(pos.below());
 		if (below.getBlock() instanceof BlockPlatformEdge) {
 			final int angle = IBlock.getStatePropertySafe(below, BlockPlatformEdge.ANGLE);
@@ -384,12 +429,6 @@ public final class CurvedPSD {
 				return PlatformEdges.pack(angle, cut);
 			}
 		}
-		final RailwayData railwayData = RailwayData.getInstance(world);
-		if (railwayData == null) {
-			return -1;
-		}
-		final Platform platform = BlockPlatformEdge.nearestPlatform(railwayData, pos.below());
-		final Rail rail = platform == null ? null : PlatformCurves.railOf(platform, railwayData.getRails());
 		if (rail == null) {
 			return -1;
 		}
@@ -414,40 +453,66 @@ public final class CurvedPSD {
 		final java.util.List<BlockPos> ends = platform.getOrderedPositions(BlockPos.ZERO, false);
 		final int[] cars = PlatformCurves.carsAt(platform.id, railwayData.routes, railwayData.sidings, railwayData.dataCache.sidingIdToDepot);
 		final PlatformCurves.Nearest nearest = PlatformCurves.nearest(rail, pos.getX() + 0.5, pos.getZ() + 0.5, cars[0]);
-		final double offset = PlatformEdges.edgeOffset(cars[1] / 2D, nearest.signedSagitta);
+		final int side = sideOf(rail, nearest);
+		final double[] crossing = crossing(rail, side, cars, pos);
+		if (crossing == null) {
+			return null;
+		}
+		final double first = crossing[0];
+		final double last = crossing[1];
+		// The piece's start is the end on the left seen from the platform, as for the chord
+		final double[] firstPoint = edgePointAt(rail, first, side, cars);
+		final double[] lastPoint = edgePointAt(rail, last, side, cars);
+		final double alongX = bend.endX - bend.startX;
+		final double alongZ = bend.endZ - bend.startZ;
+		final boolean forwards = (lastPoint[0] - firstPoint[0]) * alongX + (lastPoint[1] - firstPoint[1]) * alongZ >= 0;
+		final double start = forwards ? first : last;
+		final double end = forwards ? last : first;
+		return new Curve(ends.get(0), ends.get(1), PlatformCurves.edgeOffsetAt(rail, start, side, cars), PlatformCurves.edgeOffsetAt(rail, end, side, cars), side, start, end);
+	}
+
+	/**
+	 * @return which side of the rail the platform is on: 1 left of its direction, -1 right
+	 */
+	private static int sideOf(Rail rail, PlatformCurves.Nearest nearest) {
 		final double length = rail.getLength();
-		// Which side of the rail the platform is on
 		final double[] probe = Curve.edgePoint(rail, length / 2, 1, 1);
 		final net.minecraft.world.phys.Vec3 middle = rail.getPosition(length / 2);
-		final int side = (probe[0] - middle.x) * nearest.sideX + (probe[1] - middle.z) * nearest.sideZ >= 0 ? 1 : -1;
-		// Where along the rail the curve is in the block's column, its ends found more finely between the steps
+		return (probe[0] - middle.x) * nearest.sideX + (probe[1] - middle.z) * nearest.sideZ >= 0 ? 1 : -1;
+	}
+
+	/**
+	 * @return the platform's edge at a distance along the rail, as far from it as the edge is there (0.96.0: on a
+	 * transition curve that changes along the rail, so the pieces of neighbouring blocks meet)
+	 */
+	private static double[] edgePointAt(Rail rail, double distance, int side, int[] cars) {
+		return Curve.edgePoint(rail, distance, side, PlatformCurves.edgeOffsetAt(rail, distance, side, cars));
+	}
+
+	/**
+	 * @return where along the rail the edge is in the block's column, {first, last}, its ends found more finely between
+	 * the steps; null when it only touches it
+	 */
+	private static double[] crossing(Rail rail, int side, int[] cars, BlockPos pos) {
+		final double length = rail.getLength();
 		double first = Double.NaN;
 		double last = Double.NaN;
 		boolean wasInside = false;
 		for (double distance = 0; distance <= length + CURVE_STEP / 2; distance += CURVE_STEP) {
 			final double clamped = Math.min(distance, length);
-			final boolean inside = inColumn(Curve.edgePoint(rail, clamped, side, offset), pos);
+			final boolean inside = inColumn(edgePointAt(rail, clamped, side, cars), pos);
 			if (inside && !wasInside) {
-				first = Double.isNaN(first) ? clamped == 0 ? 0 : boundary(rail, side, offset, pos, clamped - CURVE_STEP, clamped) : first;
+				first = Double.isNaN(first) ? clamped == 0 ? 0 : boundary(rail, side, cars, pos, clamped - CURVE_STEP, clamped) : first;
 			}
 			if (!inside && wasInside) {
-				last = boundary(rail, side, offset, pos, clamped, clamped - CURVE_STEP);
+				last = boundary(rail, side, cars, pos, clamped, clamped - CURVE_STEP);
 			}
 			if (inside) {
 				last = clamped;
 			}
 			wasInside = inside;
 		}
-		if (Double.isNaN(first) || last - first < PlatformEdges.SHORTEST_WALL / 2) {
-			return null;
-		}
-		// The piece's start is the end on the left seen from the platform, as for the chord
-		final double[] firstPoint = Curve.edgePoint(rail, first, side, offset);
-		final double[] lastPoint = Curve.edgePoint(rail, last, side, offset);
-		final double alongX = bend.endX - bend.startX;
-		final double alongZ = bend.endZ - bend.startZ;
-		final boolean forwards = (lastPoint[0] - firstPoint[0]) * alongX + (lastPoint[1] - firstPoint[1]) * alongZ >= 0;
-		return new Curve(ends.get(0), ends.get(1), offset, side, forwards ? first : last, forwards ? last : first);
+		return Double.isNaN(first) || last - first < PlatformEdges.SHORTEST_WALL / 2 ? null : new double[]{first, last};
 	}
 
 	private static boolean inColumn(double[] point, BlockPos pos) {
@@ -457,12 +522,12 @@ public final class CurvedPSD {
 	/**
 	 * @return where between a distance outside the column and one inside the curve crosses its side
 	 */
-	private static double boundary(Rail rail, int side, double offset, BlockPos pos, double outside, double inside) {
+	private static double boundary(Rail rail, int side, int[] cars, BlockPos pos, double outside, double inside) {
 		double out = outside;
 		double in = inside;
 		for (int i = 0; i < 12; i++) {
 			final double middle = (out + in) / 2;
-			if (inColumn(Curve.edgePoint(rail, middle, side, offset), pos)) {
+			if (inColumn(edgePointAt(rail, middle, side, cars), pos)) {
 				in = middle;
 			} else {
 				out = middle;

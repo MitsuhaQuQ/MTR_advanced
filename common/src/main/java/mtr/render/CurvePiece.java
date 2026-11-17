@@ -40,7 +40,7 @@ public final class CurvePiece implements PlatformEdges.Piece {
 	@Override
 	public double[] at(double along, double back) {
 		final double distance = Math.max(0, Math.min(rail.getLength(), curve.start + (curve.end - curve.start) * along));
-		final double[] point = CurvedPSD.Curve.edgePoint(rail, distance, curve.side, curve.offset + back);
+		final double[] point = CurvedPSD.Curve.edgePoint(rail, distance, curve.side, curve.offsetAt(along) + back);
 		return new double[]{point[0] - pos.getX(), point[1] - pos.getZ()};
 	}
 

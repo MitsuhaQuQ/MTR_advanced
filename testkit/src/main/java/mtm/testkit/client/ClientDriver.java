@@ -401,7 +401,20 @@ public final class ClientDriver {
 		final Direction face = body.has("face") ? Direction.byName(body.get("face").getAsString()) : Direction.UP;
 		final BlockHitResult hitResult = new BlockHitResult(Vec3.atCenterOf(pos).relative(face, 0.5), face, pos, false);
 		final JsonObject result = new JsonObject();
-		result.addProperty("result", minecraft.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hitResult).toString());
+		// "sneak": true uses it sneaking, as holding shift does: the server learns it from the player command packet first
+		final boolean sneak = body.has("sneak") && body.get("sneak").getAsBoolean();
+		if (sneak) {
+			player.setShiftKeyDown(true);
+			player.connection.send(new net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket(player, net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket.Action.PRESS_SHIFT_KEY));
+		}
+		try {
+			result.addProperty("result", minecraft.gameMode.useItemOn(player, InteractionHand.MAIN_HAND, hitResult).toString());
+		} finally {
+			if (sneak) {
+				player.setShiftKeyDown(false);
+				player.connection.send(new net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket(player, net.minecraft.network.protocol.game.ServerboundPlayerCommandPacket.Action.RELEASE_SHIFT_KEY));
+			}
+		}
 		return result;
 	}
 

@@ -99,7 +99,24 @@ public final class ServerDriver {
 			}
 			return "lines".equals(name) ? Lines.build(level(server, null), body) : Fixture.build(level(server, null), name);
 		}));
-		routes.put("/node", (body, query) -> Http.onThread(server, () -> node(level(server, null), new BlockPos(body.get("x").getAsInt(), body.get("y").getAsInt(), body.get("z").getAsInt()))));
+		// Lays a rail between two places as the rail connector does, putting east-west nodes there first where there are
+		// none: {from: [x, y, z], to: [x, y, z], type: "PLATFORM"} (2026-11-17, a longer curved platform for U554)
+		routes.put("/connect", (body, query) -> Http.onThread(server, () -> {
+			final ServerLevel level = level(server, null);
+			final RailwayData railwayData = RailwayData.getInstance(level);
+			final BlockPos[] ends = new BlockPos[2];
+			for (int i = 0; i < 2; i++) {
+				final JsonArray xyz = body.getAsJsonArray(i == 0 ? "from" : "to");
+				ends[i] = new BlockPos(xyz.get(0).getAsInt(), xyz.get(1).getAsInt(), xyz.get(2).getAsInt());
+				if (!(level.getBlockState(ends[i]).getBlock() instanceof BlockNode)) {
+					level.setBlockAndUpdate(ends[i], mtr.Blocks.RAIL_NODE.get().defaultBlockState().setValue(BlockNode.FACING, true));
+				}
+			}
+			Fixture.connectRail(level, railwayData, net.fabricmc.fabric.api.entity.FakePlayer.get(level), ends[0], ends[1], mtr.data.RailType.valueOf(body.get("type").getAsString()));
+			railwayData.dataCache.sync();
+			return null;
+		}));
+		routes.put("/node",(body, query) -> Http.onThread(server, () -> node(level(server, null), new BlockPos(body.get("x").getAsInt(), body.get("y").getAsInt(), body.get("z").getAsInt()))));
 		// ?pathZ=<z>: the whole path of each train within a line's band of z too (2026-11-14, line 6's turn back)
 		routes.put("/trains", (body, query) -> Http.onThread(server, () -> trains(level(server, query.get("dimension")), query.containsKey("pathZ") ? Double.parseDouble(query.get("pathZ")) : Double.NaN)));
 		routes.put("/clock", (body, query) -> clock());
@@ -221,6 +238,21 @@ public final class ServerDriver {
 						rail.addProperty("type", entry.getValue().railType.toString());
 						rail.addProperty("facingStart", entry.getValue().facingStart.angleDegrees);
 						rail.addProperty("facingEnd", entry.getValue().facingEnd.angleDegrees);
+						// 0.95.0: the transition curves at its ends and its length along them
+						rail.addProperty("transitionStart", entry.getValue().getTransitionStart());
+						rail.addProperty("transitionEnd", entry.getValue().getTransitionEnd());
+						rail.addProperty("length", entry.getValue().getLength());
+						// Points along it every 2 blocks, [x, y, z], to find where a curve runs
+						final JsonArray points = new JsonArray();
+						for (double along = 0; along <= entry.getValue().getLength(); along += 2) {
+							final net.minecraft.world.phys.Vec3 point = entry.getValue().getPosition(along);
+							final JsonArray xyz = new JsonArray();
+							xyz.add(point.x);
+							xyz.add(point.y);
+							xyz.add(point.z);
+							points.add(xyz);
+						}
+						rail.add("points", points);
 						rails.add(rail);
 					});
 				}

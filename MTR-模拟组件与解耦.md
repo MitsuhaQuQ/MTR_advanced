@@ -1481,6 +1481,10 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 缓和曲线（0.95.0）：组件 `transitsim.geometry.TransitionPath`（直线、圆弧、回旋线，`Builder.turn` 解一个转弯；测试 `TransitionPathTest`：回旋线终点和级数一致、转弯两端点和方向不变且曲率连续、左右镜像、反向同形、缓和缩短到放得下、只有一头有缓和、不是一个转弯时不动、缓和越长入口越缓）；游戏 `Rail.setTransitions/buildTransitionPath/renderTransitionPath`、`RailGrades.refreshTransitions/startTransitions`、`RailEdit`（站台、存车线坡度和高差检查、撤销）、节点界面；测试 `RailTransitionsTest`（两端不变、无缓和照旧、反向同形、S 弯曲率连续、竖曲线按新长度、存档和网络包、站台和存车线坡度上限）。按曲率限速（设计 9.5 第 4 步）还没做。弯曲站台平滑画法：组件 `transitsim.geometry.EdgeOutline`（折线切方块、到折线的距离；测试 `EdgeOutlineTest`：直线切、两侧面积和为 1、相邻两块在共边上同一点相接、不穿过时整块或空、在块内结束时交回直线切法、轮廓方向）；游戏 `mtr.render.PlatformEdgeCurves`、`RenderPlatformEdge`。`/mtr boarding`、`/mtr deletepic` 只在游戏一侧（`mtr.MTRCommands`），不涉及组件。
 
+站台边整侧铺设的撤销（0.96.0，`ItemPlatformEdge.undoLastLay`、`/mtr undoedge`）只在游戏一侧，不涉及组件。
+
+曲线屏蔽门沿缓和曲线的边线（0.96.0，`CurvedPSD.crossing`、`PlatformCurves.edgeOffsetAt`、`Curve.offsetEnd`）只在游戏一侧，组件的 `PlatformEdges` 只用到 `edgeOffset`、`cutOf`，没有改。
+
 填缝方块斜顶（0.94.0）：组件 `SlopedTops`（四角高度、双线性、小柱高度；测试 `SlopedTopsTest`：平地整块、沿 x 的坡、跨块边界上下两块）；游戏 `BlockGapFiller.cornerHeights`、`Rail.RailActions` 的 `railHeights`/`slopedTop`/`keepUnderRail`、桥梁按列铺桥面、`ItemGapFiller` 的材质和顶面、`RenderPlatformEdge.slopedFan`。
 
 填缝方块的切线（0.93.0）：组件 `PlatformEdges.fillerCutOf`、`FILLER_SNAP`（测试 `PlatformEdgesTest` 网格对齐取整块、斜线两侧互补）；游戏 `BlockGapFiller`（找轨道最近点、放置）、`Rail.RailActions` 的隧道、桥梁、隧道壁创建器、`ItemGapFiller`、`RenderPlatformEdge.GapFiller`。

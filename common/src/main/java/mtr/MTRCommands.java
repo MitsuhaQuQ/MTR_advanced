@@ -7,6 +7,7 @@ import mtr.data.RailwayData;
 import mtr.data.Siding;
 import mtr.data.TrainServer;
 import mtr.image.ImageServer;
+import mtr.item.ItemPlatformEdge;
 import mtr.mappings.Text;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
@@ -26,6 +27,8 @@ import net.minecraft.world.phys.Vec3;
  * operators by default, as it takes a player anywhere.</li>
  * <li>{@code /mtr deletepic <namespace>:<file name>}: deletes an imported image (the editor's images page), with the same
  * rules: anyone their own, managers anyone's; the console and command blocks by {@code imageManagePermissionLevel}.</li>
+ * <li>{@code /mtr undoedge} (0.96.0): takes back the player's last platform edge strip laid by sneaking
+ * ({@link ItemPlatformEdge#undoLastLay}); the message after laying has a button running it.</li>
  * </ul>
  */
 public final class MTRCommands {
@@ -44,6 +47,19 @@ public final class MTRCommands {
 					return SharedSuggestionProvider.suggest(ImageServer.deletableNames(player, source.hasPermission(SecurityConfig.imageManagePermissionLevel)), builder);
 				})
 				.executes(context -> deletePicture(context.getSource(), StringArgumentType.getString(context, "name").trim())))));
+		dispatcher.register(Commands.literal("mtr").then(Commands.literal("undoedge")
+				.requires(source -> source.getEntity() instanceof ServerPlayer)
+				.executes(context -> undoEdge(context.getSource()))));
+	}
+
+	private static int undoEdge(CommandSourceStack source) {
+		final int removed = ItemPlatformEdge.undoLastLay((ServerPlayer) source.getEntity());
+		if (removed < 0) {
+			source.sendFailure(Text.translatable("gui.mtr.platform_edge_nothing_to_undo"));
+			return 0;
+		}
+		source.sendSuccess(() -> Text.translatable("gui.mtr.platform_edge_undone", removed), false);
+		return 1;
 	}
 
 	private static int deletePicture(CommandSourceStack source, String reference) {

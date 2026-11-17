@@ -9,28 +9,38 @@ import mtr.data.RailwayData;
 import mtr.mappings.Text;
 import net.minecraft.ChatFormatting;
 import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.ClickEvent;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.chat.HoverEvent;
 import net.minecraft.network.chat.Style;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import transitsim.geometry.PlatformEdges;
 
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 /**
  * Puts down a platform edge block cut along the nearest platform's track (0.88.0), looking like the platform block it is
  * put against (0.89.0, {@link BlockPlatformEdge#sourceFor}); used sneaking, lays the whole edge of
  * that side of the platform at that height, in the free places only, the platform's part of each block from where the cars'
- * sides need it to a block and a half beyond.
+ * sides need it to a block and a half beyond. A player's last such strip can be taken back (0.96.0, {@link #undoLastLay}):
+ * the message after laying has an undo button running {@code /mtr undoedge}.
  */
 public class ItemPlatformEdge extends ItemWithCreativeTabBase {
 
@@ -38,6 +48,12 @@ public class ItemPlatformEdge extends ItemWithCreativeTabBase {
 	 * How far beyond the edge the strip laid by sneaking reaches, in blocks
 	 */
 	private static final double STRIP = 1.5;
+
+	/**
+	 * Each player's last strip laid by sneaking, until undone or replaced by the next (0.96.0); kept in memory only, so a
+	 * restart forgets it
+	 */
+	private static final Map<UUID, Laid> LAST_LAID = new HashMap<>();
 
 	public ItemPlatformEdge() {
 		super(CreativeModeTabs.STATION_BUILDING_BLOCKS);
@@ -54,11 +70,17 @@ public class ItemPlatformEdge extends ItemWithCreativeTabBase {
 		final ItemStack stack = context.getItemInHand();
 		final boolean creative = player != null && player.isCreative();
 		if (player != null && player.isShiftKeyDown()) {
-			final int placed = layEdge(world, pos, BlockPlatformEdge.sourceFor(world, pos, context.getClickedPos()), creative ? Integer.MAX_VALUE : stack.getCount());
+			final Map<BlockPos, BlockState> replaced = new LinkedHashMap<>();
+			final int placed = layEdge(world, pos, BlockPlatformEdge.sourceFor(world, pos, context.getClickedPos()), creative ? Integer.MAX_VALUE : stack.getCount(), replaced);
 			if (!creative) {
 				stack.shrink(placed);
 			}
-			player.displayClientMessage(placed < 0 ? Text.translatable("gui.mtr.platform_edge_no_platform") : Text.translatable("gui.mtr.platform_edge_laid", placed), true);
+			if (placed > 0) {
+				LAST_LAID.put(player.getUUID(), new Laid(world.dimension(), replaced, creative));
+				player.displayClientMessage(Text.translatable("gui.mtr.platform_edge_laid", placed).append(" ").append(undoButton()), false);
+			} else {
+				player.displayClientMessage(placed < 0 ? Text.translatable("gui.mtr.platform_edge_no_platform") : Text.translatable("gui.mtr.platform_edge_laid", placed), true);
+			}
 			return InteractionResult.SUCCESS;
 		}
 		if (!world.getBlockState(pos).canBeReplaced()) {
@@ -83,7 +105,7 @@ public class ItemPlatformEdge extends ItemWithCreativeTabBase {
 	 * @return how many blocks were laid along the edge of the platform nearest the place, on the place's side and at its
 	 * height, at most the given number; -1 when no platform is near
 	 */
-	private static int layEdge(Level world, BlockPos pos, BlockState source, int most) {
+	private static int layEdge(Level world, BlockPos pos, BlockState source, int most, Map<BlockPos, BlockState> replaced) {
 		final RailwayData railwayData = RailwayData.getInstance(world);
 		final Platform platform = railwayData == null ? null : BlockPlatformEdge.nearestPlatform(railwayData, pos);
 		final Rail rail = platform == null ? null : PlatformCurves.railOf(platform, railwayData.getRails());
@@ -128,6 +150,7 @@ public class ItemPlatformEdge extends ItemWithCreativeTabBase {
 			}
 			final BlockState state = BlockPlatformEdge.stateAt(world, place, platform);
 			if (state != null) {
+				replaced.put(place, world.getBlockState(place));
 				world.setBlockAndUpdate(place, state);
 				setSource(world, place, source);
 				placed++;
@@ -137,12 +160,63 @@ public class ItemPlatformEdge extends ItemWithCreativeTabBase {
 	}
 
 	/**
+	 * Takes back the player's last strip laid by sneaking (0.96.0): each block of it still a platform edge goes back to
+	 * what was there before (air, grass, water…), and a player not in creative mode gets the blocks back. Blocks broken or
+	 * replaced since are left alone. The strip can be undone once.
+	 *
+	 * @return how many blocks were taken back, or -1 when the player has nothing to undo in this world
+	 */
+	public static int undoLastLay(ServerPlayer player) {
+		final Laid laid = LAST_LAID.get(player.getUUID());
+		final Level world = mtr.compat.Compat.getLevel(player);
+		if (laid == null || !laid.dimension.equals(world.dimension())) {
+			return -1;
+		}
+		LAST_LAID.remove(player.getUUID());
+		int removed = 0;
+		for (final Map.Entry<BlockPos, BlockState> entry : laid.replaced.entrySet()) {
+			if (world.getBlockState(entry.getKey()).getBlock() instanceof BlockPlatformEdge) {
+				// The edge block's own entity goes with it; what was there before was replaceable and had none
+				world.setBlockAndUpdate(entry.getKey(), entry.getValue().isAir() ? Blocks.AIR.defaultBlockState() : entry.getValue());
+				removed++;
+			}
+		}
+		if (!laid.creative && removed > 0) {
+			final ItemStack refund = new ItemStack(mtr.Items.PLATFORM_EDGE.get(), removed);
+			if (!player.getInventory().add(refund)) {
+				player.drop(refund, false);
+			}
+		}
+		return removed;
+	}
+
+	private static Component undoButton() {
+		return Text.translatable("gui.mtr.platform_edge_undo_button").setStyle(Style.EMPTY.withColor(ChatFormatting.AQUA).withUnderlined(true)
+				.withClickEvent(new ClickEvent(ClickEvent.Action.RUN_COMMAND, "/mtr undoedge"))
+				.withHoverEvent(new HoverEvent(HoverEvent.Action.SHOW_TEXT, Text.translatable("gui.mtr.platform_edge_undo_hover"))));
+	}
+
+	/**
 	 * Gives an edge block just put down the look of the platform it was put against (0.89.0)
 	 */
 	private static void setSource(Level world, BlockPos pos, BlockState source) {
 		final BlockEntity entity = world.getBlockEntity(pos);
 		if (source != null && entity instanceof BlockPlatformEdge.TileEntityPlatformEdge) {
 			((BlockPlatformEdge.TileEntityPlatformEdge) entity).setSource(source);
+		}
+	}
+
+	private static final class Laid {
+
+		private final ResourceKey<Level> dimension;
+		/** Where blocks were laid, and what was there before */
+		private final Map<BlockPos, BlockState> replaced;
+		private final boolean creative;
+
+		private Laid(ResourceKey<Level> dimension, Map<BlockPos, BlockState> replaced, boolean creative) {
+			this.dimension = dimension;
+			this.replaced = replaced;
+			this.creative = creative;
 		}
 	}
 

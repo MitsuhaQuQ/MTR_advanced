@@ -158,19 +158,23 @@ public class ItemCurvedPSD extends ItemWithCreativeTabBase {
 			return false;
 		}
 		final Direction facing = CurvedPSD.facingOf(bend);
+		// The whole column is put in before its neighbours hear of it (0.96.0): a door put over glass replaced the lower
+		// glass first, the upper glass then found no glass below and broke, and the new door lower half with it, dropped
 		for (int y = 0; y < 2; y++) {
 			BlockState newState = state.setValue(BlockPSDAPGBase.FACING, facing).setValue(BlockPSDAPGBase.HALF, y == 0 ? DoubleBlockHalf.LOWER : DoubleBlockHalf.UPPER);
 			newState = side == null ? newState.setValue(IBlock.SIDE_EXTENDED, IBlock.EnumSide.SINGLE) : newState.setValue(IBlock.SIDE, side);
-			world.setBlock(pos.above(y), newState, 2);
+			world.setBlock(pos.above(y), newState, Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
 			CurvedPSD.setBend(world, pos.above(y), line);
 		}
 		if (hasTop) {
-			world.setBlock(pos.above(2), Blocks.CURVED_PSD_TOP.get().defaultBlockState().setValue(BlockPSDTop.FACING, facing), 2);
+			world.setBlock(pos.above(2), Blocks.CURVED_PSD_TOP.get().defaultBlockState().setValue(BlockPSDTop.FACING, facing), Block.UPDATE_CLIENTS | Block.UPDATE_KNOWN_SHAPE);
 			CurvedPSD.setBend(world, pos.above(2), line);
 			world.setBlockAndUpdate(pos.above(2), BlockPSDTop.getActualState(world, pos.above(2)));
 		}
 		for (int y = 0; y < 2; y++) {
-			world.blockUpdated(pos.above(y), world.getBlockState(pos.above(y)).getBlock());
+			final BlockState placed = world.getBlockState(pos.above(y));
+			placed.updateNeighbourShapes(world, pos.above(y), Block.UPDATE_ALL);
+			world.blockUpdated(pos.above(y), placed.getBlock());
 		}
 		return true;
 	}
