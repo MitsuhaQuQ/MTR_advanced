@@ -103,7 +103,7 @@ test.describe("U553 U554 弯曲站台", () => {
 		await closeAll();
 	});
 
-	test("U554 弯曲站台边和曲线屏蔽门：截图看是否平滑 @U554 @U550 @U557", async ({marks}, testInfo) => {
+	test("U554 弯曲站台边和曲线屏蔽门：截图看是否平滑 @U554 @U550 @U557 @U558", async ({marks}, testInfo) => {
 		test.setTimeout(600_000);
 		const name = await player();
 		await serverCommand(`gamemode creative ${name}`);
@@ -190,6 +190,9 @@ test.describe("U553 U554 弯曲站台", () => {
 				["above", -50, Y + 70, middleZ, 0, 90],
 				["edge-close", -40, Y + 1.2, trackZOf(rail, -40) - 1, 50, 25],
 				["glass-close", -55, Y + 2, trackZOf(rail, -55) - 1.5, -40, 5],
+				// The boarding arrows on the edge by the door (0.97.0): from above, and from the platform behind the doors
+				["door-platform", (door?.[0] ?? -50) + 0.5, Y + 2.7, (door?.[1] ?? 57) + 3, 180, 50],
+				["door-platform-wide", (door?.[0] ?? -50) + 0.5, Y + 2.8, (door?.[1] ?? 57) + 5, 180, 30],
 			] as [string, number, number, number, number, number][]) {
 				await serverCommand(`tp ${name} ${x} ${y} ${z} ${yaw} ${pitch}`);
 				await sleep(3000);

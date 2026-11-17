@@ -76,7 +76,8 @@ public class RenderPlatformEdge<T extends BlockPlatformEdge.TileEntityPlatformEd
 		if (corners < 3) {
 			return;
 		}
-		final BlockState source = entity.getSource() == null ? Blocks.PLATFORM.get().defaultBlockState() : entity.getSource();
+		// As a platform block under screen doors or platform gates looks (0.97.0): their top, and the boarding arrows by a door
+		final BlockState source = gapFiller ? (entity.getSource() == null ? Blocks.PLATFORM.get().defaultBlockState() : entity.getSource()) : mtr.block.BlockPlatform.withDoorsAbove(world, pos, entity.getSource() == null ? Blocks.PLATFORM.get().defaultBlockState() : entity.getSource());
 		final Textures textures = texturesOf(source);
 		// Below a recess (MTR's indented platforms) the platform's part starts further from the track (0.89.4)
 		final int[] recess = gapFiller ? new int[]{0, 0} : BlockPlatformEdge.recessOf(entity.getSource());
