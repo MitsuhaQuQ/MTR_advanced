@@ -102,31 +102,39 @@ public class RenderPlatformEdge<T extends BlockPlatformEdge.TileEntityPlatformEd
 			return;
 		}
 
+		// Along the platform's edge curve itself where it is known (0.95.0), so neighbouring blocks join smoothly; the
+		// polygons are then fanned from their middle, as a piece of a curve isn't always convex
+		final PlatformEdgeCurves.Shape curved = gapFiller ? null : PlatformEdgeCurves.shapeOf(entity, pos, (double) recess[0] / PlatformEdges.CELLS);
+		final double[] upper = curved == null ? outline : centred(curved.outline);
+		final double[] lower = curved == null ? lowerOutline : centred(curved.lowerOutline);
+
 		// The top and the bottom, as fans of triangles drawn as quads with the last corner twice, the texture as on a whole block
 		if (textures.top != null) {
-			fan(consumer, pose, normal, outline, 1, textures.top, topLight, 1, null);
+			fan(consumer, pose, normal, upper, 1, textures.top, topLight, 1, null);
 		}
 		if (textures.side != null) {
-			if (lowerOutline.length >= 6) {
-				fan(consumer, pose, normal, lowerOutline, 0, textures.side, sideLight, -1, null);
+			if (lower.length >= 6) {
+				fan(consumer, pose, normal, lower, 0, textures.side, sideLight, -1, null);
 			}
 			if (recessHeight > 0) {
 				// The underside of the top over the recess
-				fan(consumer, pose, normal, outline, recessHeight, textures.side, sideLight, -1, null);
+				fan(consumer, pose, normal, upper, recessHeight, textures.side, sideLight, -1, null);
 			}
 		}
 		// The top's further layers along the cut: across the cut from 1 at the edge to 0 a block in, along it centred
-		final double towardsTrackX = Math.cos(angle * 2 * Math.PI / PlatformEdges.ANGLES);
-		final double towardsTrackZ = Math.sin(angle * 2 * Math.PI / PlatformEdges.ANGLES);
+		final double towardsTrackX = curved == null ? Math.cos(angle * 2 * Math.PI / PlatformEdges.ANGLES) : curved.towardsTrackX;
+		final double towardsTrackZ = curved == null ? Math.sin(angle * 2 * Math.PI / PlatformEdges.ANGLES) : curved.towardsTrackZ;
 		final double d = (double) (cut - PlatformEdges.CUT_CENTRE) / PlatformEdges.CELLS;
-		final double[] marked = clip(outline, (x, z) -> d - ((x - 0.5) * towardsTrackX + (z - 0.5) * towardsTrackZ) - PlatformEdges.MARKING_REACH);
+		// How far into the platform from the edge: from the straight cut, or from the curve itself
+		final Value depthOf = curved == null ? (x, z) -> d - ((x - 0.5) * towardsTrackX + (z - 0.5) * towardsTrackZ) : curved::depth;
+		final double[] marked = curved == null ? clip(outline, (x, z) -> depthOf.at(x, z) - PlatformEdges.MARKING_REACH) : centred(clip(subdivide(curved.outline), (x, z) -> depthOf.at(x, z) - PlatformEdges.MARKING_REACH));
 		if (marked.length >= 6 && !gapFiller) {
 			// The side the source block faces is its side towards the track (0.89.4): that side of its marking is laid at the
 			// cut, wherever it is on the texture; a block with no facing has the texture's bottom (v = 1) there
 			final Direction facing = source.hasProperty(HorizontalDirectionalBlock.FACING) ? source.getValue(HorizontalDirectionalBlock.FACING) : null;
 			for (final Layer layer : textures.layers) {
 				fan(consumer, pose, normal, marked, 1 + MARKING_LIFT, layer.sprite, topLight, 1, (x, z) -> {
-					final double inwards = (d - ((x - 0.5) * towardsTrackX + (z - 0.5) * towardsTrackZ)) / PlatformEdges.MARKING_REACH;
+					final double inwards = depthOf.at(x, z) / PlatformEdges.MARKING_REACH;
 					final double along = ((x - 0.5) * -towardsTrackZ + (z - 0.5) * towardsTrackX) / Math.sqrt(2);
 					if (facing == null || layer.uvOf == null) {
 						return new float[]{(float) (0.5 + along), (float) (1 - inwards)};
@@ -139,11 +147,57 @@ public class RenderPlatformEdge<T extends BlockPlatformEdge.TileEntityPlatformEd
 		}
 		// Each side of the outline, the cut among them, from the bottom to the top; under a recess the lower outline's
 		if (textures.side != null) {
-			sides(consumer, pose, normal, outline, recessHeight, 1, textures.side, sideLight);
+			sides(consumer, pose, normal, curved == null ? outline : curved.outline, recessHeight, 1, textures.side, sideLight);
 			if (recessHeight > 0) {
-				sides(consumer, pose, normal, lowerOutline, 0, recessHeight, textures.side, sideLight);
+				sides(consumer, pose, normal, curved == null ? lowerOutline : curved.lowerOutline, 0, recessHeight, textures.side, sideLight);
 			}
 		}
+	}
+
+	/**
+	 * @return the polygon with its middle first and its first corner again at the end, so a fan from the first point covers
+	 * it when it isn't convex but every corner can be seen from its middle (0.95.0)
+	 */
+	private static double[] centred(double[] polygon) {
+		final int corners = polygon.length / 2;
+		if (corners < 3) {
+			return polygon;
+		}
+		double x = 0;
+		double z = 0;
+		for (int i = 0; i < corners; i++) {
+			x += polygon[i * 2];
+			z += polygon[i * 2 + 1];
+		}
+		final double[] result = new double[polygon.length + 4];
+		result[0] = x / corners;
+		result[1] = z / corners;
+		System.arraycopy(polygon, 0, result, 2, polygon.length);
+		result[result.length - 2] = polygon[0];
+		result[result.length - 1] = polygon[1];
+		return result;
+	}
+
+	/**
+	 * @return the polygon with no side longer than a quarter block, so clipping it by a curved distance stays near the curve
+	 */
+	private static double[] subdivide(double[] polygon) {
+		final int corners = polygon.length / 2;
+		final List<Double> result = new ArrayList<>();
+		for (int i = 0; i < corners; i++) {
+			final double x1 = polygon[i * 2], z1 = polygon[i * 2 + 1];
+			final double x2 = polygon[(i + 1) % corners * 2], z2 = polygon[(i + 1) % corners * 2 + 1];
+			final int pieces = Math.max(1, (int) Math.ceil(Math.hypot(x2 - x1, z2 - z1) / 0.25));
+			for (int j = 0; j < pieces; j++) {
+				result.add(x1 + (x2 - x1) * j / pieces);
+				result.add(z1 + (z2 - z1) * j / pieces);
+			}
+		}
+		final double[] array = new double[result.size()];
+		for (int i = 0; i < array.length; i++) {
+			array[i] = result.get(i);
+		}
+		return array;
 	}
 
 	/**

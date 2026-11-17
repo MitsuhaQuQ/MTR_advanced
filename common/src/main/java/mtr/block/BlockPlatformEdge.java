@@ -229,14 +229,21 @@ public class BlockPlatformEdge extends BlockMapper implements EntityBlockMapper 
 	 * none does
 	 */
 	public static Platform nearestPlatform(RailwayData railwayData, BlockPos pos) {
+		return nearestPlatform(railwayData.platforms, railwayData.getRails(), pos);
+	}
+
+	/**
+	 * The same from any platforms and rails, as the client has them for drawing the edge along its curve (0.95.0)
+	 */
+	public static Platform nearestPlatform(java.util.Collection<Platform> platforms, java.util.Map<BlockPos, java.util.Map<BlockPos, Rail>> rails, BlockPos pos) {
 		Platform best = null;
 		double bestDistance = REACH;
-		for (final Platform platform : railwayData.platforms) {
+		for (final Platform platform : platforms) {
 			final BlockPos mid = platform.getMidPos();
 			if (Math.abs(mid.getY() - pos.getY()) > 3) {
 				continue;
 			}
-			final Rail rail = PlatformCurves.railOf(platform, railwayData.getRails());
+			final Rail rail = PlatformCurves.railOf(platform, rails);
 			if (rail == null || Math.hypot(mid.getX() - pos.getX(), mid.getZ() - pos.getZ()) > rail.getLength() / 2 + REACH + 2) {
 				continue;
 			}

@@ -4,6 +4,7 @@ import mtr.compat.Compat;
 import mtr.BlockEntityTypes;
 import mtr.Items;
 import mtr.data.RailAngle;
+import transitsim.geometry.TransitionPath;
 import transitsim.geometry.VerticalProfile;
 import mtr.data.RailwayData;
 import mtr.data.TransportMode;
@@ -192,6 +193,44 @@ public class BlockNode extends BlockDirectionalMapper {
 		}
 	}
 
+	/**
+	 * @return the length of the transition curves of the rails at the node (0.95.0), 0 for none
+	 */
+	public static float getTransition(BlockGetter world, BlockPos pos) {
+		final BlockEntity entity = world.getBlockEntity(pos);
+		return entity instanceof TileEntityNode ? ((TileEntityNode) entity).transition : 0;
+	}
+
+	public static void setTransition(BlockGetter world, BlockPos pos, float transition) {
+		final BlockEntity entity = world.getBlockEntity(pos);
+		if (entity instanceof TileEntityNode) {
+			((TileEntityNode) entity).setTransition(transition);
+		}
+	}
+
+	/**
+	 * @return what the node keeps (angle, grade, transition), to put back with {@link #restoreSettings} when an edit is
+	 * undone; null for a node without them
+	 */
+	public static CompoundTag saveSettings(BlockGetter world, BlockPos pos) {
+		final BlockEntity entity = world.getBlockEntity(pos);
+		if (entity instanceof TileEntityNode) {
+			final CompoundTag compoundTag = new CompoundTag();
+			((TileEntityNode) entity).writeCompoundTag(compoundTag);
+			return compoundTag;
+		}
+		return null;
+	}
+
+	public static void restoreSettings(BlockGetter world, BlockPos pos, CompoundTag compoundTag) {
+		final BlockEntity entity = world.getBlockEntity(pos);
+		if (entity instanceof TileEntityNode && compoundTag != null) {
+			((TileEntityNode) entity).readCompoundTag(compoundTag);
+			entity.setChanged();
+			((TileEntityNode) entity).syncData();
+		}
+	}
+
 	public static void setCustomAngle(BlockGetter world, BlockPos pos, float angle) {
 		final BlockEntity entity = world.getBlockEntity(pos);
 		if (entity instanceof TileEntityNode) {
@@ -274,8 +313,13 @@ public class BlockNode extends BlockDirectionalMapper {
 		 */
 		private float grade = Float.NaN;
 		private float verticalRadius = (float) VerticalProfile.DEFAULT_RADIUS;
+		/**
+		 * The length of the transition curves of the rails at the node, 0 for none (0.95.0)
+		 */
+		private float transition;
 
 		private static final String KEY_CUSTOM_ANGLE = "custom_angle";
+		private static final String KEY_TRANSITION = "transition";
 		private static final String KEY_GRADE = "grade";
 		private static final String KEY_VERTICAL_RADIUS = "vertical_radius";
 
@@ -289,6 +333,7 @@ public class BlockNode extends BlockDirectionalMapper {
 			customAngle = compoundTag.getFloat(KEY_CUSTOM_ANGLE);
 			grade = compoundTag.contains(KEY_GRADE) ? compoundTag.getFloat(KEY_GRADE) : Float.NaN;
 			verticalRadius = compoundTag.contains(KEY_VERTICAL_RADIUS) ? compoundTag.getFloat(KEY_VERTICAL_RADIUS) : (float) VerticalProfile.DEFAULT_RADIUS;
+			transition = compoundTag.getFloat(KEY_TRANSITION);
 		}
 
 		@Override
@@ -302,6 +347,15 @@ public class BlockNode extends BlockDirectionalMapper {
 			if (verticalRadius != (float) VerticalProfile.DEFAULT_RADIUS) {
 				compoundTag.putFloat(KEY_VERTICAL_RADIUS, verticalRadius);
 			}
+			if (transition > 0) {
+				compoundTag.putFloat(KEY_TRANSITION, transition);
+			}
+		}
+
+		private void setTransition(float transition) {
+			this.transition = Float.isFinite(transition) ? Math.max(0, Math.min((float) TransitionPath.MAX_LENGTH, transition)) : 0;
+			setChanged();
+			syncData();
 		}
 
 		private void setGrade(float grade, float verticalRadius) {

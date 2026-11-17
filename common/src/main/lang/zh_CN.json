@@ -422,7 +422,7 @@
   "gui.mtr.direction_sw": "西南",
   "gui.mtr.direction_wn": "西北",
   "gui.mtr.direction_ne": "东北",
-  "gui.mtr.node_transition": "缓和曲线（暂不可用）",
+  "gui.mtr.node_transition": "缓和曲线长度 (格)",
   "gui.mtr.node_turn_back": "折返停留 (秒)",
   "gui.mtr.node_boundary_rail": "边界轨道 → %s, %s, %s",
   "gui.mtr.node_set": "设定",
@@ -674,5 +674,16 @@
   "gui.mtr.gap_filler_material_cleared": "填缝材质改回被切的方块",
   "gui.mtr.gap_filler_rail_not_here": "轨道不在这一块上方",
   "gui.mtr.gap_filler_rail_too_high": "轨道比这一块高出一格以上",
-  "tooltip.mtr.gap_filler_material": "材质：%s"
+  "tooltip.mtr.gap_filler_material": "材质：%s",
+  "gui.mtr.platform_too_steep": "无法修改：%s 的站台轨道坡度会到 %s‰（最多 %s‰）",
+  "gui.mtr.siding_too_steep": "无法修改：%s 的存车线轨道坡度会到 %s‰（最多 %s‰）",
+  "gui.mtr.saved_rail_too_uneven": "无法修改：%s 的站台或存车线轨道会上下起伏 %s 格（最多半格）",
+  "gui.mtr.siding_length_changes": "无法修改：%s 的存车线长度会变，车是按它的长度编组的",
+  "gui.mtr.boarding_done": "已登上最近的列车，第 %s 节车厢（相距 %s 格）",
+  "gui.mtr.boarding_no_train": "这个世界里没有在运行的列车",
+  "gui.mtr.boarding_players_only": "只有玩家可以乘车",
+  "gui.mtr.image_deleted_named": "已删除图片“%s”",
+  "gui.mtr.image_missing": "没有图片“%s”",
+  "gui.mtr.image_no_delete_permission": "没有删除图片“%s”的权限",
+  "gui.mtr.image_delete_failed": "图片“%s”没删成，见服务端日志"
 }

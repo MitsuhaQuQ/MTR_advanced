@@ -423,7 +423,7 @@
   "gui.mtr.direction_sw": "south-west",
   "gui.mtr.direction_wn": "north-west",
   "gui.mtr.direction_ne": "north-east",
-  "gui.mtr.node_transition": "Transition (Not available)",
+  "gui.mtr.node_transition": "Transition curve (blocks)",
   "gui.mtr.node_turn_back": "Turn back wait (s)",
   "gui.mtr.node_boundary_rail": "Boundary rail to %s, %s, %s",
   "gui.mtr.node_set": "Set",
@@ -579,5 +579,16 @@
   "gui.mtr.gap_filler_material_cleared": "Fillers are made of the block cut",
   "gui.mtr.gap_filler_rail_not_here": "The track is not over this block",
   "gui.mtr.gap_filler_rail_too_high": "The track is more than a block above this block",
-  "tooltip.mtr.gap_filler_material": "Material: %s"
+  "tooltip.mtr.gap_filler_material": "Material: %s",
+  "gui.mtr.platform_too_steep": "Can't change: the platform rail at %s would be %s‰ steep (at most %s‰)",
+  "gui.mtr.siding_too_steep": "Can't change: the siding rail at %s would be %s‰ steep (at most %s‰)",
+  "gui.mtr.saved_rail_too_uneven": "Can't change: the platform or siding rail at %s would go up and down %s blocks (at most half a block)",
+  "gui.mtr.siding_length_changes": "Can't change: the siding at %s would get longer or shorter, and its trains are made up for its length",
+  "gui.mtr.boarding_done": "On board the nearest train, car %s (%s blocks away)",
+  "gui.mtr.boarding_no_train": "No train is running in this world",
+  "gui.mtr.boarding_players_only": "Only a player can board a train",
+  "gui.mtr.image_deleted_named": "Deleted image %s",
+  "gui.mtr.image_missing": "There is no image %s",
+  "gui.mtr.image_no_delete_permission": "You may not delete image %s",
+  "gui.mtr.image_delete_failed": "Image %s could not be deleted, see the server log"
 }

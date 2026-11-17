@@ -559,6 +559,7 @@ public class MTR implements IPacket {
 		PacketGuard.register(PACKET_AUDIO_SOUND_ID, AudioServer::receiveSoundIdC2S);
 		PacketGuard.register(PACKET_AUDIO_FOLDER, AudioServer::receiveFolderC2S);
 		RegistryUtilities.registerCommand(AudioServer::registerCommand);
+		RegistryUtilities.registerCommand(MTRCommands::register);
 
 		Registry.registerTickEvent(minecraftServer -> {
 			minecraftServer.getAllLevels().forEach(serverWorld -> {

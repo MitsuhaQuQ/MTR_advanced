@@ -1020,12 +1020,19 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	}
 
 	public String rotateNodeRails(Player player, BlockPos pos, RailAngle angle) {
+		return rotateNodeRails(player, pos, angle, true);
+	}
+
+	/**
+	 * Platforms may be curved, so their rails turn with the node too (0.95.0); {@link RailEdit} keeps them level and keeps
+	 * sidings their length.
+	 *
+	 * @param send false inside a {@link RailEdit}, which sends the rails once it has checked them
+	 */
+	public String rotateNodeRails(Player player, BlockPos pos, RailAngle angle, boolean send) {
 		final Map<BlockPos, Rail> connections = rails.get(pos);
 		if (connections == null || connections.isEmpty()) {
 			return null;
-		}
-		if (hasSavedRail(pos)) {
-			return "gui.mtr.platform_or_siding_exists";
 		}
 
 		final Rail.RotatedNode rotatedNode = Rail.rotateNode(rails, pos, angle);
@@ -1037,15 +1044,51 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 			final Rail newBackwardsRail = rotatedNode.backwardsRails.get(posEnd);
 			rails.get(pos).put(posEnd, newRail);
 			rails.get(posEnd).put(pos, newBackwardsRail);
-			railwayDataFileSaveModule.markRailsChanged(Arrays.asList(pos, posEnd));
-			PacketTrainDataGuiServer.createRailS2C(world, newRail.transportMode, pos, posEnd, newRail, newBackwardsRail, 0);
+			if (send) {
+				sendRailChanged(pos, posEnd, newRail, newBackwardsRail);
+			}
 		});
 		railwayDataLoggingModule.addEvent((ServerPlayer) player, BlockNode.class, new ArrayList<>(), Collections.singletonList(String.format("angle:%s", angle.angleDegrees)), pos);
 		// The rails' lengths changed, and with them the mean grades the nodes work theirs out from
 		final List<BlockPos> nodes = new ArrayList<>(rotatedNode.rails.keySet());
 		nodes.add(pos);
-		refreshNodeGrades(nodes);
+		refreshNodeGrades(nodes, send);
 		return null;
+	}
+
+	/**
+	 * Saves a rail and its rail back and sends them to the players.
+	 */
+	public void sendRailChanged(BlockPos pos, BlockPos posEnd, Rail rail, Rail backwardsRail) {
+		railwayDataFileSaveModule.markRailsChanged(Arrays.asList(pos, posEnd));
+		PacketTrainDataGuiServer.createRailS2C(world, rail.transportMode, pos, posEnd, rail, backwardsRail, 0);
+	}
+
+	/**
+	 * Sets the transition curves of the nodes on their rails ({@link RailGrades#refreshTransitions}, 0.95.0). The rails get
+	 * longer or shorter, so the grades of the nodes at both ends are worked out again.
+	 *
+	 * @param send false inside a {@link RailEdit}, which sends the rails once it has checked them
+	 */
+	public void refreshNodeTransitions(Collection<BlockPos> nodes, boolean send) {
+		final Set<BlockPos> gradeNodes = new HashSet<>();
+		for (final BlockPos pos : nodes) {
+			final List<BlockPos> changed = RailGrades.refreshTransitions(world, rails, pos);
+			if (!changed.isEmpty()) {
+				gradeNodes.add(pos);
+				gradeNodes.addAll(changed);
+			}
+			if (send) {
+				for (final BlockPos posEnd : changed) {
+					final Rail rail = DataCache.tryGet(rails, pos, posEnd);
+					final Rail backwardsRail = DataCache.tryGet(rails, posEnd, pos);
+					if (rail != null && backwardsRail != null) {
+						sendRailChanged(pos, posEnd, rail, backwardsRail);
+					}
+				}
+			}
+		}
+		refreshNodeGrades(gradeNodes, send);
 	}
 
 	/**
@@ -1053,13 +1096,16 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	 * changed to the players.
 	 */
 	public void refreshNodeGrades(Collection<BlockPos> nodes) {
+		refreshNodeGrades(nodes, true);
+	}
+
+	public void refreshNodeGrades(Collection<BlockPos> nodes, boolean send) {
 		for (final BlockPos pos : nodes) {
 			for (final BlockPos posEnd : RailGrades.refreshNode(world, rails, pos)) {
 				final Rail rail = DataCache.tryGet(rails, pos, posEnd);
 				final Rail backwardsRail = DataCache.tryGet(rails, posEnd, pos);
-				if (rail != null && backwardsRail != null) {
-					railwayDataFileSaveModule.markRailsChanged(Arrays.asList(pos, posEnd));
-					PacketTrainDataGuiServer.createRailS2C(world, rail.transportMode, pos, posEnd, rail, backwardsRail, 0);
+				if (rail != null && backwardsRail != null && send) {
+					sendRailChanged(pos, posEnd, rail, backwardsRail);
 				}
 			}
 		}

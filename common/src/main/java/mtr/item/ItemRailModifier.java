@@ -91,11 +91,21 @@ public class ItemRailModifier extends ItemNodeModifierBase {
 			final boolean isValid = rail1.isValid() && rail2.isValid();
 
 			if (goodRadius && isValid && isValidContinuousMovement) {
-				// New rails follow their nodes' grades (0.87.0); the nodes take the new rail into their own
+				// New rails take their nodes' transition curves (0.95.0) and follow their grades (0.87.0); the nodes take the new rail into their own
+				RailGrades.startTransitions(world, posStart, posEnd, rail1, rail2);
 				RailGrades.startGrades(world, posStart, posEnd, rail1, rail2);
 				railwayData.addRail(player, transportMode, posStart, posEnd, rail1, false);
 				final long newId = railwayData.addRail(player, transportMode, posEnd, posStart, rail2, true);
 				railwayData.refreshNodeGrades(Arrays.asList(posStart, posEnd));
+				// A new platform or siding has to be level along it (0.95.0)
+				final Object[] slopeError = newRailType.hasSavedRail ? RailEdit.checkNewRail(rail2, posEnd) : null;
+				if (slopeError != null) {
+					railwayData.removeRailConnection(player, posStart, posEnd);
+					if (player != null) {
+						player.displayClientMessage(Text.translatable((String) slopeError[0], Arrays.copyOfRange(slopeError, 1, slopeError.length)), false);
+					}
+					return;
+				}
 				world.setBlockAndUpdate(posStart, stateStart.setValue(BlockNode.IS_CONNECTED, true));
 				world.setBlockAndUpdate(posEnd, stateEnd.setValue(BlockNode.IS_CONNECTED, true));
 				PacketTrainDataGuiServer.createRailS2C(world, transportMode, posStart, posEnd, rail1, rail2, newId);

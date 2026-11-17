@@ -31,6 +31,7 @@ import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
 import transitsim.geometry.PlatformEdges;
 import transitsim.geometry.SlopedTops;
+import transitsim.geometry.TransitionPath;
 import transitsim.geometry.VerticalProfile;
 
 import java.io.IOException;
@@ -72,6 +73,16 @@ public class Rail extends SerializedDataBase {
 	private double verticalRadiusStart = VerticalProfile.DEFAULT_RADIUS;
 	private double verticalRadiusEnd = VerticalProfile.DEFAULT_RADIUS;
 	private VerticalProfile verticalProfile;
+	/**
+	 * The lengths of the transition curves at the start and the end (0.95.0, design 9.3), set from the nodes; 0 keeps
+	 * the old shape there
+	 */
+	private double transitionStart;
+	private double transitionEnd;
+	/**
+	 * The shape with transition curves, or null when the rail has none or none fit, and the old shape is used
+	 */
+	private TransitionPath transitionPath;
 
 	private static final double ACCEPT_THRESHOLD = 1E-4;
 	private static final double ANGLE_THRESHOLD = 1E-9;
@@ -105,6 +116,8 @@ public class Rail extends SerializedDataBase {
 	private static final String KEY_GRADE_END = "grade_end";
 	private static final String KEY_VERTICAL_RADIUS_START = "vertical_radius_start";
 	private static final String KEY_VERTICAL_RADIUS_END = "vertical_radius_end";
+	private static final String KEY_TRANSITION_START = "transition_start";
+	private static final String KEY_TRANSITION_END = "transition_end";
 	/**
 	 * Keys ANTE saved with every rail; only read, for its Bézier rails ({@link #fromAnteBezier}).
 	 */
@@ -339,6 +352,8 @@ public class Rail extends SerializedDataBase {
 
 		facingStart = getRailAngle(false);
 		facingEnd = getRailAngle(true);
+		// The shape first: the vertical profile is worked out over its length
+		setTransitions(messagePackHelper.getDouble(KEY_TRANSITION_START, 0), messagePackHelper.getDouble(KEY_TRANSITION_END, 0));
 		if (map.containsKey(KEY_GRADE_START) && map.containsKey(KEY_GRADE_END)) {
 			setGrades(messagePackHelper.getDouble(KEY_GRADE_START), messagePackHelper.getDouble(KEY_GRADE_END), messagePackHelper.getDouble(KEY_VERTICAL_RADIUS_START, VerticalProfile.DEFAULT_RADIUS), messagePackHelper.getDouble(KEY_VERTICAL_RADIUS_END, VerticalProfile.DEFAULT_RADIUS));
 		}
@@ -386,6 +401,7 @@ public class Rail extends SerializedDataBase {
 
 		facingStart = getRailAngle(false);
 		facingEnd = getRailAngle(true);
+		setTransitions(compoundTag.getDouble(KEY_TRANSITION_START), compoundTag.getDouble(KEY_TRANSITION_END));
 	}
 
 	public Rail(FriendlyByteBuf packet) {
@@ -411,7 +427,9 @@ public class Rail extends SerializedDataBase {
 
 		facingStart = getRailAngle(false);
 		facingEnd = getRailAngle(true);
-		// Before the ANTE fields, which its mixin reads after this constructor
+		// Before the ANTE fields, which its mixin reads after this constructor; the shape before the profile over it
+		final double newTransitionStart = packet.readDouble();
+		setTransitions(newTransitionStart, packet.readDouble());
 		if (packet.readBoolean()) {
 			setGrades(packet.readDouble(), packet.readDouble(), packet.readDouble(), packet.readDouble());
 		}
@@ -444,11 +462,15 @@ public class Rail extends SerializedDataBase {
 			messagePacker.packString(KEY_VERTICAL_RADIUS_START).packDouble(verticalRadiusStart);
 			messagePacker.packString(KEY_VERTICAL_RADIUS_END).packDouble(verticalRadiusEnd);
 		}
+		if (hasTransitions()) {
+			messagePacker.packString(KEY_TRANSITION_START).packDouble(transitionStart);
+			messagePacker.packString(KEY_TRANSITION_END).packDouble(transitionEnd);
+		}
 	}
 
 	@Override
 	public int messagePackLength() {
-		return hasGrades ? 23 : 19;
+		return 19 + (hasGrades ? 4 : 0) + (hasTransitions() ? 2 : 0);
 	}
 
 	@Override
@@ -472,6 +494,8 @@ public class Rail extends SerializedDataBase {
 		packet.writeUtf(railType.toString());
 		packet.writeUtf(transportMode.toString());
 		packet.writeInt(turnBackDwell);
+		packet.writeDouble(transitionStart);
+		packet.writeDouble(transitionEnd);
 		packet.writeBoolean(hasGrades);
 		if (hasGrades) {
 			packet.writeDouble(gradeStart);
@@ -538,15 +562,139 @@ public class Rail extends SerializedDataBase {
 	}
 
 	/**
-	 * Gives this rail the grades of another one between the same nodes, going the same way or, if {@code reversed}, the
-	 * other way.
+	 * Gives this rail the grades and transition curves of another one between the same nodes, going the same way or, if
+	 * {@code reversed}, the other way.
 	 */
 	public void copyGrades(Rail rail, boolean reversed) {
+		// The shape first, as the profile is worked out over its length
+		if (reversed) {
+			setTransitions(rail.transitionEnd, rail.transitionStart);
+		} else {
+			setTransitions(rail.transitionStart, rail.transitionEnd);
+		}
 		if (rail.hasGrades) {
 			if (reversed) {
 				setGrades(-rail.gradeEnd, -rail.gradeStart, rail.verticalRadiusEnd, rail.verticalRadiusStart);
 			} else {
 				setGrades(rail.gradeStart, rail.gradeEnd, rail.verticalRadiusStart, rail.verticalRadiusEnd);
+			}
+		}
+	}
+
+	public boolean hasTransitions() {
+		return transitionStart > 0 || transitionEnd > 0;
+	}
+
+	public double getTransitionStart() {
+		return transitionStart;
+	}
+
+	public double getTransitionEnd() {
+		return transitionEnd;
+	}
+
+	/**
+	 * @return the shape with transition curves, or null if the rail keeps the old shape
+	 */
+	public TransitionPath getTransitionPath() {
+		return transitionPath;
+	}
+
+	/**
+	 * Gives the rail transition curves of these lengths at its ends (0.95.0, design 9.3), or takes them away with 0. The
+	 * rail keeps its ends and their angles; its length changes, and with it the vertical profile. Cable car rails keep
+	 * their shape.
+	 */
+	public void setTransitions(double start, double end) {
+		if (railType.railSlopeStyle == RailType.RailSlopeStyle.CABLE) {
+			return;
+		}
+		transitionStart = sanitizeTransition(start);
+		transitionEnd = sanitizeTransition(end);
+		transitionPath = hasTransitions() ? buildTransitionPath() : null;
+		mapShapeDone = false;
+		mapShape = null;
+		if (hasGrades) {
+			setGrades(gradeStart, gradeEnd, verticalRadiusStart, verticalRadiusEnd);
+		}
+	}
+
+	public void setTransitionStart(double length) {
+		setTransitions(length, transitionEnd);
+	}
+
+	public void setTransitionEnd(double length) {
+		setTransitions(transitionStart, length);
+	}
+
+	private static double sanitizeTransition(double length) {
+		return Double.isFinite(length) ? Mth.clamp(length, 0, TransitionPath.MAX_LENGTH) : 0;
+	}
+
+	/**
+	 * Each turn of the old shape becomes a line, a transition, an arc, a transition and a line between the same ends. A
+	 * straight part and an arc are one turn, with the start's transition at its start and the end's at its end; two arcs
+	 * are two turns, each with the transition of its own node at both its ends, so an S-curve also has transitions where
+	 * it changes direction. A turn they don't fit keeps its arc.
+	 *
+	 * @return the new shape, or null if no turn changed
+	 */
+	private TransitionPath buildTransitionPath() {
+		final double length1 = Math.abs(tEnd1 - tStart1);
+		final double length2 = Math.abs(tEnd2 - tStart2);
+		final boolean curved1 = !isStraight1 && length1 > ACCEPT_THRESHOLD;
+		final boolean curved2 = !isStraight2 && length2 > ACCEPT_THRESHOLD;
+		if (!curved1 && !curved2) {
+			return null;
+		}
+		final double[] start = segmentPoint(true, 0);
+		final double[] end = length2 > ACCEPT_THRESHOLD ? segmentPoint(false, length2) : segmentPoint(true, length1);
+		final TransitionPath.Builder builder = new TransitionPath.Builder(start[0], start[1], start[2]);
+		boolean changed;
+		if (curved1 && curved2) {
+			final double[] middle = segmentPoint(true, length1);
+			changed = builder.turn(middle[0], middle[1], middle[2], transitionStart, transitionStart);
+			if (!changed) {
+				appendSegment(builder, true, length1);
+			}
+			if (builder.turn(end[0], end[1], end[2], transitionEnd, transitionEnd)) {
+				changed = true;
+			} else {
+				appendSegment(builder, false, length2);
+			}
+		} else {
+			changed = builder.turn(end[0], end[1], end[2], transitionStart, transitionEnd);
+			if (!changed) {
+				appendSegment(builder, true, length1);
+				appendSegment(builder, false, length2);
+			}
+		}
+		return changed ? builder.build() : null;
+	}
+
+	/**
+	 * @return {x, z, heading} a distance along one of the two parts of the old shape
+	 */
+	private double[] segmentPoint(boolean first, double distance) {
+		final double h = first ? h1 : h2;
+		final double k = first ? k1 : k2;
+		final double r = first ? r1 : r2;
+		final double tStart = first ? tStart1 : tStart2;
+		final boolean reverseT = first ? reverseT1 : reverseT2;
+		final boolean isStraight = first ? isStraight1 : isStraight2;
+		final double t = (reverseT ? -1 : 1) * distance + tStart;
+		final Vec3 position = getPositionXZ(h, k, r, t, 0, isStraight);
+		final double heading = isStraight ? Math.atan2(k, h) + (reverseT ? Math.PI : 0) : t / r + (reverseT ? -Math.PI / 2 : Math.PI / 2);
+		return new double[]{position.x, position.z, heading};
+	}
+
+	private void appendSegment(TransitionPath.Builder builder, boolean first, double length) {
+		if (length > ACCEPT_THRESHOLD) {
+			if (first ? isStraight1 : isStraight2) {
+				builder.line(length);
+			} else {
+				final double radius = first ? r1 : r2;
+				builder.arc((first ? reverseT1 : reverseT2) ? -1 / radius : 1 / radius, length);
 			}
 		}
 	}
@@ -566,6 +714,11 @@ public class Rail extends SerializedDataBase {
 	}
 
 	public Vec3 getPosition(double rawValue) {
+		if (transitionPath != null) {
+			final double value = Mth.clamp(rawValue, 0, transitionPath.getLength());
+			final double[] point = transitionPath.getPoint(value);
+			return new Vec3(point[0], getPositionY(value), point[1]);
+		}
 		final double count1 = Math.abs(tEnd1 - tStart1);
 		final double count2 = Math.abs(tEnd2 - tStart2);
 		final double value = Mth.clamp(rawValue, 0, count1 + count2);
@@ -590,10 +743,14 @@ public class Rail extends SerializedDataBase {
 	}
 
 	public double getLength() {
-		return Math.abs(tEnd2 - tStart2) + Math.abs(tEnd1 - tStart1);
+		return transitionPath != null ? transitionPath.getLength() : Math.abs(tEnd2 - tStart2) + Math.abs(tEnd1 - tStart1);
 	}
 
 	public void render(RenderRail callback, float offsetRadius1, float offsetRadius2) {
+		if (transitionPath != null) {
+			renderTransitionPath(callback, offsetRadius1, offsetRadius2);
+			return;
+		}
 		renderSegment(h1, k1, r1, tStart1, tEnd1, 0, offsetRadius1, offsetRadius2, reverseT1, isStraight1, callback);
 		renderSegment(h2, k2, r2, tStart2, tEnd2, Math.abs(tEnd1 - tStart1), offsetRadius1, offsetRadius2, reverseT2, isStraight2, callback);
 	}
@@ -747,6 +904,31 @@ public class Rail extends SerializedDataBase {
 			return new Vec3(h * t + k * ((Math.abs(h) >= 0.5 && Math.abs(k) >= 0.5 ? 0 : r) + radiusOffset) + 0.5, 0, k * t + h * (r - radiusOffset) + 0.5);
 		} else {
 			return new Vec3(h + (r + radiusOffset) * Math.cos(t / r) + 0.5, 0, k + (r + radiusOffset) * Math.sin(t / r) + 0.5);
+		}
+	}
+
+	/**
+	 * Like {@link #renderSegment}, the offsets to the right of the way the rail goes, as the old shape has them on a part
+	 * not run backwards, in steps of about a block.
+	 */
+	private void renderTransitionPath(RenderRail callback, float offsetRadius1, float offsetRadius2) {
+		final double count = transitionPath.getLength();
+		final double increment = count / Math.max(1, Math.round(count));
+		double[] point1 = transitionPath.getPoint(0);
+		for (double i = 0; i < count - 0.1; i += increment) {
+			final double[] point2 = transitionPath.getPoint(i + increment);
+			final double rightX1 = Math.sin(point1[2]);
+			final double rightZ1 = -Math.cos(point1[2]);
+			final double rightX2 = Math.sin(point2[2]);
+			final double rightZ2 = -Math.cos(point2[2]);
+			callback.renderRail(
+					point1[0] + rightX1 * offsetRadius1, point1[1] + rightZ1 * offsetRadius1,
+					point1[0] + rightX1 * offsetRadius2, point1[1] + rightZ1 * offsetRadius2,
+					point2[0] + rightX2 * offsetRadius2, point2[1] + rightZ2 * offsetRadius2,
+					point2[0] + rightX2 * offsetRadius1, point2[1] + rightZ2 * offsetRadius1,
+					getPositionY(i), getPositionY(i + increment)
+			);
+			point1 = point2;
 		}
 	}
 

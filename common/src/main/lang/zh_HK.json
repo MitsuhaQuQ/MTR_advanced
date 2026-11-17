@@ -422,7 +422,7 @@
   "gui.mtr.direction_sw": "西南",
   "gui.mtr.direction_wn": "西北",
   "gui.mtr.direction_ne": "東北",
-  "gui.mtr.node_transition": "緩和曲線（暫不可用）",
+  "gui.mtr.node_transition": "緩和曲線長度 (格)",
   "gui.mtr.node_turn_back": "折返停留 (秒)",
   "gui.mtr.node_boundary_rail": "邊界軌道 → %s, %s, %s",
   "gui.mtr.node_set": "設定",
@@ -675,5 +675,16 @@
   "gui.mtr.gap_filler_material_cleared": "填縫材質改返被切嘅方塊",
   "gui.mtr.gap_filler_rail_not_here": "路軌唔喺呢塊上面",
   "gui.mtr.gap_filler_rail_too_high": "路軌比呢塊高出一格以上",
-  "tooltip.mtr.gap_filler_material": "材質：%s"
+  "tooltip.mtr.gap_filler_material": "材質：%s",
+  "gui.mtr.platform_too_steep": "無法修改：%s 嘅月台路軌斜度會到 %s‰（最多 %s‰）",
+  "gui.mtr.siding_too_steep": "無法修改：%s 嘅存車線路軌斜度會到 %s‰（最多 %s‰）",
+  "gui.mtr.saved_rail_too_uneven": "無法修改：%s 嘅月台或存車線路軌會上下起伏 %s 格（最多半格）",
+  "gui.mtr.siding_length_changes": "無法修改：%s 嘅存車線長度會變，列車係按佢嘅長度編組",
+  "gui.mtr.boarding_done": "已經上咗最近嘅列車，第 %s 卡（相距 %s 格）",
+  "gui.mtr.boarding_no_train": "呢個世界入面冇行緊嘅列車",
+  "gui.mtr.boarding_players_only": "只有玩家可以搭車",
+  "gui.mtr.image_deleted_named": "已經刪咗圖片「%s」",
+  "gui.mtr.image_missing": "冇圖片「%s」",
+  "gui.mtr.image_no_delete_permission": "冇權刪除圖片「%s」",
+  "gui.mtr.image_delete_failed": "圖片「%s」刪唔到，睇伺服器日誌"
 }

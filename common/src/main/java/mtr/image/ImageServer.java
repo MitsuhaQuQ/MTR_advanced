@@ -56,6 +56,49 @@ public final class ImageServer implements IPacket {
 		ENTRIES.forEach(entry -> oldNames.put(entry.resourceId, entry.oldNames));
 		return mtr.media.MediaIds.resolve(reference, ENTRIES, entry -> entry.name, entry -> entry.resourceId, mtr.media.MediaIds.byOldName(oldNames));
 	}
+	/**
+	 * The names a command may delete (0.95.0, {@code /mtr deletepic}): a player's own, or all for one who manages images
+	 * or the console with that permission level
+	 *
+	 * @param player null for the console or a command block
+	 */
+	public static List<String> deletableNames(ServerPlayer player, boolean consoleCanManage) {
+		final List<String> names = new ArrayList<>();
+		ENTRIES.forEach(entry -> {
+			if (player == null ? consoleCanManage : canDelete(player, entry)) {
+				names.add(entry.name);
+			}
+		});
+		return names;
+	}
+
+	/**
+	 * Deletes an image by command (0.95.0, {@code /mtr deletepic}) with the same rules as the editor's images page; the
+	 * console and command blocks go by {@code imageManagePermissionLevel}.
+	 *
+	 * @param player null for the console or a command block
+	 * @return the translation key of why nothing was deleted, or null if it was
+	 */
+	public static String deleteByCommand(MinecraftServer server, ServerPlayer player, boolean consoleCanManage, String reference) {
+		final ImageDatabase.Entry existing = database == null ? null : find(reference);
+		if (existing == null) {
+			return "gui.mtr.image_missing";
+		}
+		if (player == null ? !consoleCanManage : !canDelete(player, existing)) {
+			return "gui.mtr.image_no_delete_permission";
+		}
+		try {
+			database.delete(existing.name);
+			ENTRIES.clear();
+			ENTRIES.addAll(database.entries());
+		} catch (Exception e) {
+			e.printStackTrace();
+			return "gui.mtr.image_delete_failed";
+		}
+		server.getPlayerList().getPlayers().forEach(ImageServer::sendList);
+		return null;
+	}
+
 	public static void sendList(ServerPlayer player) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeByte(0); packet.writeUtf(session); packet.writeBoolean(database != null && canUpload(player)); packet.writeInt(ENTRIES.size());

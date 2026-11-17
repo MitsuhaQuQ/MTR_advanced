@@ -460,7 +460,8 @@ public abstract class RailMixin implements RailExtraSupplier {
         final double[] key = {h1, k1, r1, tStart1, tEnd1, h2, k2, r2, tStart2, tEnd2,
                 yStart, yEnd, reverseT1 ? 1 : 0, reverseT2 ? 1 : 0, isStraight1 ? 1 : 0, isStraight2 ? 1 : 0,
                 verticalCurveRadius, rollingOffset, isSecondaryDir ? 1 : 0, railType.ordinal(), count, offsetRadius1, offsetRadius2,
-                rail.hasGrades() ? 1 : 0, rail.getGradeStart(), rail.getGradeEnd(), rail.getVerticalRadiusStart(), rail.getVerticalRadiusEnd()};
+                rail.hasGrades() ? 1 : 0, rail.getGradeStart(), rail.getGradeEnd(), rail.getVerticalRadiusStart(), rail.getVerticalRadiusEnd(),
+                rail.getTransitionStart(), rail.getTransitionEnd()};
         final float[] points = mtrGeometryCache.get(key, rollAngleMap, () -> {
             final double increment = count / Math.round(count);
             final int capacity = (int) Math.ceil(count) + 1;
@@ -577,6 +578,12 @@ public abstract class RailMixin implements RailExtraSupplier {
     // Grades are set again in place when a node's grade changes, so what was worked out from the old ones goes
     @Inject(method = "setGrades", at = @At("TAIL"), remap = false)
     private void onSetGrades(double gradeStart, double gradeEnd, double radiusStart, double radiusEnd, CallbackInfo ci) {
+        dataBytes = null;
+    }
+
+    // Transition curves too (0.95.0): they change the shape and the length
+    @Inject(method = "setTransitions", at = @At("TAIL"), remap = false)
+    private void onSetTransitions(double start, double end, CallbackInfo ci) {
         dataBytes = null;
     }
 

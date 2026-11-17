@@ -95,6 +95,40 @@ public final class RailGrades {
 	}
 
 	/**
+	 * Sets the node's transition length on the ends of its rails at it, both ways (0.95.0).
+	 *
+	 * @return the far nodes of the rails changed
+	 */
+	public static List<BlockPos> refreshTransitions(BlockGetter world, Map<BlockPos, Map<BlockPos, Rail>> rails, BlockPos pos) {
+		final List<BlockPos> changed = new ArrayList<>();
+		final Map<BlockPos, Rail> connections = rails.get(pos);
+		if (connections == null || connections.isEmpty()) {
+			return changed;
+		}
+		final double transition = BlockNode.getTransition(world, pos);
+		connections.forEach((posEnd, rail) -> {
+			final Rail backwardsRail = getBackwards(rails, pos, posEnd);
+			if (backwardsRail != null && rail.railType.railSlopeStyle != RailType.RailSlopeStyle.CABLE && (Math.abs(rail.getTransitionStart() - transition) > CHANGE_THRESHOLD || Math.abs(backwardsRail.getTransitionEnd() - transition) > CHANGE_THRESHOLD)) {
+				rail.setTransitionStart(transition);
+				backwardsRail.setTransitionEnd(transition);
+				changed.add(posEnd);
+			}
+		});
+		return changed;
+	}
+
+	/**
+	 * Gives a new rail and its rail back the transition curves of their nodes (0.95.0), before {@link #startGrades}, as the
+	 * profile is worked out over the length they give.
+	 */
+	public static void startTransitions(BlockGetter world, BlockPos posStart, BlockPos posEnd, Rail rail, Rail backwardsRail) {
+		final double transitionStart = BlockNode.getTransition(world, posStart);
+		final double transitionEnd = BlockNode.getTransition(world, posEnd);
+		rail.setTransitions(transitionStart, transitionEnd);
+		backwardsRail.setTransitions(transitionEnd, transitionStart);
+	}
+
+	/**
 	 * Gives a new rail and its rail back level ends with the radii of their nodes, before {@link #refreshNode} sets the
 	 * nodes' grades on them.
 	 */

@@ -23,6 +23,19 @@ public class VehicleRidingServer {
 	private static final float INNER_PADDING = 0.5F;
 	private static final int BOX_PADDING = 3;
 
+	/**
+	 * Takes a player on board in the middle of a car, telling the players as {@link #mountRider} does (0.95.0)
+	 */
+	public static void board(Level world, Set<UUID> ridingEntities, long id, int car, ResourceLocation packetId, Player player) {
+		ridingEntities.add(player.getUUID());
+		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
+		packet.writeLong(id);
+		packet.writeFloat(0.5F);
+		packet.writeFloat(0.5F + car);
+		packet.writeUUID(player.getUUID());
+		world.players().forEach(worldPlayer -> Registry.sendToPlayer((ServerPlayer) worldPlayer, packetId, packet));
+	}
+
 	public static void mountRider(Level world, Set<UUID> ridingEntities, long id, long routeId, double carX, double carY, double carZ, double length, double width, float carYaw, float carPitch, boolean doorOpen, boolean canMount, int percentageOffset, ResourceLocation packetId, Function<Player, Boolean> canRide, Consumer<Player> ridingCallback) {
 		mountRider(world, ridingEntities, id, routeId, carX, carY, carZ, length, width, carYaw, carPitch, doorOpen, canMount, percentageOffset, packetId, canRide, ridingCallback, 0, 0);
 	}

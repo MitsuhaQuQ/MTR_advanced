@@ -23,6 +23,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import transitsim.network.Boundaries;
 import transitsim.network.RegionData;
+import transitsim.geometry.TransitionPath;
 import transitsim.geometry.VerticalProfile;
 
 import java.util.ArrayList;
@@ -62,6 +63,7 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	private final double autoGrade;
 	private final float savedGrade;
 	private final float savedVerticalRadius;
+	private final float savedTransition;
 	private final boolean hasOldRails;
 
 	private static final int MAX_VALUE_LENGTH = 6;
@@ -117,6 +119,7 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		autoGrade = world == null ? 0 : RailGrades.getAutoGrade(world, ClientData.RAILS, pos);
 		savedGrade = world == null ? Float.NaN : BlockNode.getGrade(world, pos);
 		savedVerticalRadius = world == null ? (float) VerticalProfile.DEFAULT_RADIUS : BlockNode.getVerticalRadius(world, pos);
+		savedTransition = world == null ? 0 : BlockNode.getTransition(world, pos);
 		hasOldRails = RailGrades.hasOldRails(ClientData.RAILS, pos);
 	}
 
@@ -155,8 +158,8 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		textFieldVerticalRadius.setValue(String.valueOf(Math.round(savedVerticalRadius)));
 
 		textFieldAngle.setValue(BlockNode.getAngleValue(angle));
-		textFieldTransition.setValue("0");
-		textFieldTransition.setEditable(false);
+		// The length of the transition curves at the node, in blocks (0.95.0)
+		textFieldTransition.setValue(formatTransition(savedTransition));
 
 		addDrawableChild(textFieldAngle);
 		addDrawableChild(textFieldTransition);
@@ -179,6 +182,7 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	@Override
 	public void tick() {
 		textFieldAngle.tick();
+		textFieldTransition.tick();
 		textFieldTurnBack.tick();
 		textFieldGrade.tick();
 		textFieldVerticalRadius.tick();
@@ -296,6 +300,10 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		}
 	}
 
+	private static String formatTransition(float transition) {
+		return transition == Math.round(transition) ? String.valueOf(Math.round(transition)) : String.format(Locale.ENGLISH, "%.1f", transition);
+	}
+
 	private static String formatPerMille(double grade) {
 		return String.format(Locale.ENGLISH, "%.1f", grade * PER_MILLE);
 	}
@@ -363,7 +371,9 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 			final String turnBackText = textFieldTurnBack.getValue();
 			final int turnBackDwell = turnBackRail == null ? -1 : turnBackText.isEmpty() ? 0 : Integer.parseInt(turnBackText) * 2;
 			final float grade = checkboxGradeAuto.selected() ? Float.NaN : (float) VerticalProfile.clampGrade(Double.parseDouble(textFieldGrade.getValue()) / PER_MILLE);
-			PacketTrainDataGuiClient.sendNodeAngleC2S(pos, Float.parseFloat(textFieldAngle.getValue()), checkboxKeyNode.selected(), turnBackDwell, grade, (float) getTypedVerticalRadius());
+			final String transitionText = textFieldTransition.getValue();
+			final float transition = transitionText.isEmpty() ? 0 : (float) Math.max(0, Math.min(TransitionPath.MAX_LENGTH, Double.parseDouble(transitionText)));
+			PacketTrainDataGuiClient.sendNodeAngleC2S(pos, Float.parseFloat(textFieldAngle.getValue()), checkboxKeyNode.selected(), turnBackDwell, grade, (float) getTypedVerticalRadius(), transition);
 			final Boundaries boundaries = ClientData.PATH_REGIONS.boundaries;
 			if (checkboxBoundary.selected() != boundaries.nodes.contains(pos.asLong())) {
 				PacketTrainDataGuiClient.sendPathBoundaryC2S(pos, null, checkboxBoundary.selected());

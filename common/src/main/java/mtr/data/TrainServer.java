@@ -384,6 +384,14 @@ public class TrainServer extends Train {
 		}
 	}
 
+	/**
+	 * Takes a player on board a car as stepping into it would (0.95.0, {@code /mtr boarding}), wherever the train is and
+	 * whether its doors are open or not; the player is put in the middle of the car first.
+	 */
+	public void board(Level world, Player player, int car) {
+		VehicleRidingServer.board(world, ridingEntities, id, car, PACKET_UPDATE_TRAIN_PASSENGERS, player);
+	}
+
 	@Override
 	protected boolean handlePositions(Level world, Vec3[] positions, float ticksElapsed) {
 		final AABB trainAABB = new AABB(positions[0], positions[positions.length - 1]).inflate(TRAIN_UPDATE_DISTANCE);

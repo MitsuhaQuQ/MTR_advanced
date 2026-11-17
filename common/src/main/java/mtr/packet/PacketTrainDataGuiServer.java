@@ -1206,8 +1206,9 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		final int turnBackDwell = packet.readInt();
 		final float grade = packet.readFloat();
 		final float verticalRadius = packet.readFloat();
+		final float transition = packet.readFloat();
 		PacketGuard.execute(minecraftServer, () -> {
-			if (!canEditBlock(player, pos) || !Float.isFinite(angle) || Float.isInfinite(grade) || !Float.isFinite(verticalRadius)) {
+			if (!canEditBlock(player, pos) || !Float.isFinite(angle) || Float.isInfinite(grade) || !Float.isFinite(verticalRadius) || !Float.isFinite(transition)) {
 				return;
 			}
 			final Level world = Compat.getLevel(player);
@@ -1215,22 +1216,35 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 			final RailwayData railwayData = RailwayData.getInstance(world);
 			if (railwayData != null && state.getBlock() instanceof BlockNode.BlockFreeAngleNode) {
 				railwayData.setKeyNode(pos, isKeyNode);
-				BlockNode.setGrade(world, pos, grade, verticalRadius);
-				// Setting only the key node option must not touch the rails
-				final RailAngle newAngle = RailAngle.fromAngle(angle);
-				final String error = railwayData.isNodeFacing(pos, newAngle) ? null : railwayData.rotateNodeRails(player, pos, newAngle);
-				if (error == null) {
-					BlockNode.setCustomAngle(world, pos, angle);
-					player.displayClientMessage(Text.literal(BlockNode.getAngleText(angle)), true);
-				} else {
-					// The node renderer rewrites the action bar every frame, so this has to go to chat to be seen
-					player.displayClientMessage(Text.translatable(error), false);
-				}
 				if (turnBackDwell >= 0) {
 					railwayData.setTurnBackDwell(pos, Math.min(turnBackDwell, Rail.MAX_TURN_BACK_DWELL));
 				}
-				// Grades go the way the node faces, which is only saved after the rails have turned
-				railwayData.refreshNodeGrades(Collections.singletonList(pos));
+				// The rails change only once checked (0.95.0): platforms and sidings stay level, sidings keep their length
+				final RailEdit railEdit = new RailEdit(world, railwayData.getRails(), Collections.singletonList(pos));
+				BlockNode.setGrade(world, pos, grade, verticalRadius);
+				BlockNode.setTransition(world, pos, transition);
+				// Setting only the key node option must not touch the rails
+				final RailAngle newAngle = RailAngle.fromAngle(angle);
+				final String error = railwayData.isNodeFacing(pos, newAngle) ? null : railwayData.rotateNodeRails(player, pos, newAngle, false);
+				if (error == null) {
+					BlockNode.setCustomAngle(world, pos, angle);
+				}
+				// Transitions change the rails' lengths, and grades go the way the node faces, which is only saved after the rails have turned
+				railwayData.refreshNodeTransitions(Collections.singletonList(pos), false);
+				railwayData.refreshNodeGrades(Collections.singletonList(pos), false);
+				final Object[] slopeError = railEdit.check();
+				if (slopeError != null) {
+					railEdit.undo();
+					// The node renderer rewrites the action bar every frame, so this has to go to chat to be seen
+					player.displayClientMessage(Text.translatable((String) slopeError[0], Arrays.copyOfRange(slopeError, 1, slopeError.length)), false);
+					return;
+				}
+				railEdit.sendChanged(railwayData);
+				if (error == null) {
+					player.displayClientMessage(Text.literal(BlockNode.getAngleText(angle)), true);
+				} else {
+					player.displayClientMessage(Text.translatable(error), false);
+				}
 			}
 		});
 	}

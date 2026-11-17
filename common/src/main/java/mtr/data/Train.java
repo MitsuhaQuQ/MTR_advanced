@@ -1233,6 +1233,23 @@ public abstract class Train extends NameColorDataBase implements IPacket {
 		return railProgress - car * trainSpacing;
 	}
 
+	/**
+	 * @return the middle of each car, numbered as the cars are for riding ({@link #simulateCar}), for taking a player on
+	 * board by command (0.95.0, {@code /mtr boarding}); null when the train has no path
+	 */
+	public final Vec3[] getCarCentres() {
+		if (path.isEmpty() || trainCars <= 0) {
+			return null;
+		}
+		final Vec3[] centres = new Vec3[trainCars];
+		for (int i = 0; i < trainCars; i++) {
+			final Vec3 start = getRoutePosition(reversed ? trainCars - i : i, spacing);
+			final Vec3 end = getRoutePosition(reversed ? trainCars - i - 1 : i + 1, spacing);
+			centres[i] = start.add(end).scale(0.5);
+		}
+		return centres;
+	}
+
 	private Vec3 getRoutePosition(int car, int trainSpacing) {
 		final double tempRailProgress = Math.max(getRailProgress(car, trainSpacing) - getModelZOffset(), 0);
 		final int index = getIndex(tempRailProgress, false);

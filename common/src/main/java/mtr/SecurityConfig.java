@@ -33,6 +33,8 @@ public final class SecurityConfig {
 	public static volatile int audioManagePermissionLevel = 2;
 	public static volatile int imageUploadPermissionLevel = 2;
 	public static volatile int imageManagePermissionLevel = 2;
+	// Who may use /mtr boarding (0.95.0), which takes a player anywhere in the world: operators by default
+	public static volatile int boardingPermissionLevel = 2;
 	public static volatile int audioMaxFileKilobytes = 5120;
 	public static volatile int audioMaxTotalMegabytes = 256;
 	public static volatile int imageMaxTotalMegabytes = 256;
@@ -117,6 +119,7 @@ public final class SecurityConfig {
 				audioManagePermissionLevel = getInt(jsonObject, KEY_AUDIO_MANAGE_PERMISSION_LEVEL, 2, 0, 4);
 				imageUploadPermissionLevel = getInt(jsonObject, "imageUploadPermissionLevel", 2, 0, 4);
 				imageManagePermissionLevel = getInt(jsonObject, "imageManagePermissionLevel", 2, 0, 4);
+				boardingPermissionLevel = getInt(jsonObject, "boardingPermissionLevel", 2, 0, 4);
 				audioMaxFileKilobytes = getInt(jsonObject, KEY_AUDIO_MAX_FILE_KILOBYTES, 5120, 0, AudioFiles.MAX_FILE_BYTES / 1024);
 				audioMaxTotalMegabytes = getInt(jsonObject, KEY_AUDIO_MAX_TOTAL_MEGABYTES, 256, 0, 4096);
 				imageMaxTotalMegabytes = getInt(jsonObject, "imageMaxTotalMegabytes", 256, 1, 4096);
@@ -182,6 +185,7 @@ public final class SecurityConfig {
 		jsonObject.addProperty(KEY_AUDIO_MANAGE_PERMISSION_LEVEL, audioManagePermissionLevel);
 		jsonObject.addProperty("imageUploadPermissionLevel", imageUploadPermissionLevel);
 		jsonObject.addProperty("imageManagePermissionLevel", imageManagePermissionLevel);
+		jsonObject.addProperty("boardingPermissionLevel", boardingPermissionLevel);
 		jsonObject.addProperty(KEY_AUDIO_MAX_FILE_KILOBYTES, audioMaxFileKilobytes);
 		jsonObject.addProperty(KEY_THROAT_LOCKS, throatLocks);
 		jsonObject.addProperty(KEY_EDITOR_SIMULATION, editorSimulation);
