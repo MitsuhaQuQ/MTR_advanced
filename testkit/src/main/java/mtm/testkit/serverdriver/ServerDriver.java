@@ -242,6 +242,12 @@ public final class ServerDriver {
 						rail.addProperty("transitionStart", entry.getValue().getTransitionStart());
 						rail.addProperty("transitionEnd", entry.getValue().getTransitionEnd());
 						rail.addProperty("length", entry.getValue().getLength());
+						// 0.98.0: the superelevation set from the nodes and the roll it gives halfway along
+						rail.addProperty("cantStart", entry.getValue().getCantStart());
+						rail.addProperty("cantEnd", entry.getValue().getCantEnd());
+						rail.addProperty("cantSpeedStart", entry.getValue().getCantSpeedStart());
+						rail.addProperty("cantSpeedEnd", entry.getValue().getCantSpeedEnd());
+						rail.addProperty("rollMiddle", entry.getValue().getCantRoll(entry.getValue().getLength() / 2));
 						// Points along it every 2 blocks, [x, y, z], to find where a curve runs
 						final JsonArray points = new JsonArray();
 						for (double along = 0; along <= entry.getValue().getLength(); along += 2) {

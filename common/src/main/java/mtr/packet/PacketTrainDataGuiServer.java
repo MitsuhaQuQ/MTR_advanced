@@ -1207,8 +1207,11 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 		final float grade = packet.readFloat();
 		final float verticalRadius = packet.readFloat();
 		final float transition = packet.readFloat();
+		final float cant = packet.readFloat();
+		final float cantSpeed = packet.readFloat();
+		final boolean cantInDegrees = packet.readBoolean();
 		PacketGuard.execute(minecraftServer, () -> {
-			if (!canEditBlock(player, pos) || !Float.isFinite(angle) || Float.isInfinite(grade) || !Float.isFinite(verticalRadius) || !Float.isFinite(transition)) {
+			if (!canEditBlock(player, pos) || !Float.isFinite(angle) || Float.isInfinite(grade) || !Float.isFinite(verticalRadius) || !Float.isFinite(transition) || !Float.isFinite(cant) || !Float.isFinite(cantSpeed)) {
 				return;
 			}
 			final Level world = Compat.getLevel(player);
@@ -1223,6 +1226,7 @@ public class PacketTrainDataGuiServer extends PacketTrainDataBase {
 				final RailEdit railEdit = new RailEdit(world, railwayData.getRails(), Collections.singletonList(pos));
 				BlockNode.setGrade(world, pos, grade, verticalRadius);
 				BlockNode.setTransition(world, pos, transition);
+				BlockNode.setCant(world, pos, cant, cantSpeed, cantInDegrees);
 				// Setting only the key node option must not touch the rails
 				final RailAngle newAngle = RailAngle.fromAngle(angle);
 				final String error = railwayData.isNodeFacing(pos, newAngle) ? null : railwayData.rotateNodeRails(player, pos, newAngle, false);

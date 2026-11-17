@@ -40,6 +40,7 @@ function Head({ depot, choose, pxPerHour, setPxPerHour }: { depot: any; choose: 
     const items: MenuItem[] = [
       [tr("编辑车厂…"), () => fn.depotDialog(depot)],
       [tr("出入库规则…"), () => fn.depotRulesDialog(depot)],
+      [tr("刷新路径"), canEdit ? () => fn.refreshPaths(depot) : null],
       [tr("按时刻表把列车摆到现在的位置…"), canEdit ? () => fn.placeTrainsDialog(depot) : null],
       [tr("运用组…"), () => fn.dutyGroupsDialog(depot)],
       [tr("线路换车厂…"), canEdit && v.data.depots.length > 1 ? () => panelHost.current?.({ kind: "moveLine", depotId: depot.id, lineKey: "" }) : null],
@@ -70,6 +71,7 @@ function Head({ depot, choose, pxPerHour, setPxPerHour }: { depot: any; choose: 
         <button className="btn" onClick={() => fn.setDutyMode(depot, duties.mode === "diagram" ? "online" : "diagram")}>{duties.mode === "diagram" ? tr("改为自动排班") : tr("改为按运用图")}</button>
         <button className="btn" onClick={more} aria-haspopup="menu">{tr("更多 ▾")}</button>
       </div>
+      {v.dutyNotice && <p role="status" className="m-0 text-[12px] text-brand">{v.dutyNotice}</p>}
       {(short || (depot.shortfall && depot.shortfall.replan && duties.auto)) && (
         <p className={"m-0 text-[12px] " + (short ? "text-warn" : "text-caution")}>{short ? fn.shortfallText(depot.shortfall) : fn.replanText(depot.shortfall)}</p>
       )}

@@ -23,6 +23,7 @@
 - `deleteLogicalLine(line)`：危险确认后 `X.deleteLogicalLine`，`saveDraft`、`renderAll`、`renderNetworkTools`、`drawNetwork`。
 - `generateDuties(depot)`：草稿或游戏中已有运用时先确认替换，再 `generate`。调用者：`views/DutyBoard.tsx:68`。
 - `replanDialog(depot)`：说明重新排运用（附 `fn.replanText`），确认后 POST `api/replan-duties`。调用者：`views/DutyBoard.tsx:69`。
+- `refreshPaths(depot)`（0.98.0）：不问，直接 POST `api/refresh-paths`，提示“已请求重新找“…”的路径，结果见同步面板。”。调用者：`views/DutyBoard.tsx`“更多”菜单的“刷新路径”。`notice` 设 `v.dutyNotice` 后同时 `fn.renderAll()`，提示显示在车厂页标题栏下（0.98.0 之前只赋值、新页面不显示）。
 - `placeTrainsDialog(depot)`：说明"按时刻表摆车"，确认后 POST `api/place-trains`。调用者：`views/DutyBoard.tsx:43`。
 - `deleteTypeDialog(r)`：统计跑该种别的车厂、运用中它的班次数、直通到它的班次数并列出影响；危险确认后在草稿条目设 `deleted = true`（非冲突时清错误），`saveDraft`、`renderAll`。调用者：`views/Layers.tsx:337`（经 `fn`，按钮代码，未完全展开确认）。
 - `stationWaitDialog(station)`：车站等候分界输入（秒，留空用全网值，0–3600），`X.setStationWait`，`saveDraft`、`renderAll`。调用者：旧代码（`src` 中未见直接调用）。

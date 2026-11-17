@@ -594,5 +594,7 @@
   "gui.mtr.platform_edge_undo_button": "[Undo]",
   "gui.mtr.platform_edge_undo_hover": "Take back the platform edge just laid along this side",
   "gui.mtr.platform_edge_undone": "Took back %s platform edge blocks",
-  "gui.mtr.platform_edge_nothing_to_undo": "No platform edge laid by sneaking to undo here"
+  "gui.mtr.platform_edge_nothing_to_undo": "No platform edge laid by sneaking to undo here",
+  "gui.mtr.node_cant": "Superelevation (mm / °)",
+  "gui.mtr.node_cant_speed": "Or design speed (km/h)"
 }

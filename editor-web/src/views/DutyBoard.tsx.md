@@ -15,7 +15,8 @@
 ## 内部组件
 ### `Head({ depot, choose, pxPerHour, setPxPerHour })`
 - 车厂下拉、运用方式标签（自动运用 / 按运用图 / 自动排班，`fn.dutiesOf`）、星期与运行日类型（`fn.dayGroup`）、缩放按钮组。
-- 按钮："一键生成运用…"（`fn.generateDuties`）、自动运用时"重新排运用…"（`fn.replanDialog`）、切换"按运用图/自动排班"（`fn.setDutyMode(depot, mode)`）、"更多 ▾"菜单（`menuHost`）：编辑车厂…（`fn.depotDialog`）、出入库规则…（`fn.depotRulesDialog`）、按时刻表摆车…（`fn.placeTrainsDialog`）、运用组…（`fn.dutyGroupsDialog`）、线路换车厂…（`panelHost` 的 `moveLine`）、出入库计划…（`fn.releasePlanDialog`）、丢掉运用的草稿（删 `v.draft.duties[depot]`，`fn.saveDraft()`、`fn.renderAll()`）。
+- 按钮："一键生成运用…"（`fn.generateDuties`）、自动运用时"重新排运用…"（`fn.replanDialog`）、切换"按运用图/自动排班"（`fn.setDutyMode(depot, mode)`）、"更多 ▾"菜单（`menuHost`）：编辑车厂…（`fn.depotDialog`）、出入库规则…（`fn.depotRulesDialog`）、刷新路径（`fn.refreshPaths`，0.98.0）、按时刻表摆车…（`fn.placeTrainsDialog`）、运用组…（`fn.dutyGroupsDialog`）、线路换车厂…（`panelHost` 的 `moveLine`）、出入库计划…（`fn.releasePlanDialog`）、丢掉运用的草稿（删 `v.draft.duties[depot]`，`fn.saveDraft()`、`fn.renderAll()`）。
+- 提示（0.98.0）：`v.dutyNotice` 不为空时在说明文字上面显示一行（`role="status"`），摆车、重新排运用、刷新路径等请求的结果都在这里。
 - 缺车时显示 `fn.shortfallText`，自动运用有可重排提示时显示 `fn.replanText`；操作说明随是否选中一列车变化。
 
 ### `type Row`

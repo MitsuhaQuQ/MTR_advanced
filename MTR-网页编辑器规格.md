@@ -109,7 +109,7 @@
 | `api/draft` | 读写草稿 |
 | `api/apply` | 应用操作列表 |
 | `api/times` | 按游戏规则算草稿时刻表的各站时刻，不改游戏 |
-| `api/plan-duties`、`api/replan-duties`、`api/place-trains` | 生成运用初稿（在页面里算，结果进草稿）；让服务端重排运用；按时刻表摆放列车 |
+| `api/plan-duties`、`api/replan-duties`、`api/place-trains`、`api/refresh-paths` | 生成运用初稿（在页面里算，结果进草稿）；让服务端重排运用；按时刻表摆放列车；重新找一个车厂的路径（0.98.0，车厂页“更多 ▾ → 刷新路径”，同游戏车厂界面的按钮） |
 | `api/simulate` | 用草稿模拟一天 |
 | `api/network` | 全网配线：节点、轨道（种类、隔离、形状）、车站、各线路的路径节点和各停站位置（`stopNodes`）、归属（`owners`：每条轨道的手改标记、区段号、逻辑线路、能走的运营线路） |
 | `api/layout`、`api/route-layout` | 车站周围的配线图；一条线路拉直的配线图 |

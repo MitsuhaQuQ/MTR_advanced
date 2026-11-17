@@ -1487,6 +1487,8 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 站台边在屏蔽门下的样式和曲线门的上下车箭头、站台块拆门还原朝向（`BlockPlatform.BASE_FACING`）、`/kill` 不清 MTR 实体（`KillProtection`）（0.97.0）只在游戏一侧，不涉及组件。
 
+外轨超高（0.98.0）：组件 `transitsim.geometry.Superelevation`（由等距点的曲率、两端节点的超高或设计速度求沿轨道的侧倾，`SuperelevationTest`）；游戏 `Rail.setCants`/`getCantRoll`、`BlockNode` 的 `cant`/`cant_speed`、`RailGrades` 带到轨道、`RailExtraSupplier.getRollAngle` 接 ANTE 侧倾。组件还没有把超高用在速度上。
+
 填缝方块斜顶（0.94.0）：组件 `SlopedTops`（四角高度、双线性、小柱高度；测试 `SlopedTopsTest`：平地整块、沿 x 的坡、跨块边界上下两块）；游戏 `BlockGapFiller.cornerHeights`、`Rail.RailActions` 的 `railHeights`/`slopedTop`/`keepUnderRail`、桥梁按列铺桥面、`ItemGapFiller` 的材质和顶面、`RenderPlatformEdge.slopedFan`。
 
 填缝方块的切线（0.93.0）：组件 `PlatformEdges.fillerCutOf`、`FILLER_SNAP`（测试 `PlatformEdgesTest` 网格对齐取整块、斜线两侧互补）；游戏 `BlockGapFiller`（找轨道最近点、放置）、`Rail.RailActions` 的隧道、桥梁、隧道壁创建器、`ItemGapFiller`、`RenderPlatformEdge.GapFiller`。

@@ -70,7 +70,7 @@
 | 闭塞分区、信号机绑定、单线方向预约 | **未开始** **（部分实现：闭塞分区 0.11.0，提交 e522fe43，长轨道按制动距离切分区，信号机按前方分区显示（`SignalAspects`）；单线方向预约 2026-11-03，提交 29d4e74d（F1）、45379124（S4b 仲裁器）；"信号机绑定"是否算完成未查实）** | 不适用 | 不适用 |
 | TPS 补偿 | 已完成 | 构建通过 | 简单场景实测通过 |
 | 速度曲线：限速、提前减速、分开的加减速度、按时刻降速巡航和晚点追回，时刻按线路自己的路径计算 | 第一版已完成（第 8 节），按车厂开关，新车厂默认开启。曲率、竖曲线和通过站限速未做 **（部分实现：通过站限速 0.45.0，提交 37e4a4c0，`Platform.passSpeed`、`PlatformSpeeds`；还缺曲率限速、竖曲线限速）** | 单元测试通过（`SpeedProfileTest` 5 项、`SpeedCurvesTest` 2 项） | 实测通过（T79 至 T82，2026-11-03） |
-| 纵曲线与缓和曲线 | 纵曲线和节点坡度 0.87.0 已完成（新铺轨道用，第 9.2 节）；缓和曲线 0.95.0 已完成（节点设缓和长度，第 9.3 节，`TransitionPathTest`、`RailTransitionsTest`）；竖曲线限速、按曲率限速未做 | 单元测试通过（`VerticalProfileTest`、`RailStraightAndGradesTest`） | 未实测（U524–U529） |
+| 纵曲线与缓和曲线 | 纵曲线和节点坡度 0.87.0 已完成（新铺轨道用，第 9.2 节）；缓和曲线 0.95.0 已完成（节点设缓和长度，第 9.3 节，`TransitionPathTest`、`RailTransitionsTest`）；外轨超高 0.98.0 已完成（节点设超高或设计速度，`SuperelevationTest`、`RailCantTest`）；竖曲线限速、按曲率限速未做 | 单元测试通过（`VerticalProfileTest`、`RailStraightAndGradesTest`） | 未实测（U524–U529） |
 | 移植到 1.20.1 | 已完成 | Fabric 开发客户端可进世界，Forge 发布 jar 服务端可启动和保存 | Forge 和 Fabric 客户端用户实测正常 |
 | ANTE 并入核心 | 打包、`Train`、`Depot`、`Route` 已完成，`Rail` 未合并 | 五个版本构建通过，Forge 和 Fabric 服务端可启动 | 1.20.1 Fabric 用户实测通过，带 MSD 的存档能载入 |
 | 附属模组兼容 | MSD、YJCM、Metropolis、SHMetro 引用的 MTR 方法和字段都不缺 | 对比附属模组 jar 的常量池 | 带 MSD 实测通过，其余只验证了引用 |

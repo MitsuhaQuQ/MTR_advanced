@@ -209,6 +209,26 @@ public class BlockNode extends BlockDirectionalMapper {
 	}
 
 	/**
+	 * @return the superelevation set on the node (0.98.0): {cant in mm, design speed in km/h, 1 if the cant is shown in
+	 * degrees else 0}, the first two 0 for none
+	 */
+	public static float[] getCant(BlockGetter world, BlockPos pos) {
+		final BlockEntity entity = world.getBlockEntity(pos);
+		return entity instanceof TileEntityNode ? new float[]{((TileEntityNode) entity).cant, ((TileEntityNode) entity).cantSpeed, ((TileEntityNode) entity).cantInDegrees ? 1 : 0} : new float[]{0, 0, 0};
+	}
+
+	/**
+	 * @param inDegrees whether the node screen shows the cant as the angle it gives rather than in mm; the cant itself is
+	 *                  kept in mm either way
+	 */
+	public static void setCant(BlockGetter world, BlockPos pos, float cant, float speed, boolean inDegrees) {
+		final BlockEntity entity = world.getBlockEntity(pos);
+		if (entity instanceof TileEntityNode) {
+			((TileEntityNode) entity).setCant(cant, speed, inDegrees);
+		}
+	}
+
+	/**
 	 * @return what the node keeps (angle, grade, transition), to put back with {@link #restoreSettings} when an edit is
 	 * undone; null for a node without them
 	 */
@@ -317,8 +337,21 @@ public class BlockNode extends BlockDirectionalMapper {
 		 * The length of the transition curves of the rails at the node, 0 for none (0.95.0)
 		 */
 		private float transition;
+		/**
+		 * The superelevation of the rails at the node (0.98.0): a cant in mm, and a design speed in km/h it is worked out
+		 * from instead when above 0; both 0 for none
+		 */
+		private float cant;
+		private float cantSpeed;
+		/**
+		 * Whether the cant was typed, and is shown, as an angle in degrees (0.98.0); it is kept in mm either way
+		 */
+		private boolean cantInDegrees;
 
 		private static final String KEY_CUSTOM_ANGLE = "custom_angle";
+		private static final String KEY_CANT = "cant";
+		private static final String KEY_CANT_SPEED = "cant_speed";
+		private static final String KEY_CANT_DEGREES = "cant_degrees";
 		private static final String KEY_TRANSITION = "transition";
 		private static final String KEY_GRADE = "grade";
 		private static final String KEY_VERTICAL_RADIUS = "vertical_radius";
@@ -334,6 +367,9 @@ public class BlockNode extends BlockDirectionalMapper {
 			grade = compoundTag.contains(KEY_GRADE) ? compoundTag.getFloat(KEY_GRADE) : Float.NaN;
 			verticalRadius = compoundTag.contains(KEY_VERTICAL_RADIUS) ? compoundTag.getFloat(KEY_VERTICAL_RADIUS) : (float) VerticalProfile.DEFAULT_RADIUS;
 			transition = compoundTag.getFloat(KEY_TRANSITION);
+			cant = compoundTag.getFloat(KEY_CANT);
+			cantSpeed = compoundTag.getFloat(KEY_CANT_SPEED);
+			cantInDegrees = compoundTag.getBoolean(KEY_CANT_DEGREES);
 		}
 
 		@Override
@@ -350,6 +386,23 @@ public class BlockNode extends BlockDirectionalMapper {
 			if (transition > 0) {
 				compoundTag.putFloat(KEY_TRANSITION, transition);
 			}
+			if (cant > 0) {
+				compoundTag.putFloat(KEY_CANT, cant);
+			}
+			if (cantSpeed > 0) {
+				compoundTag.putFloat(KEY_CANT_SPEED, cantSpeed);
+			}
+			if (cantInDegrees) {
+				compoundTag.putBoolean(KEY_CANT_DEGREES, true);
+			}
+		}
+
+		private void setCant(float cant, float speed, boolean inDegrees) {
+			this.cantInDegrees = inDegrees;
+			this.cant = Float.isFinite(cant) ? Math.max(0, Math.min((float) transitsim.geometry.Superelevation.MAX_CANT, cant)) : 0;
+			this.cantSpeed = Float.isFinite(speed) ? Math.max(0, Math.min((float) transitsim.geometry.Superelevation.MAX_SPEED, speed)) : 0;
+			setChanged();
+			syncData();
 		}
 
 		private void setTransition(float transition) {

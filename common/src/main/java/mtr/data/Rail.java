@@ -30,6 +30,7 @@ import net.minecraft.world.phys.Vec3;
 import org.msgpack.core.MessagePacker;
 import org.msgpack.value.Value;
 import transitsim.geometry.PlatformEdges;
+import transitsim.geometry.Superelevation;
 import transitsim.geometry.SlopedTops;
 import transitsim.geometry.TransitionPath;
 import transitsim.geometry.VerticalProfile;
@@ -83,6 +84,19 @@ public class Rail extends SerializedDataBase {
 	 * The shape with transition curves, or null when the rail has none or none fit, and the old shape is used
 	 */
 	private TransitionPath transitionPath;
+	/**
+	 * The superelevation set at the start and the end nodes (0.98.0): a cant in mm, and a design speed in km/h it is
+	 * worked out from instead when above 0 ({@link Superelevation}); all 0 for none
+	 */
+	private double cantStart;
+	private double cantEnd;
+	private double cantSpeedStart;
+	private double cantSpeedEnd;
+	/**
+	 * The roll along the rail from its superelevation every {@link #CANT_STEP}, worked out when first asked for after the
+	 * settings or the shape change; null for none yet
+	 */
+	private float[] cantRolls;
 
 	private static final double ACCEPT_THRESHOLD = 1E-4;
 	private static final double ANGLE_THRESHOLD = 1E-9;
@@ -118,6 +132,11 @@ public class Rail extends SerializedDataBase {
 	private static final String KEY_VERTICAL_RADIUS_END = "vertical_radius_end";
 	private static final String KEY_TRANSITION_START = "transition_start";
 	private static final String KEY_TRANSITION_END = "transition_end";
+	private static final String KEY_CANT_START = "cant_start";
+	private static final String KEY_CANT_END = "cant_end";
+	private static final String KEY_CANT_SPEED_START = "cant_speed_start";
+	private static final String KEY_CANT_SPEED_END = "cant_speed_end";
+	private static final double CANT_STEP = 0.5;
 	/**
 	 * Keys ANTE saved with every rail; only read, for its Bézier rails ({@link #fromAnteBezier}).
 	 */
@@ -354,6 +373,7 @@ public class Rail extends SerializedDataBase {
 		facingEnd = getRailAngle(true);
 		// The shape first: the vertical profile is worked out over its length
 		setTransitions(messagePackHelper.getDouble(KEY_TRANSITION_START, 0), messagePackHelper.getDouble(KEY_TRANSITION_END, 0));
+		setCants(messagePackHelper.getDouble(KEY_CANT_START, 0), messagePackHelper.getDouble(KEY_CANT_SPEED_START, 0), messagePackHelper.getDouble(KEY_CANT_END, 0), messagePackHelper.getDouble(KEY_CANT_SPEED_END, 0));
 		if (map.containsKey(KEY_GRADE_START) && map.containsKey(KEY_GRADE_END)) {
 			setGrades(messagePackHelper.getDouble(KEY_GRADE_START), messagePackHelper.getDouble(KEY_GRADE_END), messagePackHelper.getDouble(KEY_VERTICAL_RADIUS_START, VerticalProfile.DEFAULT_RADIUS), messagePackHelper.getDouble(KEY_VERTICAL_RADIUS_END, VerticalProfile.DEFAULT_RADIUS));
 		}
@@ -402,6 +422,7 @@ public class Rail extends SerializedDataBase {
 		facingStart = getRailAngle(false);
 		facingEnd = getRailAngle(true);
 		setTransitions(compoundTag.getDouble(KEY_TRANSITION_START), compoundTag.getDouble(KEY_TRANSITION_END));
+		setCants(compoundTag.getDouble(KEY_CANT_START), compoundTag.getDouble(KEY_CANT_SPEED_START), compoundTag.getDouble(KEY_CANT_END), compoundTag.getDouble(KEY_CANT_SPEED_END));
 	}
 
 	public Rail(FriendlyByteBuf packet) {
@@ -430,6 +451,10 @@ public class Rail extends SerializedDataBase {
 		// Before the ANTE fields, which its mixin reads after this constructor; the shape before the profile over it
 		final double newTransitionStart = packet.readDouble();
 		setTransitions(newTransitionStart, packet.readDouble());
+		final double newCantStart = packet.readDouble();
+		final double newCantSpeedStart = packet.readDouble();
+		final double newCantEnd = packet.readDouble();
+		setCants(newCantStart, newCantSpeedStart, newCantEnd, packet.readDouble());
 		if (packet.readBoolean()) {
 			setGrades(packet.readDouble(), packet.readDouble(), packet.readDouble(), packet.readDouble());
 		}
@@ -466,11 +491,17 @@ public class Rail extends SerializedDataBase {
 			messagePacker.packString(KEY_TRANSITION_START).packDouble(transitionStart);
 			messagePacker.packString(KEY_TRANSITION_END).packDouble(transitionEnd);
 		}
+		if (hasCant()) {
+			messagePacker.packString(KEY_CANT_START).packDouble(cantStart);
+			messagePacker.packString(KEY_CANT_END).packDouble(cantEnd);
+			messagePacker.packString(KEY_CANT_SPEED_START).packDouble(cantSpeedStart);
+			messagePacker.packString(KEY_CANT_SPEED_END).packDouble(cantSpeedEnd);
+		}
 	}
 
 	@Override
 	public int messagePackLength() {
-		return 19 + (hasGrades ? 4 : 0) + (hasTransitions() ? 2 : 0);
+		return 19 + (hasGrades ? 4 : 0) + (hasTransitions() ? 2 : 0) + (hasCant() ? 4 : 0);
 	}
 
 	@Override
@@ -496,6 +527,10 @@ public class Rail extends SerializedDataBase {
 		packet.writeInt(turnBackDwell);
 		packet.writeDouble(transitionStart);
 		packet.writeDouble(transitionEnd);
+		packet.writeDouble(cantStart);
+		packet.writeDouble(cantSpeedStart);
+		packet.writeDouble(cantEnd);
+		packet.writeDouble(cantSpeedEnd);
 		packet.writeBoolean(hasGrades);
 		if (hasGrades) {
 			packet.writeDouble(gradeStart);
@@ -569,8 +604,10 @@ public class Rail extends SerializedDataBase {
 		// The shape first, as the profile is worked out over its length
 		if (reversed) {
 			setTransitions(rail.transitionEnd, rail.transitionStart);
+			setCants(rail.cantEnd, rail.cantSpeedEnd, rail.cantStart, rail.cantSpeedStart);
 		} else {
 			setTransitions(rail.transitionStart, rail.transitionEnd);
+			setCants(rail.cantStart, rail.cantSpeedStart, rail.cantEnd, rail.cantSpeedEnd);
 		}
 		if (rail.hasGrades) {
 			if (reversed) {
@@ -612,11 +649,89 @@ public class Rail extends SerializedDataBase {
 		transitionStart = sanitizeTransition(start);
 		transitionEnd = sanitizeTransition(end);
 		transitionPath = hasTransitions() ? buildTransitionPath() : null;
+		cantRolls = null;
 		mapShapeDone = false;
 		mapShape = null;
 		if (hasGrades) {
 			setGrades(gradeStart, gradeEnd, verticalRadiusStart, verticalRadiusEnd);
 		}
+	}
+
+	/**
+	 * Gives the rail the superelevation of its nodes (0.98.0), or takes it away with all 0; cable car rails have none
+	 *
+	 * @param cantStart  the start node's cant in mm
+	 * @param speedStart the start node's design speed in km/h, which the cant is worked out from instead when above 0
+	 */
+	public void setCants(double cantStart, double speedStart, double cantEnd, double speedEnd) {
+		final boolean cable = railType.railSlopeStyle == RailType.RailSlopeStyle.CABLE;
+		this.cantStart = cable ? 0 : sanitize(cantStart, Superelevation.MAX_CANT);
+		this.cantSpeedStart = cable ? 0 : sanitize(speedStart, Superelevation.MAX_SPEED);
+		this.cantEnd = cable ? 0 : sanitize(cantEnd, Superelevation.MAX_CANT);
+		this.cantSpeedEnd = cable ? 0 : sanitize(speedEnd, Superelevation.MAX_SPEED);
+		cantRolls = null;
+	}
+
+	public void setCantStart(double cant, double speed) {
+		setCants(cant, speed, cantEnd, cantSpeedEnd);
+	}
+
+	public void setCantEnd(double cant, double speed) {
+		setCants(cantStart, cantSpeedStart, cant, speed);
+	}
+
+	public boolean hasCant() {
+		return cantStart > 0 || cantEnd > 0 || cantSpeedStart > 0 || cantSpeedEnd > 0;
+	}
+
+	public double getCantStart() {
+		return cantStart;
+	}
+
+	public double getCantEnd() {
+		return cantEnd;
+	}
+
+	public double getCantSpeedStart() {
+		return cantSpeedStart;
+	}
+
+	public double getCantSpeedEnd() {
+		return cantSpeedEnd;
+	}
+
+	/**
+	 * @return the roll of the track at a distance along the rail from its superelevation (0.98.0), in radians, signed as
+	 * {@link Superelevation#rolls}; 0 with none
+	 */
+	public float getCantRoll(double value) {
+		if (!hasCant()) {
+			return 0;
+		}
+		float[] rolls = cantRolls;
+		if (rolls == null) {
+			final double length = getLength();
+			final int count = Math.max(3, (int) Math.ceil(length / CANT_STEP) + 1);
+			final double step = length / (count - 1);
+			final double[] xs = new double[count];
+			final double[] zs = new double[count];
+			// Where the rail runs, without its height: the height is raised by the roll itself (ANTE's getPositionY)
+			for (int i = 0; i < count; i++) {
+				final double[] point = getPositionXZOnly(i * step);
+				xs[i] = point[0];
+				zs[i] = point[1];
+			}
+			rolls = Superelevation.rolls(xs, zs, step, cantStart, cantSpeedStart, cantEnd, cantSpeedEnd);
+			cantRolls = rolls;
+		}
+		final double place = Mth.clamp(value / getLength(), 0, 1) * (rolls.length - 1);
+		final int index = Math.min(rolls.length - 2, (int) Math.floor(place));
+		final double part = place - index;
+		return (float) (rolls[index] * (1 - part) + rolls[index + 1] * part);
+	}
+
+	private static double sanitize(double value, double most) {
+		return Double.isFinite(value) ? Mth.clamp(value, 0, most) : 0;
 	}
 
 	public void setTransitionStart(double length) {
@@ -711,6 +826,21 @@ public class Rail extends SerializedDataBase {
 	 */
 	public int getTurnBackDwellTime() {
 		return Math.max(turnBackDwell, 1);
+	}
+
+	/**
+	 * @return {x, z} at a distance along the rail, as {@link #getPosition} has them, without working out the height
+	 */
+	private double[] getPositionXZOnly(double rawValue) {
+		if (transitionPath != null) {
+			final double[] point = transitionPath.getPoint(Mth.clamp(rawValue, 0, transitionPath.getLength()));
+			return new double[]{point[0], point[1]};
+		}
+		final double count1 = Math.abs(tEnd1 - tStart1);
+		final double count2 = Math.abs(tEnd2 - tStart2);
+		final double value = Mth.clamp(rawValue, 0, count1 + count2);
+		final Vec3 point = value <= count1 ? getPositionXZ(h1, k1, r1, (reverseT1 ? -1 : 1) * value + tStart1, 0, isStraight1) : getPositionXZ(h2, k2, r2, (reverseT2 ? -1 : 1) * (value - count1) + tStart2, 0, isStraight2);
+		return new double[]{point.x, point.z};
 	}
 
 	public Vec3 getPosition(double rawValue) {

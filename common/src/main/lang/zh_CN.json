@@ -689,5 +689,7 @@
   "gui.mtr.platform_edge_undo_button": "[撤销]",
   "gui.mtr.platform_edge_undo_hover": "撤回刚才沿这一侧铺的站台边",
   "gui.mtr.platform_edge_undone": "撤回了 %s 块站台边",
-  "gui.mtr.platform_edge_nothing_to_undo": "这里没有可以撤销的整侧铺设"
+  "gui.mtr.platform_edge_nothing_to_undo": "这里没有可以撤销的整侧铺设",
+  "gui.mtr.node_cant": "外轨超高 (mm / °)",
+  "gui.mtr.node_cant_speed": "或按设计速度 (km/h)"
 }

@@ -136,19 +136,26 @@ public final class RailEdit {
 	public static double[] slope(Rail rail) {
 		final double length = rail.getLength();
 		final int steps = Math.max(1, (int) Math.ceil(length / SAMPLE_STEP));
-		double previous = rail.getPosition(0).y;
+		double previous = gradeY(rail, 0);
 		double min = previous;
 		double max = previous;
 		// The ends exactly, as sampling a vertical curve just misses its steepest part
 		double steepest = Math.max(Math.abs(rail.getGradeStart()), Math.abs(rail.getGradeEnd()));
 		for (int i = 1; i <= steps; i++) {
-			final double y = rail.getPosition(length * i / steps).y;
+			final double y = gradeY(rail, length * i / steps);
 			steepest = Math.max(steepest, Math.abs(y - previous) / (length / steps));
 			min = Math.min(min, y);
 			max = Math.max(max, y);
 			previous = y;
 		}
 		return new double[]{steepest, max - min};
+	}
+
+	/**
+	 * @return the rail's height without what its roll lifts it by (0.98.0, ANTE's rolling offset): superelevation is no grade
+	 */
+	private static double gradeY(Rail rail, double value) {
+		return rail.getPosition(value).y - cn.zbx1425.mtrsteamloco.data.RailExtraSupplier.getRollLift(rail, value);
 	}
 
 	private static Rail copy(Rail rail) {

@@ -106,11 +106,25 @@ public final class RailGrades {
 			return changed;
 		}
 		final double transition = BlockNode.getTransition(world, pos);
+		// The superelevation of the node too (0.98.0), with the same rails
+		final float[] cant = BlockNode.getCant(world, pos);
 		connections.forEach((posEnd, rail) -> {
 			final Rail backwardsRail = getBackwards(rails, pos, posEnd);
-			if (backwardsRail != null && rail.railType.railSlopeStyle != RailType.RailSlopeStyle.CABLE && (Math.abs(rail.getTransitionStart() - transition) > CHANGE_THRESHOLD || Math.abs(backwardsRail.getTransitionEnd() - transition) > CHANGE_THRESHOLD)) {
+			if (backwardsRail == null || rail.railType.railSlopeStyle == RailType.RailSlopeStyle.CABLE) {
+				return;
+			}
+			boolean railChanged = false;
+			if (Math.abs(rail.getTransitionStart() - transition) > CHANGE_THRESHOLD || Math.abs(backwardsRail.getTransitionEnd() - transition) > CHANGE_THRESHOLD) {
 				rail.setTransitionStart(transition);
 				backwardsRail.setTransitionEnd(transition);
+				railChanged = true;
+			}
+			if (Math.abs(rail.getCantStart() - cant[0]) > CHANGE_THRESHOLD || Math.abs(rail.getCantSpeedStart() - cant[1]) > CHANGE_THRESHOLD || Math.abs(backwardsRail.getCantEnd() - cant[0]) > CHANGE_THRESHOLD || Math.abs(backwardsRail.getCantSpeedEnd() - cant[1]) > CHANGE_THRESHOLD) {
+				rail.setCantStart(cant[0], cant[1]);
+				backwardsRail.setCantEnd(cant[0], cant[1]);
+				railChanged = true;
+			}
+			if (railChanged) {
 				changed.add(posEnd);
 			}
 		});
@@ -126,6 +140,11 @@ public final class RailGrades {
 		final double transitionEnd = BlockNode.getTransition(world, posEnd);
 		rail.setTransitions(transitionStart, transitionEnd);
 		backwardsRail.setTransitions(transitionEnd, transitionStart);
+		// And their superelevation (0.98.0)
+		final float[] cantStart = BlockNode.getCant(world, posStart);
+		final float[] cantEnd = BlockNode.getCant(world, posEnd);
+		rail.setCants(cantStart[0], cantStart[1], cantEnd[0], cantEnd[1]);
+		backwardsRail.setCants(cantEnd[0], cantEnd[1], cantStart[0], cantStart[1]);
 	}
 
 	/**

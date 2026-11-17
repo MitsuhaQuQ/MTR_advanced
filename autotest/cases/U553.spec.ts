@@ -20,7 +20,7 @@ const LONG_WEST = -100;
 const LONG_EAST = 0;
 const TURN = 12;
 
-type NodeRail = {to: number[], type: string, transitionStart: number, transitionEnd: number, length: number, points: number[][]};
+type NodeRail = {to: number[], type: string, transitionStart: number, transitionEnd: number, length: number, points: number[][], cantStart: number, cantEnd: number, cantSpeedStart: number, cantSpeedEnd: number, rollMiddle: number};
 const node = (x: number, z = 0): Promise<{rails: NodeRail[]}> => server.call("/node", {x, y: Y, z});
 
 /** Opens the node's angle screen with the brush and returns the angle shown */
@@ -223,5 +223,66 @@ test.describe("U553 U554 弯曲站台", () => {
 
 		await chat("/mtr undoedge");
 		await waitFor("nothing more to undo", async () => (await chatSince(marks.chat)).messages.find(m => /没有可以撤销/.test(m.text)));
+	});
+
+	test("U561 节点设外轨超高：弯道上轨道侧倾、外轨高 @U561", async ({}, testInfo) => {
+		test.setTimeout(300_000);
+		const name = await player();
+		// 150 mm on both nodes of the long curved platform
+		for (const x of [LONG_WEST, LONG_EAST]) {
+			await openNode(x, LONG_Z);
+			await type("NodeAngleScreen.textFieldCant", "150", true);
+			await click("NodeAngleScreen.buttonSet");
+			await waitScreen(null);
+		}
+		const rail = await waitFor("the long platform given its superelevation", async () => {
+			const current = await longRail();
+			return current && current.cantStart === 150 && current.cantEnd === 150 ? current : null;
+		});
+		await testInfo.attach("cant", {body: JSON.stringify({rollMiddle: rail.rollMiddle, degrees: rail.rollMiddle * 180 / Math.PI})});
+		// The whole cant halfway along the arc: asin(150 / 1500), about 5.7°
+		expect(Math.abs(rail.rollMiddle)).toBeGreaterThan(0.09);
+		expect(Math.abs(rail.rollMiddle)).toBeLessThan(0.11);
+
+		// Screenshots, as a spectator: low along the track from its east end, and across it from the inside of the curve
+		await giveOnly();
+		await serverCommand(`gamemode spectator ${name}`);
+		try {
+			const middleZ = trackZOf(rail, -50);
+			for (const [label, x, y, z, yaw, pitch] of [
+				["cant-along", -20, Y + 1.2, trackZOf(rail, -20), 90, 8],
+				["cant-across", -50, Y + 1.5, middleZ - 8, 0, 10],
+				// Level with the rails, across them from the inside of the curve: the far rail (the outer one) higher
+				["cant-low", -50, Y - 0.35, middleZ - 2.6, 0, 0],
+			] as [string, number, number, number, number, number][]) {
+				await serverCommand(`tp ${name} ${x} ${y} ${z} ${yaw} ${pitch}`);
+				await sleep(3000);
+				await screenshot(`U561-${label}`);
+			}
+		} finally {
+			await serverCommand(`gamemode creative ${name}`);
+		}
+	});
+
+	test("U561 超高按角度输入：切到度、填 4.6°、记住单位 @U561", async () => {
+		// The west node in degrees: 4.6° is about 120.3 mm
+		await openNode(LONG_WEST, LONG_Z);
+		expect((await widget("NodeAngleScreen.buttonCantUnit")).text, "mm by default, as the 150 mm set before").toBe("mm");
+		await click("NodeAngleScreen.buttonCantUnit");
+		expect((await widget("NodeAngleScreen.buttonCantUnit")).text).toBe("°");
+		expect((await widget("NodeAngleScreen.textFieldCant")).value, "150 mm shown as its angle").toBe("5.74");
+		await type("NodeAngleScreen.textFieldCant", "4.6", true);
+		await click("NodeAngleScreen.buttonSet");
+		await waitScreen(null);
+		const rail = await waitFor("the cant from the angle", async () => {
+			const current = await longRail();
+			return current && Math.abs(current.cantStart - 120.3) < 0.2 ? current : null;
+		});
+		expect(rail.cantEnd, "the other end as before").toBe(150);
+		// Opened again: still in degrees
+		await openNode(LONG_WEST, LONG_Z);
+		expect((await widget("NodeAngleScreen.buttonCantUnit")).text).toBe("°");
+		expect((await widget("NodeAngleScreen.textFieldCant")).value).toBe("4.60");
+		await closeAll();
 	});
 });

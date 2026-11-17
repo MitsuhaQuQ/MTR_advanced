@@ -461,7 +461,8 @@ public abstract class RailMixin implements RailExtraSupplier {
                 yStart, yEnd, reverseT1 ? 1 : 0, reverseT2 ? 1 : 0, isStraight1 ? 1 : 0, isStraight2 ? 1 : 0,
                 verticalCurveRadius, rollingOffset, isSecondaryDir ? 1 : 0, railType.ordinal(), count, offsetRadius1, offsetRadius2,
                 rail.hasGrades() ? 1 : 0, rail.getGradeStart(), rail.getGradeEnd(), rail.getVerticalRadiusStart(), rail.getVerticalRadiusEnd(),
-                rail.getTransitionStart(), rail.getTransitionEnd()};
+                rail.getTransitionStart(), rail.getTransitionEnd(),
+                rail.getCantStart(), rail.getCantEnd(), rail.getCantSpeedStart(), rail.getCantSpeedEnd()};
         final float[] points = mtrGeometryCache.get(key, rollAngleMap, () -> {
             final double increment = count / Math.round(count);
             final int capacity = (int) Math.ceil(count) + 1;
@@ -584,6 +585,12 @@ public abstract class RailMixin implements RailExtraSupplier {
     // Transition curves too (0.95.0): they change the shape and the length
     @Inject(method = "setTransitions", at = @At("TAIL"), remap = false)
     private void onSetTransitions(double start, double end, CallbackInfo ci) {
+        dataBytes = null;
+    }
+
+    // Superelevation too (0.98.0): it changes the roll
+    @Inject(method = "setCants", at = @At("TAIL"), remap = false)
+    private void onSetCants(double cantStart, double speedStart, double cantEnd, double speedEnd, CallbackInfo ci) {
         dataBytes = null;
     }
 

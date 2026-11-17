@@ -388,7 +388,7 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 	 * @param verticalRadius the radius of the vertical curves at the node
 	 * @param transition     the length of the transition curves at the node, 0 for none (0.95.0)
 	 */
-	public static void sendNodeAngleC2S(BlockPos pos, float angle, boolean isKeyNode, int turnBackDwell, float grade, float verticalRadius, float transition) {
+	public static void sendNodeAngleC2S(BlockPos pos, float angle, boolean isKeyNode, int turnBackDwell, float grade, float verticalRadius, float transition, float cant, float cantSpeed, boolean cantInDegrees) {
 		final FriendlyByteBuf packet = new FriendlyByteBuf(Unpooled.buffer());
 		packet.writeBlockPos(pos);
 		packet.writeFloat(angle);
@@ -397,6 +397,10 @@ public class PacketTrainDataGuiClient extends PacketTrainDataBase {
 		packet.writeFloat(grade);
 		packet.writeFloat(verticalRadius);
 		packet.writeFloat(transition);
+		// The superelevation (0.98.0): cant in mm, design speed in km/h
+		packet.writeFloat(cant);
+		packet.writeFloat(cantSpeed);
+		packet.writeBoolean(cantInDegrees);
 		RegistryClient.sendToServer(PACKET_UPDATE_NODE_ANGLE, packet);
 	}
 

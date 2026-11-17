@@ -17,7 +17,8 @@ type Legacy = { fn: Record<string, any>; v: Record<string, any> }
 export function dialogRules(get: () => Legacy, open: (target: PanelTarget) => void) {
   const ask = (target: AskTarget) => open({ kind: "ask", ...target })
   const find = (id: string) => S.findService(get().v.data.routeById, id)
-  const notice = (text: string) => { const { fn, v } = get(); v.dutyNotice = text; fn.renderBanner() }
+  // Shown at the top of the depot board (0.98.0: it was kept but nothing in the new page showed it)
+  const notice = (text: string) => { const { fn, v } = get(); v.dutyNotice = text; fn.renderBanner(); fn.renderAll() }
   /** Sends a request about a depot to the game, then tells how it went */
   const depotRequest = (path: string, depot: any, done: string) => get().fn.sendJson(path, "POST", { depot: depot.id })
     .then((result: any) => notice(result.ok ? done : tr("没有权限，或者游戏里没有这个车厂。")))
@@ -120,6 +121,10 @@ export function dialogRules(get: () => Legacy, open: (target: PanelTarget) => vo
         hints: [tr("现有运用接得上时游戏不会自己重排，免得运用跟着用时的小变化换来换去。重排后哪份运用跑哪几班、车回哪条存车线都可能变。结果在服务端日志和这里的运用里。")],
         ok: tr("重新排"), go: () => { depotRequest("api/replan-duties", depot, tr("已请求重新排“{0}”的运用。", shortName(depot.name))) },
       })
+    },
+    /** Finds the depot's paths again, as the depot screen's button in the game does (0.98.0) */
+    refreshPaths(depot: any) {
+      depotRequest("api/refresh-paths", depot, tr("已请求重新找“{0}”的路径，结果见同步面板。", shortName(depot.name)))
     },
     placeTrainsDialog(depot: any) {
       ask({

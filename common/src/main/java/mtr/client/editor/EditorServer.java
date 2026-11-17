@@ -137,6 +137,7 @@ public final class EditorServer {
 		context.addServlet(new ServletHolder(new DraftServlet()), "/api/draft");
 		context.addServlet(new ServletHolder(new PlanDutiesServlet()), "/api/plan-duties");
 		context.addServlet(new ServletHolder(new PlaceTrainsServlet()), "/api/place-trains");
+		context.addServlet(new ServletHolder(new RefreshPathsServlet()), "/api/refresh-paths");
 		context.addServlet(new ServletHolder(new SyncNowServlet()), "/api/sync-now");
 		context.addServlet(new ServletHolder(new ReplanDutiesServlet()), "/api/replan-duties");
 		context.addServlet(new ServletHolder(new TimesServlet()), "/api/times");
@@ -462,6 +463,44 @@ public final class EditorServer {
 					waiter.start();
 				}
 				sendJson(response, "{\"ok\":" + allowed + ",\"depots\":" + refreshed.size() + ",\"placed\":" + placed.size() + "}");
+			} catch (Exception e) {
+				e.printStackTrace();
+				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);
+			}
+		}
+	}
+
+	/**
+	 * Asks the server to find one depot's paths again (0.98.0, user 2026-11-17: 网页上车厂也加一个刷新路径按钮), as the
+	 * depot screen's button does: the same packet, the result in the sync panel as the server tells it.
+	 */
+	private static class RefreshPathsServlet extends HttpServlet {
+
+		@Override
+		protected void doPost(HttpServletRequest request, HttpServletResponse response) throws IOException {
+			final String body = readBody(request);
+			if (body == null) {
+				response.sendError(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+				return;
+			}
+			final long depotId;
+			try {
+				depotId = Long.parseLong(new JsonParser().parse(body).getAsJsonObject().get("depot").getAsString());
+			} catch (Exception e) {
+				response.sendError(HttpServletResponse.SC_BAD_REQUEST);
+				return;
+			}
+			try {
+				final boolean sent = onGameThread(() -> {
+					final mtr.data.Depot depot = mtr.client.ClientData.DATA_CACHE.depotIdMap.get(depotId);
+					if (!mtr.client.ClientData.hasPermission() || depot == null) {
+						return false;
+					}
+					depot.clientPathGenerationSuccessfulSegments = -1;
+					mtr.packet.PacketTrainDataGuiClient.generatePathC2S(depotId);
+					return true;
+				});
+				sendJson(response, "{\"ok\":" + sent + "}");
 			} catch (Exception e) {
 				e.printStackTrace();
 				response.sendError(HttpServletResponse.SC_SERVICE_UNAVAILABLE);

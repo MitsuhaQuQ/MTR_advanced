@@ -23,6 +23,7 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import transitsim.network.Boundaries;
 import transitsim.network.RegionData;
+import transitsim.geometry.Superelevation;
 import transitsim.geometry.TransitionPath;
 import transitsim.geometry.VerticalProfile;
 
@@ -39,6 +40,16 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	private final float angle;
 	private final WidgetBetterTextField textFieldAngle = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.SIGNED_DECIMAL, "", MAX_VALUE_LENGTH);
 	private final WidgetBetterTextField textFieldTransition = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.DECIMAL, "", MAX_VALUE_LENGTH);
+	/**
+	 * The superelevation at the node (0.98.0): the cant in mm, and a design speed in km/h it is worked out from instead
+	 */
+	private final WidgetBetterTextField textFieldCant = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.DECIMAL, "", MAX_VALUE_LENGTH);
+	private final WidgetBetterTextField textFieldCantSpeed = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.DECIMAL, "", MAX_VALUE_LENGTH);
+	/**
+	 * Switches the cant typed between mm and degrees, changing what is typed to the other (0.98.0)
+	 */
+	private final Button buttonCantUnit;
+	private boolean cantInDegrees;
 	private final WidgetBetterCheckbox checkboxKeyNode = new WidgetBetterCheckbox(0, 0, 0, SQUARE_SIZE, Text.translatable("gui.mtr.node_key_node"), checked -> {
 	});
 	private final WidgetBetterTextField textFieldTurnBack = new WidgetBetterTextField(WidgetBetterTextField.TextFieldFilter.POSITIVE_INTEGER, "0", MAX_VALUE_LENGTH);
@@ -64,9 +75,11 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	private final float savedGrade;
 	private final float savedVerticalRadius;
 	private final float savedTransition;
+	private final float[] savedCant;
 	private final boolean hasOldRails;
 
 	private static final int MAX_VALUE_LENGTH = 6;
+	private static final int CANT_UNIT_WIDTH = SQUARE_SIZE * 2;
 	private static final int LABEL_WIDTH = 150;
 	private static final int ROW_HEIGHT = SQUARE_SIZE + TEXT_FIELD_PADDING;
 	private static final int ROW_ANGLE = 0;
@@ -74,10 +87,12 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	private static final int ROW_ANGLE_DIRECTION = 1;
 	private static final int ROW_ANGLE_RULE = 2;
 	private static final int ROW_TRANSITION = 4;
-	private static final int ROW_KEY_NODE = 5;
-	private static final int ROW_TURN_BACK = 6;
-	private static final int ROW_BOUNDARY = 7;
-	private static final int ROW_SEGMENTS = 8;
+	private static final int ROW_CANT = 5;
+	private static final int ROW_CANT_SPEED = 6;
+	private static final int ROW_KEY_NODE = 7;
+	private static final int ROW_TURN_BACK = 8;
+	private static final int ROW_BOUNDARY = 9;
+	private static final int ROW_SEGMENTS = 10;
 	private static final int ROW_GRADE_AUTO = 0;
 	private static final int ROW_GRADE = 1;
 	private static final int ROW_GRADE_RULE = 2;
@@ -90,6 +105,8 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	private static final Component LABEL_PREVIEW_HINT = Text.translatable("gui.mtr.node_angle_preview_hint");
 	private static final Component LABEL_ANGLE_RULE = Text.translatable("gui.mtr.node_angle_rule");
 	private static final Component LABEL_TRANSITION = Text.translatable("gui.mtr.node_transition");
+	private static final Component LABEL_CANT = Text.translatable("gui.mtr.node_cant");
+	private static final Component LABEL_CANT_SPEED = Text.translatable("gui.mtr.node_cant_speed");
 	private static final Component LABEL_TURN_BACK = Text.translatable("gui.mtr.node_turn_back");
 	private static final Component LABEL_GRADE = Text.translatable("gui.mtr.node_grade");
 	private static final Component LABEL_GRADE_RULE = Text.translatable("gui.mtr.node_grade_rule");
@@ -120,6 +137,9 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		savedGrade = world == null ? Float.NaN : BlockNode.getGrade(world, pos);
 		savedVerticalRadius = world == null ? (float) VerticalProfile.DEFAULT_RADIUS : BlockNode.getVerticalRadius(world, pos);
 		savedTransition = world == null ? 0 : BlockNode.getTransition(world, pos);
+		savedCant = world == null ? new float[]{0, 0, 0} : BlockNode.getCant(world, pos);
+		cantInDegrees = savedCant[2] > 0;
+		buttonCantUnit = UtilitiesClient.newButton(Text.literal(cantInDegrees ? "°" : "mm"), button -> switchCantUnit());
 		hasOldRails = RailGrades.hasOldRails(ClientData.RAILS, pos);
 	}
 
@@ -129,6 +149,9 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		final int fieldX = SQUARE_SIZE + LABEL_WIDTH + TEXT_FIELD_PADDING / 2;
 		IDrawing.setPositionAndWidth(textFieldAngle, fieldX, getRowY(ROW_ANGLE) + TEXT_FIELD_PADDING / 2, PANEL_WIDTH / 2 - TEXT_FIELD_PADDING);
 		IDrawing.setPositionAndWidth(textFieldTransition, fieldX, getRowY(ROW_TRANSITION) + TEXT_FIELD_PADDING / 2, PANEL_WIDTH / 2 - TEXT_FIELD_PADDING);
+		IDrawing.setPositionAndWidth(textFieldCant, fieldX, getRowY(ROW_CANT) + TEXT_FIELD_PADDING / 2, PANEL_WIDTH / 2 - TEXT_FIELD_PADDING - CANT_UNIT_WIDTH);
+		IDrawing.setPositionAndWidth(buttonCantUnit, fieldX + PANEL_WIDTH / 2 - CANT_UNIT_WIDTH, getRowY(ROW_CANT), CANT_UNIT_WIDTH);
+		IDrawing.setPositionAndWidth(textFieldCantSpeed, fieldX, getRowY(ROW_CANT_SPEED) + TEXT_FIELD_PADDING / 2, PANEL_WIDTH / 2 - TEXT_FIELD_PADDING);
 		IDrawing.setPositionAndWidth(checkboxKeyNode, SQUARE_SIZE, getRowY(ROW_KEY_NODE), PANEL_WIDTH);
 		checkboxKeyNode.setChecked(ClientData.KEY_NODES.contains(pos));
 		IDrawing.setPositionAndWidth(textFieldTurnBack, fieldX, getRowY(ROW_TURN_BACK) + TEXT_FIELD_PADDING / 2, PANEL_WIDTH / 2 - TEXT_FIELD_PADDING);
@@ -160,9 +183,15 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		textFieldAngle.setValue(BlockNode.getAngleValue(angle));
 		// The length of the transition curves at the node, in blocks (0.95.0)
 		textFieldTransition.setValue(formatTransition(savedTransition));
+		// The superelevation (0.98.0), empty for none
+		textFieldCant.setValue(formatCant(savedCant[0]));
+		textFieldCantSpeed.setValue(savedCant[1] > 0 ? formatTransition(savedCant[1]) : "");
 
 		addDrawableChild(textFieldAngle);
 		addDrawableChild(textFieldTransition);
+		addDrawableChild(textFieldCant);
+		addDrawableChild(buttonCantUnit);
+		addDrawableChild(textFieldCantSpeed);
 		addDrawableChild(checkboxKeyNode);
 		if (turnBackRail != null) {
 			addDrawableChild(textFieldTurnBack);
@@ -183,6 +212,8 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 	public void tick() {
 		textFieldAngle.tick();
 		textFieldTransition.tick();
+		textFieldCant.tick();
+		textFieldCantSpeed.tick();
 		textFieldTurnBack.tick();
 		textFieldGrade.tick();
 		textFieldVerticalRadius.tick();
@@ -192,7 +223,7 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 		this.verticalTab = verticalTab;
 		buttonTabPlan.active = verticalTab;
 		buttonTabVertical.active = !verticalTab;
-		textFieldAngle.visible = textFieldTransition.visible = checkboxKeyNode.visible = textFieldTurnBack.visible = checkboxBoundary.visible = !verticalTab;
+		textFieldAngle.visible = textFieldTransition.visible = textFieldCant.visible = buttonCantUnit.visible = textFieldCantSpeed.visible = checkboxKeyNode.visible = textFieldTurnBack.visible = checkboxBoundary.visible = !verticalTab;
 		checkboxSegments.forEach(checkbox -> checkbox.visible = !verticalTab);
 		checkboxGradeAuto.visible = textFieldGrade.visible = textFieldVerticalRadius.visible = verticalTab;
 	}
@@ -228,6 +259,8 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 				}
 			}
 			GuiCompat.draw(matrices, font, LABEL_TRANSITION, SQUARE_SIZE, getRowY(ROW_TRANSITION) + TEXT_PADDING, ARGB_LIGHT_GRAY);
+			GuiCompat.draw(matrices, font, LABEL_CANT, SQUARE_SIZE, getRowY(ROW_CANT) + TEXT_PADDING, ARGB_LIGHT_GRAY);
+			GuiCompat.draw(matrices, font, LABEL_CANT_SPEED, SQUARE_SIZE, getRowY(ROW_CANT_SPEED) + TEXT_PADDING, ARGB_LIGHT_GRAY);
 			if (turnBackRail != null) {
 				GuiCompat.draw(matrices, font, LABEL_TURN_BACK, SQUARE_SIZE, getRowY(ROW_TURN_BACK) + TEXT_PADDING, ARGB_WHITE);
 			}
@@ -373,7 +406,10 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 			final float grade = checkboxGradeAuto.selected() ? Float.NaN : (float) VerticalProfile.clampGrade(Double.parseDouble(textFieldGrade.getValue()) / PER_MILLE);
 			final String transitionText = textFieldTransition.getValue();
 			final float transition = transitionText.isEmpty() ? 0 : (float) Math.max(0, Math.min(TransitionPath.MAX_LENGTH, Double.parseDouble(transitionText)));
-			PacketTrainDataGuiClient.sendNodeAngleC2S(pos, Float.parseFloat(textFieldAngle.getValue()), checkboxKeyNode.selected(), turnBackDwell, grade, (float) getTypedVerticalRadius(), transition);
+			final float cant = (float) typedCant();
+			final String cantSpeedText = textFieldCantSpeed.getValue();
+			final float cantSpeed = cantSpeedText.isEmpty() ? 0 : (float) Math.max(0, Math.min(Superelevation.MAX_SPEED, Double.parseDouble(cantSpeedText)));
+			PacketTrainDataGuiClient.sendNodeAngleC2S(pos, Float.parseFloat(textFieldAngle.getValue()), checkboxKeyNode.selected(), turnBackDwell, grade, (float) getTypedVerticalRadius(), transition, cant, cantSpeed, cantInDegrees);
 			final Boundaries boundaries = ClientData.PATH_REGIONS.boundaries;
 			if (checkboxBoundary.selected() != boundaries.nodes.contains(pos.asLong())) {
 				PacketTrainDataGuiClient.sendPathBoundaryC2S(pos, null, checkboxBoundary.selected());
@@ -413,6 +449,40 @@ public class NodeAngleScreen extends ScreenBase implements IGui {
 			}
 		}
 		return null;
+	}
+
+	/**
+	 * @return the cant typed, in mm, whichever unit it is typed in; 0 for none
+	 */
+	private double typedCant() {
+		final String text = textFieldCant.getValue();
+		if (text.isEmpty()) {
+			return 0;
+		}
+		final double value = Double.parseDouble(text);
+		return cantInDegrees ? Superelevation.cantOfDegrees(value) : Math.max(0, Math.min(Superelevation.MAX_CANT, value));
+	}
+
+	/**
+	 * @return a cant in mm as it is typed in the unit chosen, empty for none
+	 */
+	private String formatCant(double cant) {
+		if (!(cant > 0)) {
+			return "";
+		}
+		return cantInDegrees ? String.format(Locale.ENGLISH, "%.2f", Superelevation.degreesOf(cant)) : formatTransition((float) cant);
+	}
+
+	private void switchCantUnit() {
+		double cant;
+		try {
+			cant = typedCant();
+		} catch (NumberFormatException e) {
+			cant = 0;
+		}
+		cantInDegrees = !cantInDegrees;
+		buttonCantUnit.setMessage(Text.literal(cantInDegrees ? "°" : "mm"));
+		textFieldCant.setValue(formatCant(cant));
 	}
 
 	private int getButtonsRow() {

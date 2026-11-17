@@ -66,6 +66,12 @@ public interface RailExtraSupplier {
 
     BlockPos getPosEnd();
 
+    /**
+     * Which way a positive roll of {@code Rail.getCantRoll} (the heading growing, from +x towards +z) turns the track here,
+     * so the outer rail is the higher one
+     */
+    float CANT_ROLL_SIGN = 1F;
+
     static float getVTheta(Rail rail, double verticalCurveRadius) {
         double H = Math.abs(((RailExtraSupplier) rail).getHeight());
         double L = rail.getLength();
@@ -73,7 +79,25 @@ public interface RailExtraSupplier {
         return 2 * (float) Mth.atan2(Math.sqrt(H * H - 4 * R * H + L * L) - L, H - 4 * R);
     }
 
+    /**
+     * @return how far the roll at a distance along the rail lifts it (as {@code RailMixin} adds it to the height), so a
+     * grade check can leave it out (0.98.0)
+     */
+    static double getRollLift(Rail rail, double value) {
+        // Without the mixins (unit tests) rails have no roll
+        if (!((Object) rail instanceof RailExtraSupplier)) {
+            return 0;
+        }
+        final float roll = getRollAngle(rail, value);
+        return roll == 0 ? 0 : Math.abs(((RailExtraSupplier) rail).getRollingOffset() * Math.sin(roll));
+    }
+
     static float getRollAngle(Rail rail, double value) {
+        // A rail with superelevation set on its nodes (0.98.0) leans by it, along the rail's own way, rather than by the
+        // roll angles set by hand: Rail.getCantRoll, as the map read below would be seen from a rail rendered reversed
+        if (rail.hasCant()) {
+            return CANT_ROLL_SIGN * rail.getCantRoll(value);
+        }
         Map<Double, Float> rollAngleMap = ((RailExtraSupplier) rail).getRollAngleMap();
         boolean reversed = ((RailExtraSupplier) rail).getRenderReversed();
         float k = reversed ? -1F : 1F;

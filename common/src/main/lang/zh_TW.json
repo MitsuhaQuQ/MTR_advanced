@@ -690,5 +690,7 @@
   "gui.mtr.platform_edge_undo_button": "[復原]",
   "gui.mtr.platform_edge_undo_hover": "撤回剛才沿這一側鋪的月台邊",
   "gui.mtr.platform_edge_undone": "撤回了 %s 塊月台邊",
-  "gui.mtr.platform_edge_nothing_to_undo": "這裡沒有可以復原的整側鋪設"
+  "gui.mtr.platform_edge_nothing_to_undo": "這裡沒有可以復原的整側鋪設",
+  "gui.mtr.node_cant": "外軌超高 (mm / °)",
+  "gui.mtr.node_cant_speed": "或按設計速度 (km/h)"
 }
