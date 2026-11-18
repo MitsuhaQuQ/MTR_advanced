@@ -58,6 +58,8 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 	 * with each save on large networks (optimisation round 5, step 4).
 	 */
 	private long lastSimulationMillis = System.currentTimeMillis();
+	/** The train types' use being written by the save going on, kept again if it fails */
+	private Map<String, Double> trainUsageWritten;
 	private boolean stopping;
 	private static final long SIMULATION_DATA_INTERVAL_MILLIS = 30 * 60 * 1000;
 	/**
@@ -207,6 +209,11 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 		markLoaded("track graph");
 		try {
 			dataStore.forEachEditRevision(railwayData.editRevisions::restore);
+		} catch (Exception e) {
+			e.printStackTrace();
+		}
+		try {
+			dataStore.forEachTrainUsage(railwayData.trainUsage::restore);
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
@@ -434,7 +441,13 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			if (simulationData != null && simulationHash != lastSimulationHash) {
 				dataStore.writeSimulationData(simulationData);
 			}
+			// The train types' use (0.101.0), when it changed
+			trainUsageWritten = railwayData.trainUsage.takeIfChanged();
+			if (trainUsageWritten != null) {
+				dataStore.writeTrainUsage(trainUsageWritten);
+			}
 			dataStore.commit();
+			trainUsageWritten = null;
 			if (pathPieces != null) {
 				pathPieces.committed();
 			}
@@ -452,6 +465,10 @@ public class RailwayDataFileSaveModule extends RailwayDataModuleBase {
 			lastSaveFailed = true;
 			System.out.println("Minecraft Transit Railway could not save " + world.dimension().location() + "; the saved data stays as it was after the last save, and the next save tries again");
 			e.printStackTrace();
+			if (trainUsageWritten != null) {
+				railwayData.trainUsage.keepUnsaved();
+				trainUsageWritten = null;
+			}
 			if (pathPieces != null) {
 				pathPieces.rolledBack();
 			}

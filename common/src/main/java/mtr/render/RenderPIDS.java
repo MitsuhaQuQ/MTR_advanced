@@ -509,6 +509,17 @@ public class RenderPIDS<T extends BlockEntityMapper> extends BlockEntityRenderer
 		}
 
 		final boolean showPassingTrains = entity instanceof IPIDS.TileEntityPIDS && ((IPIDS.TileEntityPIDS) entity).getShowPassingTrains();
+		// One list for all the displays showing the same platforms the same way (0.101.1), made again a few times a second
+		final List<Object> key = Arrays.asList(station.id, new HashSet<>(platformIds), renderType.showTerminatingPlatforms, showPassingTrains);
+		final long nowMillis = System.currentTimeMillis();
+		final SharedSchedules shared = SHARED_SCHEDULES.get(key);
+		if (shared != null && nowMillis - shared.madeMillis < SHARED_SCHEDULES_MILLIS) {
+			platformIdToName.putAll(shared.platformIdToName);
+			return shared.list;
+		}
+		if (SHARED_SCHEDULES.size() > 512) {
+			SHARED_SCHEDULES.clear();
+		}
 		final long now = ClientClock.INSTANCE.serverMillis();
 		schedules = new HashSet<>();
 		platforms.values().forEach(platform -> {
@@ -528,6 +539,25 @@ public class RenderPIDS<T extends BlockEntityMapper> extends BlockEntityRenderer
 
 		final List<ScheduleEntry> scheduleList = new ArrayList<>(schedules);
 		Collections.sort(scheduleList);
-		return scheduleList;
+		final List<ScheduleEntry> sharedList = Collections.unmodifiableList(scheduleList);
+		SHARED_SCHEDULES.put(key, new SharedSchedules(sharedList, new HashMap<>(platformIdToName), nowMillis));
+		return sharedList;
+	}
+
+	private static final long SHARED_SCHEDULES_MILLIS = 250;
+	/** By the station, the platforms shown and how (0.101.1); on the render thread only */
+	private static final Map<List<Object>, SharedSchedules> SHARED_SCHEDULES = new HashMap<>();
+
+	private static final class SharedSchedules {
+
+		private final List<ScheduleEntry> list;
+		private final Map<Long, String> platformIdToName;
+		private final long madeMillis;
+
+		private SharedSchedules(List<ScheduleEntry> list, Map<Long, String> platformIdToName, long madeMillis) {
+			this.list = list;
+			this.platformIdToName = platformIdToName;
+			this.madeMillis = madeMillis;
+		}
 	}
 }

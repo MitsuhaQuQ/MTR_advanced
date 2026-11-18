@@ -118,6 +118,7 @@ public interface IPacket {
 	ResourceLocation PACKET_DELAY_ALARMS = new ResourceLocation(MTR.MOD_ID, "packet_delay_alarms");
 	ResourceLocation PACKET_CONTINGENCIES = new ResourceLocation(MTR.MOD_ID, "packet_contingencies");
 	ResourceLocation PACKET_NETWORK_SETTINGS = new ResourceLocation(MTR.MOD_ID, "packet_network_settings");
+	ResourceLocation PACKET_TRAIN_USAGE = new ResourceLocation(MTR.MOD_ID, "packet_train_usage");
 	/**
 	 * Fares by distance (0.68.0): the fare groups asked for and sent back, and the fares and groups as edited.
 	 */

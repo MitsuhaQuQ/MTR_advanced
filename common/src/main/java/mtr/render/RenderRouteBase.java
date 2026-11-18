@@ -68,14 +68,12 @@ public abstract class RenderRouteBase<T extends BlockPSDTop.TileEntityRouteBase>
 					matricesNew.translate(-0.5, -getAdditionalOffset(state), z);
 				});
 
-				final int leftCount = getTextureNumber(world, pos, facing, true);
-				final int rightCount = getTextureNumber(world, pos, facing, false);
-				// The run shared out by the length of each block's piece (0.91.3), a whole block each for straight blocks
-				final float leftBlocks = mtr.block.CurvedPSD.runLength(world, pos, true, leftCount);
-				final float rightBlocks = mtr.block.CurvedPSD.runLength(world, pos, false, rightCount);
-				final float ownLength = mtr.block.CurvedPSD.pieceLength(world, pos);
+				final Run run = runOf(entity, world, pos, state);
+				final float leftBlocks = run.leftBlocks;
+				final float rightBlocks = run.rightBlocks;
+				final float ownLength = run.ownLength;
 				final int color = getShadingColor(facing, ARGB_WHITE);
-				final RenderType renderType = getRenderType(world, mtr.block.CurvedPSD.walk(world, pos, true, leftCount), state);
+				final RenderType renderType = run.renderType;
 
 				if ((renderType == RenderType.ARROW || renderType == RenderType.ROUTE) && IBlock.getStatePropertySafe(state, SIDE_EXTENDED) != EnumSide.SINGLE) {
 					final float width = leftBlocks + rightBlocks + ownLength - sidePadding * 2;
@@ -99,6 +97,51 @@ public abstract class RenderRouteBase<T extends BlockPSDTop.TileEntityRouteBase>
 				renderAdditional(storedMatrixTransformations, platformId, state, leftBlocks, rightBlocks, ownLength, facing.getOpposite(), color, light);
 			}
 		}
+	}
+
+	/**
+	 * Where the block is in its run, found once (0.101.1) rather than by every block of the run each frame, and looked for
+	 * again when a block of the run or next to it changes ({@link SectionStamps})
+	 */
+	private static final class Run {
+
+		private final BlockState state;
+		private final SectionStamps.Watch watch;
+		private final float leftBlocks;
+		private final float rightBlocks;
+		private final float ownLength;
+		private final RenderType renderType;
+
+		private Run(BlockState state, SectionStamps.Watch watch, float leftBlocks, float rightBlocks, float ownLength, RenderType renderType) {
+			this.state = state;
+			this.watch = watch;
+			this.leftBlocks = leftBlocks;
+			this.rightBlocks = rightBlocks;
+			this.ownLength = ownLength;
+			this.renderType = renderType;
+		}
+	}
+
+	private final java.util.Map<T, Run> runs = new java.util.WeakHashMap<>();
+
+	private Run runOf(T entity, Level world, BlockPos pos, BlockState state) {
+		final Run kept = runs.get(entity);
+		if (kept != null && kept.state == state && kept.watch.isCurrent()) {
+			return kept;
+		}
+		final java.util.Set<BlockPos> seen = new java.util.HashSet<>();
+		final int leftCount = getTextureNumber(world, pos, true, seen);
+		final int rightCount = getTextureNumber(world, pos, false, seen);
+		// The run shared out by the length of each block's piece (0.91.3), a whole block each for straight blocks
+		final float leftBlocks = mtr.block.CurvedPSD.runLength(world, pos, true, leftCount);
+		final float rightBlocks = mtr.block.CurvedPSD.runLength(world, pos, false, rightCount);
+		final float ownLength = mtr.block.CurvedPSD.pieceLength(world, pos);
+		final BlockPos runStart = mtr.block.CurvedPSD.walk(world, pos, true, leftCount);
+		final RenderType renderType = getRenderType(world, runStart, state);
+		seen.add(runStart.below());
+		final Run run = new Run(state, new SectionStamps.Watch(seen), leftBlocks, rightBlocks, ownLength, renderType);
+		runs.put(entity, run);
+		return run;
 	}
 
 	@Override
@@ -136,7 +179,7 @@ public abstract class RenderRouteBase<T extends BlockPSDTop.TileEntityRouteBase>
 	 */
 	private static final int MOST_BLOCKS_IN_RUN = 256;
 
-	private int getTextureNumber(BlockGetter world, BlockPos pos, Direction facing, boolean searchLeft) {
+	private int getTextureNumber(BlockGetter world, BlockPos pos, boolean searchLeft, java.util.Set<BlockPos> seen) {
 		int number = 0;
 		final Block thisBlock = world.getBlockState(pos).getBlock();
 		// Step by step, never past a block already counted (0.91.2: along a bent line two blocks could each find the other
@@ -151,6 +194,7 @@ public abstract class RenderRouteBase<T extends BlockPSDTop.TileEntityRouteBase>
 			if (!visited.add(current)) {
 				break;
 			}
+			seen.add(current);
 			final BlockState state = world.getBlockState(current);
 
 			if (mtr.block.CurvedPSD.sameKind(state.getBlock(), thisBlock)) {

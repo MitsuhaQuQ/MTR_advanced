@@ -64,7 +64,7 @@ public class RenderEdgeScreenDoor extends BlockEntityRendererMapper<BlockEdgeScr
 		final float thickness = (float) PlatformEdges.WALL_THICKNESS;
 		final float x1 = (float) segment[0], z1 = (float) segment[1], x2 = (float) segment[2], z2 = (float) segment[3];
 		final float backX = -towardsTrackX * thickness, backZ = -towardsTrackZ * thickness;
-		final String style = String.valueOf(entity.getStyle() + 1);
+		final int style = entity.getStyle() + 1;
 		final int part = entity.getPart();
 		final float open = entity.isDoor() ? entity.getOpen(MTRClient.getLastFrameDuration()) : 0;
 		final Matrix4f pose = matrices.last().pose();
@@ -91,13 +91,12 @@ public class RenderEdgeScreenDoor extends BlockEntityRendererMapper<BlockEdgeScr
 			final float leafTo = leafFrom + to - from;
 			for (int half = 0; half < 2; half++) {
 				final int faceLight = LevelRenderer.getLightColor(world, pos.above(half));
-				final String height = half == 0 ? "bottom" : "top";
 				final ResourceLocation front;
 				final ResourceLocation back;
 				final float frontU1, frontU2, backU1, backU2, v1, v2;
 				if (part == BlockEdgeScreenDoor.PART_GLASS) {
-					front = new ResourceLocation(String.format("mtr:textures/block/psd_glass_%s_%s.png", height, style));
-					back = new ResourceLocation(String.format("mtr:textures/block/psd_glass_%s_back_%s.png", height, style));
+					front = RenderPSDAPGDoor.texture("mtr:textures/block/psd_glass_%1$s_%3$s.png", half == 1, false, style);
+					back = RenderPSDAPGDoor.texture("mtr:textures/block/psd_glass_%1$s_back_%3$s.png", half == 1, false, style);
 					// Seen from the front the texture's right is against the line's direction, from the back along it
 					frontU1 = 1 - leafFrom;
 					frontU2 = 1 - leafTo;
@@ -107,7 +106,7 @@ public class RenderEdgeScreenDoor extends BlockEntityRendererMapper<BlockEdgeScr
 					v2 = 0;
 				} else {
 					// A leaf sliding against the line's direction slides to the right seen from the track
-					front = new ResourceLocation(String.format("mtr:textures/block/psd_door_%s_%s_%s.png", height, part == BlockEdgeScreenDoor.PART_DOOR_BACK ? "right" : "left", style));
+					front = RenderPSDAPGDoor.texture("mtr:textures/block/psd_door_%s_%s_%s.png", half == 1, part == BlockEdgeScreenDoor.PART_DOOR_BACK, style);
 					back = front;
 					frontU1 = LEAF_FRONT_U2 - (LEAF_FRONT_U2 - LEAF_FRONT_U1) * leafFrom;
 					frontU2 = LEAF_FRONT_U2 - (LEAF_FRONT_U2 - LEAF_FRONT_U1) * leafTo;

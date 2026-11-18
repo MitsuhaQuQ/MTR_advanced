@@ -47,6 +47,10 @@ public class RenderPlatformEdge<T extends BlockPlatformEdge.TileEntityPlatformEd
 	 * The textures of each block's model, by the model, so a reload of the resources makes them again
 	 */
 	private static final Map<BakedModel, Map<BlockState, Textures>> TEXTURES = new WeakHashMap<>();
+	/**
+	 * Each block's faces as last made (0.101.1), by the block entity
+	 */
+	private static final Map<BlockPlatformEdge.TileEntityPlatformEdge, Mesh> MESHES = new WeakHashMap<>();
 	private static final float MARKING_LIFT = 0.003F;
 	/**
 	 * How far gap fillers are drawn from, in blocks
@@ -93,15 +97,29 @@ public class RenderPlatformEdge<T extends BlockPlatformEdge.TileEntityPlatformEd
 		// Below a recess (MTR's indented platforms) the platform's part starts further from the track (0.89.4)
 		final int[] recess = gapFiller ? new int[]{0, 0} : BlockPlatformEdge.recessOf(entity.getSource());
 		final float recessHeight = recess[0] == 0 ? 0 : (float) recess[1] / PlatformEdges.CELLS;
-		final double[] lowerOutline = recess[0] == 0 ? outline : PlatformEdges.outline(angle, BlockPlatformEdge.recessedCut(cut, recess));
-		final int topLight = LevelRenderer.getLightColor(world, pos.above());
-		final int sideLight = LevelRenderer.getLightColor(world, pos);
-		final Matrix4f pose = matrices.last().pose();
-		final Matrix3f normal = matrices.last().normal();
-		final VertexConsumer consumer = vertexConsumers.getBuffer(RenderType.entityCutoutNoCull(TextureAtlas.LOCATION_BLOCKS));
-
 		// A gap filler's sloped top (0.94.0): the top and the sides' tops follow it
 		final int slopedTop = entity instanceof BlockGapFiller.TileEntityGapFiller ? ((BlockGapFiller.TileEntityGapFiller) entity).getTop() : SlopedTops.FLAT;
+		// Along the platform's edge curve itself where it is known (0.95.0)
+		final PlatformEdgeCurves.Shape curved = gapFiller || slopedTop != SlopedTops.FLAT ? null : PlatformEdgeCurves.shapeOf(entity, pos, (double) recess[0] / PlatformEdges.CELLS);
+
+		// The block's shape is made once and drawn again each frame with the light of the moment (0.101.1): it is made
+		// afresh only when something it is made from is another (the block, the block it stands for, the doors above, the
+		// textures after a reload, the edge curve)
+		final Object[] key = {state, plain, source, slopedTop, textures, topTextures, curved};
+		Mesh mesh = MESHES.get(entity);
+		if (mesh == null || !java.util.Arrays.equals(mesh.key, key)) {
+			mesh = new Mesh(key);
+			build(mesh, new Matrix4f(), new Matrix3f(), Mesh.TOP, Mesh.SIDE, angle, cut, outline, gapFiller, source, textures, topTextures, underDoors, recessHeight, recess, slopedTop, curved);
+			MESHES.put(entity, mesh);
+		}
+		mesh.draw(vertexConsumers.getBuffer(RenderType.entityCutoutNoCull(TextureAtlas.LOCATION_BLOCKS)), matrices.last().pose(), matrices.last().normal(), LevelRenderer.getLightColor(world, pos.above()), LevelRenderer.getLightColor(world, pos));
+	}
+
+	/**
+	 * Lays the block's faces, in the block's own coordinates
+	 */
+	private static void build(VertexConsumer consumer, Matrix4f pose, Matrix3f normal, int topLight, int sideLight, int angle, int cut, double[] outline, boolean gapFiller, BlockState source, Textures textures, Textures topTextures, boolean underDoors, float recessHeight, int[] recess, int slopedTop, PlatformEdgeCurves.Shape curved) {
+		final double[] lowerOutline = recess[0] == 0 ? outline : PlatformEdges.outline(angle, BlockPlatformEdge.recessedCut(cut, recess));
 		if (gapFiller && slopedTop != SlopedTops.FLAT) {
 			final Value topAt = (x, z) -> SlopedTops.heightAt(slopedTop, x, z);
 			if (textures.top != null) {
@@ -114,9 +132,8 @@ public class RenderPlatformEdge<T extends BlockPlatformEdge.TileEntityPlatformEd
 			return;
 		}
 
-		// Along the platform's edge curve itself where it is known (0.95.0), so neighbouring blocks join smoothly; the
-		// polygons are then fanned from their middle, as a piece of a curve isn't always convex
-		final PlatformEdgeCurves.Shape curved = gapFiller ? null : PlatformEdgeCurves.shapeOf(entity, pos, (double) recess[0] / PlatformEdges.CELLS);
+		// Along the edge curve, neighbouring blocks join smoothly; the polygons are then fanned from their middle, as a piece
+		// of a curve isn't always convex
 		final double[] upper = curved == null ? outline : centred(curved.outline);
 		final double[] lower = curved == null ? lowerOutline : centred(curved.lowerOutline);
 
@@ -575,6 +592,101 @@ public class RenderPlatformEdge<T extends BlockPlatformEdge.TileEntityPlatformEd
 				result[row * 3 + 2] = w[0] - a * x[0] - b * z[0];
 			}
 			return result;
+		}
+	}
+
+	/**
+	 * A block's faces made once (0.101.1): each vertex in the block's coordinates, its place on the block atlas, its normal
+	 * and which light it takes, the top's (the block above's) or the sides' (the block's own)
+	 */
+	static final class Mesh implements VertexConsumer {
+
+		static final int TOP = 0;
+		static final int SIDE = 1;
+		private static final int STRIDE = 9;
+
+		private final Object[] key;
+		private float[] data = new float[STRIDE * 64];
+		private int size;
+		private float x, y, z, u, v, normalX, normalY, normalZ;
+		private int light;
+
+		Mesh(Object[] key) {
+			this.key = key;
+		}
+
+		void draw(VertexConsumer consumer, Matrix4f pose, Matrix3f normal, int topLight, int sideLight) {
+			for (int i = 0; i < size; i += STRIDE) {
+				consumer.vertex(pose, data[i], data[i + 1], data[i + 2]).color(255, 255, 255, 255).uv(data[i + 3], data[i + 4]).overlayCoords(OverlayTexture.NO_OVERLAY).uv2(data[i + 8] == TOP ? topLight : sideLight).normal(normal, data[i + 5], data[i + 6], data[i + 7]).endVertex();
+			}
+		}
+
+		int vertices() {
+			return size / STRIDE;
+		}
+
+		@Override
+		public VertexConsumer vertex(double x, double y, double z) {
+			this.x = (float) x;
+			this.y = (float) y;
+			this.z = (float) z;
+			return this;
+		}
+
+		@Override
+		public VertexConsumer color(int red, int green, int blue, int alpha) {
+			return this;
+		}
+
+		@Override
+		public VertexConsumer uv(float u, float v) {
+			this.u = u;
+			this.v = v;
+			return this;
+		}
+
+		@Override
+		public VertexConsumer overlayCoords(int u, int v) {
+			return this;
+		}
+
+		@Override
+		public VertexConsumer uv2(int u, int v) {
+			light = u;
+			return this;
+		}
+
+		@Override
+		public VertexConsumer normal(float x, float y, float z) {
+			normalX = x;
+			normalY = y;
+			normalZ = z;
+			return this;
+		}
+
+		@Override
+		public void endVertex() {
+			if (size + STRIDE > data.length) {
+				data = java.util.Arrays.copyOf(data, data.length * 2);
+			}
+			data[size] = x;
+			data[size + 1] = y;
+			data[size + 2] = z;
+			data[size + 3] = u;
+			data[size + 4] = v;
+			data[size + 5] = normalX;
+			data[size + 6] = normalY;
+			data[size + 7] = normalZ;
+			data[size + 8] = light;
+			size += STRIDE;
+		}
+
+		@Override
+		public void defaultColor(int red, int green, int blue, int alpha) {
+		}
+
+		@Override
+		public void unsetDefaultColor() {
 		}
 	}
 

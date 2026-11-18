@@ -345,6 +345,9 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	private final PathRegionSync pathRegionSync = new PathRegionSync(pathBoundaries);
 
 	private final RailwayDataFileSaveModule railwayDataFileSaveModule;
+	/** How much each train type is used in this dimension, saved in its database (0.101.0) */
+	public final TrainUsage trainUsage = new TrainUsage();
+	private long lastTrainUsageMillis;
 
 	/**
 	 * The rails taken by trains, signal blocks and turn back bookings, kept by the component (decoupling document 3.7);
@@ -611,6 +614,14 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	 * player. Everything else of a tick is the same, so nothing added here is lost when ANTE is in.
 	 */
 	public void simulateTrains(RailNearPlayer isNearPlayer) {
+		// The train types' use (0.101.0): counted every so often, sent to the players when the order changes
+		final long usageMillis = System.currentTimeMillis();
+		if (usageMillis - lastTrainUsageMillis >= TrainUsage.UPDATE_MILLIS) {
+			lastTrainUsageMillis = usageMillis;
+			if (trainUsage.update(TrainUsage.countTrains(sidings), usageMillis) && trainUsage.orderChanged()) {
+				mtr.packet.TrainUsagePackets.sendAllS2C(world, this);
+			}
+		}
 		final List<? extends Player> players = world.players();
 		players.forEach(player -> {
 			final BlockPos playerBlockPos = player.blockPosition();
@@ -996,6 +1007,9 @@ public class RailwayData extends PersistentStateMapper implements IPacket {
 	}
 
 	public void onPlayerJoin(ServerPlayer serverPlayer) {
+		// The train types by the trains in the world now, counted afresh for the joining player (0.101.0)
+		trainUsage.setCurrent(TrainUsage.countTrains(sidings));
+		mtr.packet.TrainUsagePackets.sendS2C(serverPlayer, this);
 		PacketTrainDataGuiServer.sendAllInChunks(serverPlayer, stations, platforms, sidings, routes, depots, lifts, signalBlocks, keyNodes);
 		pathRegionSync.send(serverPlayer);
 		mtr.packet.ContingencyPackets.sendS2C(serverPlayer, this);

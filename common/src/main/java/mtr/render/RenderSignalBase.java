@@ -63,7 +63,7 @@ public abstract class RenderSignalBase<T extends BlockEntityMapper> extends Bloc
 
 		// The sections the signal is bound to (0.99.0); a signal from before has none and takes the nearest node, as before
 		final TileEntitySignalBase binding = entity instanceof TileEntitySignalBase && ((TileEntitySignalBase) entity).hasBinding() ? (TileEntitySignalBase) entity : null;
-		final BlockPos nearestPos = binding == null ? getNodePos(world, pos, facing) : null;
+		final BlockPos nearestPos = binding == null ? keptNodePos(entity, world, pos, facing) : null;
 		if (binding == null && nearestPos == null) {
 			return;
 		}
@@ -122,6 +122,31 @@ public abstract class RenderSignalBase<T extends BlockEntityMapper> extends Bloc
 	}
 
 	private static final long FLASH_MILLIS = 500;
+
+	/**
+	 * The node found once (0.101.1) rather than by looking through the blocks round the signal each frame, and looked for
+	 * again when a block there changes ({@link SectionStamps})
+	 */
+	private final java.util.Map<T, Object[]> nodes = new java.util.WeakHashMap<>();
+
+	private BlockPos keptNodePos(T entity, BlockGetter world, BlockPos pos, Direction facing) {
+		final Object[] kept = nodes.get(entity);
+		if (kept != null && kept[0] == facing && ((SectionStamps.Watch) kept[1]).isCurrent()) {
+			return (BlockPos) kept[2];
+		}
+		final BlockPos nodePos = getNodePos(world, pos, facing);
+		// The corners of the blocks looked through, which are in every section they reach into
+		final java.util.List<BlockPos> corners = new java.util.ArrayList<>();
+		for (final int x : new int[]{-4, 4}) {
+			for (final int z : new int[]{-4, 4}) {
+				for (final int y : new int[]{-5, 0}) {
+					corners.add(pos.offset(x, y, z));
+				}
+			}
+		}
+		nodes.put(entity, new Object[]{facing, new SectionStamps.Watch(corners), nodePos});
+		return nodePos;
+	}
 
 	private static BlockPos getNodePos(BlockGetter world, BlockPos pos, Direction facing) {
 		final int[] checkDistance = {0, 1, -1, 2, -2, 3, -3, 4, -4};

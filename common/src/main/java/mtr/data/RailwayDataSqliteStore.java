@@ -124,6 +124,8 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 			statement.execute("CREATE TABLE IF NOT EXISTS duty_depots (depot INTEGER PRIMARY KEY, fingerprint INTEGER NOT NULL)");
 			// The revision of each part players edit, kept so edits are checked the same after the server is started again
 			statement.execute("CREATE TABLE IF NOT EXISTS edit_revisions (key TEXT PRIMARY KEY, revision INTEGER NOT NULL, editor TEXT NOT NULL, deleted INTEGER NOT NULL)");
+			// How much each train type is used, faded over time (TrainUsage, 0.101.0): which models players' clients build first
+			statement.execute("CREATE TABLE IF NOT EXISTS train_usage (train_id TEXT PRIMARY KEY, score REAL NOT NULL)");
 		}
 		connection.setAutoCommit(false);
 
@@ -599,6 +601,31 @@ public class RailwayDataSqliteStore implements RailwayDataStore {
 			statement.executeUpdate();
 		}
 		hasPendingChanges = true;
+	}
+
+	@Override
+	public void writeTrainUsage(Map<String, Double> scores) throws Exception {
+		try (final Statement statement = connection.createStatement()) {
+			statement.execute("DELETE FROM train_usage");
+		}
+		try (final PreparedStatement statement = connection.prepareStatement("INSERT INTO train_usage (train_id, score) VALUES (?, ?)")) {
+			for (final Map.Entry<String, Double> entry : scores.entrySet()) {
+				statement.setString(1, entry.getKey());
+				statement.setDouble(2, entry.getValue());
+				statement.addBatch();
+			}
+			statement.executeBatch();
+		}
+		hasPendingChanges = true;
+	}
+
+	@Override
+	public void forEachTrainUsage(java.util.function.BiConsumer<String, Double> consumer) throws Exception {
+		try (final PreparedStatement statement = connection.prepareStatement("SELECT train_id, score FROM train_usage"); final ResultSet resultSet = statement.executeQuery()) {
+			while (resultSet.next()) {
+				consumer.accept(resultSet.getString(1), resultSet.getDouble(2));
+			}
+		}
 	}
 
 	@Override

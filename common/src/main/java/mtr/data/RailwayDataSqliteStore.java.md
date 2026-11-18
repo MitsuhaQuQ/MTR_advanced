@@ -23,6 +23,7 @@
 - `path_pieces(id, data)`、`path_piece_refs(owner, piece)` + 索引（优化第 5 轮第 2 步）。
 - 运用分层（"运用表复用和索引"）：`duty_bodies(id, data)`、`duty_groups(id, pool, data)`、`duty_group_bodies(grp, position, body)`、`duty_assignments(depot, kind, siding, slot, weekdays, duty, grp, body, data)`、`duty_body_services(route, service, body)`、`duty_depots(depot, fingerprint)` 及相关索引。
 - `edit_revisions(key, revision, editor, deleted)`。
+- `train_usage(train_id, score)`（0.101.0）：各车型的使用量（`TrainUsage`，列车数×秒、7 天半衰），`writeTrainUsage` 整表替换、`forEachTrainUsage` 读回。
 
 ### `public RailwayDataSqliteStore(Path savePath, String[] types)`
 - 作用：建备份目录；处理管理员的恢复请求（`restoreRequested`）；数据库存在但损坏时隔离（`quarantineDatabase`）并从最新可用备份恢复；存在且健康时先做一次备份（失败只打印）。然后连接、设 PRAGMA、建表、预编译语句；检查版本（`checkSchemaVersion`）、迁移（`migrate(types)`）、提交；在事务外按需 `VACUUM`（`compactIfMostlyFree`）。

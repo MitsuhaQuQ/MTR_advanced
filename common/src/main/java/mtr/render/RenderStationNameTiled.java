@@ -25,8 +25,10 @@ public class RenderStationNameTiled<T extends BlockStationNameBase.TileEntitySta
 
 	@Override
 	protected void drawStationName(BlockGetter world, BlockPos pos, BlockState state, Direction facing, StoredMatrixTransformations storedMatrixTransformations, MultiBufferSource vertexConsumers, String stationName, int stationColor, int color, int light) {
-		final int lengthLeft = getLength(world, pos, false);
-		final int lengthRight = getLength(world, pos, true);
+		// The row found once (0.101.1), again when a block of it or next to it changes
+		final int[] row = rowOf(world, pos, state);
+		final int lengthLeft = row[0];
+		final int lengthRight = row[1];
 
 		final int totalLength = lengthLeft + lengthRight - 1;
 		if (showLogo) {
@@ -44,6 +46,32 @@ public class RenderStationNameTiled<T extends BlockStationNameBase.TileEntitySta
 				matrices.popPose();
 			});
 		}
+	}
+
+	private final java.util.Map<BlockPos, Object[]> rows = new java.util.HashMap<>();
+	private Object rowsWorld;
+
+	private int[] rowOf(BlockGetter world, BlockPos pos, BlockState state) {
+		if (world != rowsWorld) {
+			rowsWorld = world;
+			rows.clear();
+		}
+		final Object[] kept = rows.get(pos);
+		if (kept != null && kept[0] == state && ((SectionStamps.Watch) kept[1]).isCurrent()) {
+			return (int[]) kept[2];
+		}
+		final int[] row = {getLength(world, pos, false), getLength(world, pos, true)};
+		final Direction facing = IBlock.getStatePropertySafe(state, BlockStationNameBase.FACING);
+		// Every block of the row and the one past each end
+		final java.util.List<BlockPos> ends = new java.util.ArrayList<>();
+		for (int i = -row[0]; i <= row[1]; i++) {
+			ends.add(pos.relative(facing.getClockWise(), i));
+		}
+		if (rows.size() > 4096) {
+			rows.clear();
+		}
+		rows.put(pos.immutable(), new Object[]{state, new SectionStamps.Watch(ends), row});
+		return row;
 	}
 
 	private int getLength(BlockGetter world, BlockPos pos, boolean lookRight) {

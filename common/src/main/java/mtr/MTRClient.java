@@ -152,6 +152,8 @@ public class MTRClient implements IPacket {
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.FREE_ESCALATOR.get(), RenderFreeEscalator::new);
 			// The original escalator's steps found in each chunk as it arrives, to be drawn moving (0.100.0)
 			RegistryClient.registerChunkLoadEvent(EscalatorStepsClient::onChunkLoad);
+			// What blocks' drawings found around them is kept until a block there changes (0.101.1)
+			RegistryClient.registerChunkLoadEvent(mtr.render.SectionStamps::onChunkLoad);
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.SIGNAL_LIGHT_2_ASPECT_1.get(), dispatcher -> new RenderSignalLight2Aspect<>(dispatcher, true, false, 0xFF0000FF));
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.SIGNAL_LIGHT_2_ASPECT_2.get(), dispatcher -> new RenderSignalLight2Aspect<>(dispatcher, false, false, 0xFF0000FF));
 			RegistryClient.registerTileEntityRenderer(BlockEntityTypes.SIGNAL_LIGHT_2_ASPECT_3.get(), dispatcher -> new RenderSignalLight2Aspect<>(dispatcher, true, true, 0xFF00FF00));
@@ -353,6 +355,7 @@ public class MTRClient implements IPacket {
 		RegistryClient.registerNetworkReceiver(PACKET_DELAY_ALARMS, mtr.packet.DelayAlarms::receiveS2C);
 		RegistryClient.registerNetworkReceiver(PACKET_CONTINGENCIES, mtr.packet.ContingencyPackets::receiveS2C);
 		RegistryClient.registerNetworkReceiver(PACKET_NETWORK_SETTINGS, mtr.packet.NetworkSettingsPackets::receiveS2C);
+		RegistryClient.registerNetworkReceiver(PACKET_TRAIN_USAGE, mtr.packet.TrainUsagePackets::receiveS2C);
 		RegistryClient.registerNetworkReceiver(PACKET_FARE_GROUPS, mtr.packet.FarePackets::receiveGroupsS2C);
 		RegistryClient.registerNetworkReceiver(PACKET_TRACK_OWNERS, mtr.packet.TrackOwnersPackets::receiveS2C);
 		RegistryClient.registerNetworkReceiver(PACKET_SHARED_TRACK, mtr.packet.SharedTrackPackets::receiveS2C);

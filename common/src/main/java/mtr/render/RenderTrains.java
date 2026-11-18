@@ -267,6 +267,7 @@ public class RenderTrains extends EntityRendererMapper<EntitySeat> implements IG
 		RenderRailInspect.render(matrices, vertexConsumers, player, MTRClient.getGameTick());
 		RenderSignalHighlight.render(matrices, vertexConsumers, player.level());
 		EscalatorStepsClient.render(matrices, vertexConsumers, world, client.getFrameTime());
+		SectionStamps.onFrame(world);
 		RenderStationAreas.render(matrices, vertexConsumers, player);
 
 		final boolean renderColors = isHoldingRailRelated(player);

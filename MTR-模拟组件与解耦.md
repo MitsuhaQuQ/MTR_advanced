@@ -1493,7 +1493,7 @@ DutyLedger 与 PathKeyIndex 使用内容摘要引用。Siding 存档增加 duty_
 
 网页按线路管理（0.99.0）：只在游戏和网页一侧（`TrainServer.getHeadPlace`、`DispatchConsole`、`EditorConsole`、`views/LineMonitor.tsx`），不涉及组件。
 
-扶梯（0.100.0）：与列车运行规则无关，不进组件。自由扶梯的几何 `mtr.escalator.FreeEscalatorPath` 写成不依赖游戏类的纯 Java，便于单测（`FreeEscalatorPathTest`）；方块、运送、渲染都在游戏一侧（`BlockFreeEscalator`、`FreeEscalators`、`RenderFreeEscalator`）。原版扶梯的立体台阶（`EscalatorStepsClient` 找、`RenderEscalatorStep` 画）只改画法，不带方块实体。存档可靠性的加固（拆除名单 `FreeEscalatorRemovals`、读档容错、`RenderGuard`）和曲线屏蔽门的几何缓存也都在游戏一侧。资源包列车模型按需载入（`LazyTrainModel`、`TrainModelsOnDemand`、`UploadCapture`）只在客户端渲染一侧。站台端头标线截止的几何 `EdgeOutline.pastEnds` 在组件里（纯几何，`EdgeOutlineTest`）。
+扶梯（0.100.0）：与列车运行规则无关，不进组件。自由扶梯的几何 `mtr.escalator.FreeEscalatorPath` 写成不依赖游戏类的纯 Java，便于单测（`FreeEscalatorPathTest`）；方块、运送、渲染都在游戏一侧（`BlockFreeEscalator`、`FreeEscalators`、`RenderFreeEscalator`）。原版扶梯的立体台阶（`EscalatorStepsClient` 找、`RenderEscalatorStep` 画）只改画法，不带方块实体。存档可靠性的加固（拆除名单 `FreeEscalatorRemovals`、读档容错、`RenderGuard`）和曲线屏蔽门的几何缓存也都在游戏一侧。资源包列车模型按需载入（`LazyTrainModel`、`TrainModelsOnDemand`、`UploadCapture`）只在客户端渲染一侧。站台端头标线截止的几何 `EdgeOutline.pastEnds` 在组件里（纯几何，`EdgeOutlineTest`）。车型使用表（0.101.0，`mtr.data.TrainUsage`、`train_usage` 表、`TrainUsagePackets`）在游戏一侧：它只为客户端决定先载哪些模型，与运行规则无关。方块渲染的缓存（0.101.1，`SectionStamps`、站台边沿的 `Mesh`、线路图排的 `Run`、PIDS 共用列表）只在客户端渲染一侧，与组件无关。
 
 填缝方块斜顶（0.94.0）：组件 `SlopedTops`（四角高度、双线性、小柱高度；测试 `SlopedTopsTest`：平地整块、沿 x 的坡、跨块边界上下两块）；游戏 `BlockGapFiller.cornerHeights`、`Rail.RailActions` 的 `railHeights`/`slopedTop`/`keepUnderRail`、桥梁按列铺桥面、`ItemGapFiller` 的材质和顶面、`RenderPlatformEdge.slopedFan`。
 

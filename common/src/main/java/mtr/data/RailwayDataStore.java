@@ -93,6 +93,13 @@ public interface RailwayDataStore {
 	default void writeSimulationData(byte[] data) throws Exception {
 	}
 
+	/** The train types' use ({@link TrainUsage}, 0.101.0), all of it, replacing what was there; only the SQLite store keeps it */
+	default void writeTrainUsage(java.util.Map<String, Double> scores) throws Exception {
+	}
+
+	default void forEachTrainUsage(java.util.function.BiConsumer<String, Double> consumer) throws Exception {
+	}
+
 	/**
 	 * @return whether paths can be saved as references to shared pieces ({@link PathPieces}); only the SQLite store keeps
 	 * them, in tables of their own
