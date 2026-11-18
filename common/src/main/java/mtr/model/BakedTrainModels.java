@@ -36,27 +36,6 @@ import java.util.Objects;
  */
 public final class BakedTrainModels {
 
-	/**
-	 * With Sodium these buffers draw nothing the player can see (2026-11-13, the user's own server): the car's buffer is
-	 * built, uploaded, queued and drawn with the right shader, texture, matrices and light, as a log of each step showed,
-	 * and the same frame's rails draw from their own buffers, but the car never appears; without Sodium the same code
-	 * draws it. Giving the model a resource pack model's materials and upload ({@code setRenderType},
-	 * {@code ModelManager.uploadVertArrays}) made no difference either. Until the GL state Sodium leaves that these draws
-	 * need is found, the cars are drawn the usual way there, which costs frames but is right. The rest of ANTE's buffers
-	 * are untouched, as only this was found wrong.
-	 */
-	private static final boolean WITH_SODIUM = isLoaded("me.jellysquid.mods.sodium.client.SodiumClientMod")
-			|| isLoaded("net.caffeinemc.mods.sodium.client.SodiumClientMod");
-
-	private static boolean isLoaded(String className) {
-		try {
-			Class.forName(className);
-			return true;
-		} catch (ClassNotFoundException e) {
-			return false;
-		}
-	}
-
 	/** Set by JonModelTrainRenderer around drawing a car in the world */
 	private static boolean inWorld;
 	/** While a model is captured, ModelMapper writes its cubes without going through ModelPart.render (Sodium replaces it) */
@@ -92,7 +71,7 @@ public final class BakedTrainModels {
 		if (!inWorld || !(model instanceof ModelSimpleTrainBase) || doorLeftX != 0 || doorRightX != 0 || doorLeftZ != 0 || doorRightZ != 0) {
 			return false;
 		}
-		if (!ClientConfig.bakeBuiltInTrains || !ClientConfig.useRenderOptimization() || !MainClient.drawScheduler.shaderManager.isReady() || WITH_SODIUM) {
+		if (!ClientConfig.bakeBuiltInTrains || !ClientConfig.useRenderOptimization() || !MainClient.drawScheduler.shaderManager.isReady()) {
 			return false;
 		}
 		if (isTranslucent) {
@@ -115,7 +94,11 @@ public final class BakedTrainModels {
 			return false;
 		}
 		if (cluster instanceof ModelCluster) {
-			MainClient.drawScheduler.enqueue((ModelCluster) cluster, new Matrix4f(matrices.last().pose()), light);
+			// A copy of the pose (0.101.2): Matrix4f(org.joml.Matrix4f) keeps the matrix it is given, and the cars are drawn
+			// together later. Sodium reuses the matrix stack's entries, so every car queued with the stack's own matrix was
+			// drawn where that entry was last moved to, all in one place or off screen, now and then one in sight: the cars
+			// vanished or flickered with Sodium (0.76.2 then stopped baking with Sodium; 2026-11-18 found why)
+			MainClient.drawScheduler.enqueue((ModelCluster) cluster, new Matrix4f(matrices.last().pose()).copy(), light);
 		}
 		return true;
 	}
